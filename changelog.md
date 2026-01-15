@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Temperature - Spa set temp, pool set temp, current temp
 - Chlorinator, pH etpoint, pH reading, ORP setpoint, ORP reading.
 - Temperature Scale, Celcius or Fahrenheit
+- Support for channels including lookup of names and states
+
+### Changed
+- Cleanup lighting enum to be consistent with other enums instead of an embedded switch
 
 
 ## [0.0.1] - 2026-01-14

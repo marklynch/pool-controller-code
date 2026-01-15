@@ -139,6 +139,53 @@ static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x
 static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
 static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x26, 0x0E};
 static const uint8_t MSG_TYPE_MODE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x14, 0x0D, 0xF1};
+static const uint8_t MSG_TYPE_CHANNELS[] = {0x02, 0x00, 0x50, 0x00, 0x6F, 0x80, 0x00, 0x0D, 0x0D, 0x5B};
+static const uint8_t MSG_TYPE_CHANNEL_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0B, 0x25, 0x00};
+
+// Channel type names
+static const char *CHANNEL_TYPE_NAMES[] = {
+    "Unknown",       // 0
+    "Filter",        // 1
+    "Cleaning",      // 2
+    "Heater Pump",   // 3
+    "Booster",       // 4
+    "Waterfall",     // 5
+    "Fountain",      // 6
+    "Spa Pump",      // 7
+    "Solar",         // 8
+    "Blower",        // 9
+    "Swimjet",       // 10
+    "Jets",          // 11
+    "Spa Jets",      // 12
+    "Overflow",      // 13
+    "Spillway",      // 14
+    "Audio",         // 15
+    "Hot Seat",      // 16
+    "Heater Power",  // 17
+    "Custom Name",   // 18
+};
+#define CHANNEL_TYPE_COUNT 19
+#define CHANNEL_UNUSED 0xFE
+#define CHANNEL_END    0xFD
+
+// Channel state names
+static const char *CHANNEL_STATE_NAMES[] = {
+    "Off",          // 0
+    "Auto",         // 1
+    "On",           // 2
+    "Low Speed",    // 3
+    "Medium Speed", // 4
+    "High Speed",   // 5
+};
+#define CHANNEL_STATE_COUNT 6
+
+// Lighting state names
+static const char *LIGHTING_STATE_NAMES[] = {
+    "Off",          // 0
+    "Auto",         // 1
+    "On",           // 2
+};
+#define LIGHTING_STATE_COUNT 3
 
 // Byte offset for temperature scale in MSG_TYPE_CONFIG
 #define MSG_CONFIG_TEMP_SCALE_IDX  10
@@ -174,13 +221,7 @@ static bool decode_message(const uint8_t *data, int len)
 
         if ((channel & 0xF0) == 0xC0) {
             // Lighting zone
-            const char *state;
-            switch (value2) {
-                case 0:  state = "Off";  break;
-                case 1:  state = "Auto"; break;
-                case 2:  state = "On";   break;
-                default: state = "Unknown"; break;
-            }
+            const char *state = (value2 < LIGHTING_STATE_COUNT) ? LIGHTING_STATE_NAMES[value2] : "Unknown";
             ESP_LOGI(TAG, "MSG: Lighting zone 0x%02X - %s", channel, state);
         } else {
             ESP_LOGI(TAG, "MSG: Type 0x38 - Channel=0x%02X, value1=%d, value2=%d", channel, value1, value2);
@@ -197,6 +238,53 @@ static bool decode_message(const uint8_t *data, int len)
         uint8_t mode = data[MSG_MODE_IDX];
         const char *mode_str = (mode == 0x00) ? "Spa" : (mode == 0x01) ? "Pool" : "Unknown";
         ESP_LOGI(TAG, "MSG: Mode - %s", mode_str);
+        return true;
+    }
+    else if (len >= sizeof(MSG_TYPE_CHANNELS) + 2 && memcmp(data, MSG_TYPE_CHANNELS, sizeof(MSG_TYPE_CHANNELS)) == 0) {
+        uint8_t bitmask = data[10];
+        ESP_LOGI(TAG, "MSG: Active channels - 0x%02X [%c%c%c%c%c%c%c%c]",
+                 bitmask,
+                 (bitmask & 0x80) ? '8' : '-',
+                 (bitmask & 0x40) ? '7' : '-',
+                 (bitmask & 0x20) ? '6' : '-',
+                 (bitmask & 0x10) ? '5' : '-',
+                 (bitmask & 0x08) ? '4' : '-',
+                 (bitmask & 0x04) ? '3' : '-',
+                 (bitmask & 0x02) ? '2' : '-',
+                 (bitmask & 0x01) ? '1' : '-');
+        return true;
+    }
+    else if (len >= sizeof(MSG_TYPE_CHANNEL_STATUS) + 1 && memcmp(data, MSG_TYPE_CHANNEL_STATUS, sizeof(MSG_TYPE_CHANNEL_STATUS)) == 0) {
+        uint8_t num_channels = data[10];
+        ESP_LOGI(TAG, "MSG: Channel status (%d channels):", num_channels);
+        int idx = 11;  // Channel data starts after header
+        int ch_num = 1;
+        bool past_end = false;
+        while (ch_num <= num_channels) {
+            if (past_end || idx + 2 >= len - 1) {
+                ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
+                ch_num++;
+                continue;
+            }
+            uint8_t ch_type = data[idx];
+            if (ch_type == CHANNEL_END) {
+                past_end = true;
+                ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
+                ch_num++;
+                continue;
+            }
+            uint8_t state = data[idx + 1];
+            const char *state_name = (state < CHANNEL_STATE_COUNT) ? CHANNEL_STATE_NAMES[state] : "Unknown";
+
+            if (ch_type == CHANNEL_UNUSED) {
+                ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
+            } else {
+                const char *type_name = (ch_type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[ch_type] : "Unknown";
+                ESP_LOGI(TAG, "  Ch%d: %s (%d) = %s", ch_num, type_name, ch_type, state_name);
+            }
+            idx += 3;
+            ch_num++;
+        }
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_TEMP_SETTING) && memcmp(data, MSG_TYPE_TEMP_SETTING, sizeof(MSG_TYPE_TEMP_SETTING)) == 0) {
