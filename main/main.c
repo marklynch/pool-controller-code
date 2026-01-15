@@ -134,7 +134,6 @@ static void led_flash_tx(void)
 
 // Message type patterns (messages start with 0x02, end with 0x03)
 static const uint8_t MSG_TYPE_38[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F};
-static const uint8_t MSG_TYPE_06[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x06, 0x0E};
 static const uint8_t MSG_TYPE_TEMP_SETTING[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x17, 0x10};
 static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
 static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
@@ -188,11 +187,6 @@ static bool decode_message(const uint8_t *data, int len)
         }
         return true;
     }
-    // else if (len >= sizeof(MSG_TYPE_06) && memcmp(data, MSG_TYPE_06, sizeof(MSG_TYPE_06)) == 0) {
-    //     ESP_LOGI(TAG, "MSG: Type 0x06");
-    //     // TODO: decode type 0x06 message
-    //     return true;
-    // }
     else if (len >= sizeof(MSG_TYPE_CONFIG) && memcmp(data, MSG_TYPE_CONFIG, sizeof(MSG_TYPE_CONFIG)) == 0) {
         uint8_t temp_scale = data[MSG_CONFIG_TEMP_SCALE_IDX];
         const char *scale_str = (temp_scale == 0x11) ? "Fahrenheit" : (temp_scale == 0x01) ? "Celsius" : "Unknown";
