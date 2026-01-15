@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chlorinator, pH etpoint, pH reading, ORP setpoint, ORP reading.
 - Temperature Scale, Celcius or Fahrenheit
 - Support for channels including lookup of names and states
+- Add support for heater state On/Off
 
 ### Changed
 - Cleanup lighting enum to be consistent with other enums instead of an embedded switch

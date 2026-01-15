@@ -132,15 +132,44 @@ static void led_flash_tx(void)
 // Message decoder
 // ======================================================
 
+// Address Subsystem
+// 50 Main Controller (Connect 10)
+// 62 Temperature sensor
+// 90 Chemistry (pH, ORP, Chlorinator)
+// 6F Touch Screen (source only) 
+
+// Assumption of message structure is:
+// 02 Start Byte
+// 00 50 - Source Address (example: 50 = Main Controller)
+// FF FF - Destination Address (FF FF = Broadcast)
+// 80 00 Control Byte or Flags
+// 12 - command
+// 0D - sub-command or length
+// 2F - register/parameter
+// 01 - value
+// 01 - value or checksum component
+// 03 End Byte
+
 // Message type patterns (messages start with 0x02, end with 0x03)
+// 50 Main Controller (Connect 10)
 static const uint8_t MSG_TYPE_38[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F};
 static const uint8_t MSG_TYPE_TEMP_SETTING[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x17, 0x10};
-static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
-static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
 static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x26, 0x0E};
 static const uint8_t MSG_TYPE_MODE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x14, 0x0D, 0xF1};
 static const uint8_t MSG_TYPE_CHANNELS[] = {0x02, 0x00, 0x50, 0x00, 0x6F, 0x80, 0x00, 0x0D, 0x0D, 0x5B};
 static const uint8_t MSG_TYPE_CHANNEL_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0B, 0x25, 0x00};
+
+// 62 Temperature sensor / Unknown subsystem
+static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
+static const uint8_t MSG_TYPE_HEATER[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x12, 0x0F};
+
+#define MSG_HEATER_STATE_IDX 11
+
+// 90 Chemistry (pH, ORP, Chlorinator)
+static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
+
+// 6F Touch Screen (source only)
+
 
 // Channel type names
 static const char *CHANNEL_TYPE_NAMES[] = {
@@ -229,10 +258,10 @@ static bool decode_message(const uint8_t *data, int len)
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CONFIG) && memcmp(data, MSG_TYPE_CONFIG, sizeof(MSG_TYPE_CONFIG)) == 0) {
-        uint8_t temp_scale = data[MSG_CONFIG_TEMP_SCALE_IDX];
-        const char *scale_str = (temp_scale == 0x11) ? "Fahrenheit" : (temp_scale == 0x01) ? "Celsius" : "Unknown";
+        uint8_t config_byte = data[MSG_CONFIG_TEMP_SCALE_IDX];
+        const char *scale_str = (config_byte & 0x10) ? "Fahrenheit" : "Celsius";
         ESP_LOGI(TAG, "MSG: Config - temperature scale=%s", scale_str);
-        return true;
+        return false;
     }
     else if (len >= sizeof(MSG_TYPE_MODE) && memcmp(data, MSG_TYPE_MODE, sizeof(MSG_TYPE_MODE)) == 0) {
         uint8_t mode = data[MSG_MODE_IDX];
@@ -296,6 +325,11 @@ static bool decode_message(const uint8_t *data, int len)
     else if (len >= sizeof(MSG_TYPE_TEMP_READING) && memcmp(data, MSG_TYPE_TEMP_READING, sizeof(MSG_TYPE_TEMP_READING)) == 0) {
         uint8_t current_temp = data[MSG_16_CURRENT_TEMP_IDX];
         ESP_LOGI(TAG, "MSG: Current temperature - current_temp=%d", current_temp);
+        return true;
+    }
+    else if (len >= sizeof(MSG_TYPE_HEATER) && memcmp(data, MSG_TYPE_HEATER, sizeof(MSG_TYPE_HEATER)) == 0) {
+        uint8_t heater_state = data[MSG_HEATER_STATE_IDX];
+        ESP_LOGI(TAG, "MSG: Heater - %s", heater_state ? "On" : "Off");
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CHLOR) + 6 && memcmp(data, MSG_TYPE_CHLOR, sizeof(MSG_TYPE_CHLOR)) == 0) {
