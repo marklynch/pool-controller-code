@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdbool.h>
 #include <errno.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -125,6 +126,119 @@ static void led_flash_tx(void)
     vTaskDelay(pdMS_TO_TICKS(LED_FLASH_MS));
     led_strip_clear(s_led_strip);
     led_strip_refresh(s_led_strip);
+}
+
+// ======================================================
+// Message decoder
+// ======================================================
+
+// Message type patterns (messages start with 0x02, end with 0x03)
+static const uint8_t MSG_TYPE_38[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F};
+static const uint8_t MSG_TYPE_06[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x06, 0x0E};
+static const uint8_t MSG_TYPE_TEMP_SETTING[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x17, 0x10};
+static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
+static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
+static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x26, 0x0E};
+static const uint8_t MSG_TYPE_MODE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x14, 0x0D, 0xF1};
+
+// Byte offset for temperature scale in MSG_TYPE_CONFIG
+#define MSG_CONFIG_TEMP_SCALE_IDX  10
+
+// Byte offset for pool/spa mode
+#define MSG_MODE_IDX  10
+
+// Chlorinator sub-type patterns (bytes 7-10)
+static const uint8_t CHLOR_PH_SETPOINT[]  = {0x1D, 0x0F, 0x3C, 0x01};
+static const uint8_t CHLOR_ORP_SETPOINT[] = {0x1D, 0x0F, 0x3C, 0x02};
+static const uint8_t CHLOR_PH_READING[]   = {0x1F, 0x0F, 0x3E, 0x01};
+static const uint8_t CHLOR_ORP_READING[]  = {0x1F, 0x0F, 0x3E, 0x02};
+
+// Byte offsets for MSG_TYPE_TEMP_SETTING (temperature settings)
+#define MSG_17_SPA_SET_TEMP_IDX   10
+#define MSG_17_POOL_SET_TEMP_IDX  11
+
+// Byte offsets for MSG_TYPE_TEMP_READING (current temperature)
+#define MSG_16_CURRENT_TEMP_IDX   10
+
+// Returns true if message was decoded, false otherwise
+static bool decode_message(const uint8_t *data, int len)
+{
+    // Must start with 0x02 and end with 0x03
+    if (len < 2 || data[0] != 0x02 || data[len - 1] != 0x03) {
+        return false;
+    }
+
+    if (len >= sizeof(MSG_TYPE_38) && memcmp(data, MSG_TYPE_38, sizeof(MSG_TYPE_38)) == 0) {
+        uint8_t channel = data[10];
+        uint8_t value1 = data[11];
+        uint8_t value2 = data[12];
+
+        if ((channel & 0xF0) == 0xC0) {
+            // Lighting zone
+            const char *state;
+            switch (value2) {
+                case 0:  state = "Off";  break;
+                case 1:  state = "Auto"; break;
+                case 2:  state = "On";   break;
+                default: state = "Unknown"; break;
+            }
+            ESP_LOGI(TAG, "MSG: Lighting zone 0x%02X - %s", channel, state);
+        } else {
+            ESP_LOGI(TAG, "MSG: Type 0x38 - Channel=0x%02X, value1=%d, value2=%d", channel, value1, value2);
+        }
+        return true;
+    }
+    // else if (len >= sizeof(MSG_TYPE_06) && memcmp(data, MSG_TYPE_06, sizeof(MSG_TYPE_06)) == 0) {
+    //     ESP_LOGI(TAG, "MSG: Type 0x06");
+    //     // TODO: decode type 0x06 message
+    //     return true;
+    // }
+    else if (len >= sizeof(MSG_TYPE_CONFIG) && memcmp(data, MSG_TYPE_CONFIG, sizeof(MSG_TYPE_CONFIG)) == 0) {
+        uint8_t temp_scale = data[MSG_CONFIG_TEMP_SCALE_IDX];
+        const char *scale_str = (temp_scale == 0x11) ? "Fahrenheit" : (temp_scale == 0x01) ? "Celsius" : "Unknown";
+        ESP_LOGI(TAG, "MSG: Config - temperature scale=%s", scale_str);
+        return true;
+    }
+    else if (len >= sizeof(MSG_TYPE_MODE) && memcmp(data, MSG_TYPE_MODE, sizeof(MSG_TYPE_MODE)) == 0) {
+        uint8_t mode = data[MSG_MODE_IDX];
+        const char *mode_str = (mode == 0x00) ? "Spa" : (mode == 0x01) ? "Pool" : "Unknown";
+        ESP_LOGI(TAG, "MSG: Mode - %s", mode_str);
+        return true;
+    }
+    else if (len >= sizeof(MSG_TYPE_TEMP_SETTING) && memcmp(data, MSG_TYPE_TEMP_SETTING, sizeof(MSG_TYPE_TEMP_SETTING)) == 0) {
+        uint8_t spa_set_temp = data[MSG_17_SPA_SET_TEMP_IDX];
+        uint8_t pool_set_temp = data[MSG_17_POOL_SET_TEMP_IDX];
+        ESP_LOGI(TAG, "MSG: Temperature settings - spa_set_temp=%d, pool_set_temp=%d", spa_set_temp, pool_set_temp);
+        return true;
+    }
+    else if (len >= sizeof(MSG_TYPE_TEMP_READING) && memcmp(data, MSG_TYPE_TEMP_READING, sizeof(MSG_TYPE_TEMP_READING)) == 0) {
+        uint8_t current_temp = data[MSG_16_CURRENT_TEMP_IDX];
+        ESP_LOGI(TAG, "MSG: Current temperature - current_temp=%d", current_temp);
+        return true;
+    }
+    else if (len >= sizeof(MSG_TYPE_CHLOR) + 6 && memcmp(data, MSG_TYPE_CHLOR, sizeof(MSG_TYPE_CHLOR)) == 0) {
+        const uint8_t *sub = &data[7];
+        uint16_t value = data[11] | (data[12] << 8);  // little endian
+
+        if (memcmp(sub, CHLOR_PH_SETPOINT, sizeof(CHLOR_PH_SETPOINT)) == 0) {
+            ESP_LOGI(TAG, "MSG: Chlorinator pH setpoint - %.1f", value / 10.0);
+            return true;
+        }
+        else if (memcmp(sub, CHLOR_ORP_SETPOINT, sizeof(CHLOR_ORP_SETPOINT)) == 0) {
+            ESP_LOGI(TAG, "MSG: Chlorinator ORP setpoint - %d mV", value);
+            return true;
+        }
+        else if (memcmp(sub, CHLOR_PH_READING, sizeof(CHLOR_PH_READING)) == 0) {
+            ESP_LOGI(TAG, "MSG: Chlorinator pH reading - %.1f", value / 10.0);
+            return true;
+        }
+        else if (memcmp(sub, CHLOR_ORP_READING, sizeof(CHLOR_ORP_READING)) == 0) {
+            ESP_LOGI(TAG, "MSG: Chlorinator ORP reading - %d mV", value);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // ======================================================
@@ -303,7 +417,11 @@ static void tcp_server_task(void *pvParameters)
                 }
             }
             hexLine[pos] = '\0';
-            ESP_LOGI(TAG, "RX: %s", hexLine);
+
+            // Decode the message, log hex only if not decoded
+            if (!decode_message(uart_buf, len)) {
+                ESP_LOGI(TAG, "RX: %s", hexLine);
+            }
 
             // Send to client if connected
             if (client_sock >= 0) {
