@@ -136,7 +136,8 @@ static void led_flash_tx(void)
 // 50 Main Controller (Connect 10)
 // 62 Temperature sensor
 // 90 Chemistry (pH, ORP, Chlorinator)
-// 6F Touch Screen (source only) 
+// 6F Touch Screen (source only) ????
+// F0 Internet Gateway
 
 // Assumption of message structure is:
 // 02 Start Byte
@@ -153,6 +154,7 @@ static void led_flash_tx(void)
 // Message type patterns (messages start with 0x02, end with 0x03)
 // 50 Main Controller (Connect 10)
 static const uint8_t MSG_TYPE_38[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F};
+static const uint8_t MSG_TYPE_38_BASE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38};  // Shorter pattern for channel names
 static const uint8_t MSG_TYPE_TEMP_SETTING[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x17, 0x10};
 static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x26, 0x0E};
 static const uint8_t MSG_TYPE_MODE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x14, 0x0D, 0xF1};
@@ -169,6 +171,8 @@ static const uint8_t MSG_TYPE_HEATER[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x
 static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
 
 // 6F Touch Screen (source only)
+
+// F0 Internet Gateway
 
 
 // Channel type names
@@ -216,6 +220,77 @@ static const char *LIGHTING_STATE_NAMES[] = {
 };
 #define LIGHTING_STATE_COUNT 3
 
+// Lighting color names
+static const char *LIGHTING_COLOR_NAMES[] = {
+    "Unknown",           // 0
+    "Red",               // 1
+    "Orange",            // 2
+    "Yellow",            // 3
+    "Green",             // 4
+    "Blue",              // 5
+    "Purple",            // 6
+    "White",             // 7
+    "User 1",            // 8
+    "User 2",            // 9
+    "Disco",             // 10
+    "Smooth",            // 11
+    "Fade",              // 12
+    "Magenta",           // 13
+    "Cyan",              // 14
+    "Pattern",           // 15
+    "Rainbow",           // 16
+    "Ocean",             // 17
+    "Voodoo Lounge",     // 18
+    "Deep Blue Sea",     // 19
+    "Royal Blue",        // 20
+    "Afternoon Skies",   // 21
+    "Aqua Green",        // 22
+    "Emerald",           // 23
+    "Warm Red",          // 24
+    "Flamingo",          // 25
+    "Vivid Violet",      // 26
+    "Sangria",           // 27
+    "Twilight",          // 28
+    "Tranquillity",      // 29
+    "Gemstone",          // 30
+    "USA",               // 31
+    "Mardi Gras",        // 32
+    "Cool Cabaret",      // 33
+    "Sam",               // 34
+    "Party",             // 35
+    "Romance",           // 36
+    "Caribbean",         // 37
+    "American",          // 38
+    "California Sunset", // 39
+    "Royal",             // 40
+    "Hold",              // 41
+    "Recall",            // 42
+    "Peruvian Paradise", // 43
+    "Super Nova",        // 44
+    "Northern Lights",   // 45
+    "Tidal Wave",        // 46
+    "Patriot Dream",     // 47
+    "Desert Skies",      // 48
+    "Nova",              // 49
+    "Pink",              // 50
+};
+#define LIGHTING_COLOR_COUNT 51
+
+// Device address lookup
+static const char* get_device_name(uint8_t addr_hi, uint8_t addr_lo) {
+    if (addr_hi == 0xFF && addr_lo == 0xFF) return "Broadcast";
+    if (addr_hi == 0x00) {
+        switch (addr_lo) {
+            case 0x50: return "Controller";
+            case 0x62: return "Temp Sensor";
+            case 0x90: return "Chemistry";
+            case 0x6F: return "Touch Screen";
+            case 0xF0: return "Internet GW";
+        }
+    }
+    return NULL;
+}
+
 // Byte offset for temperature scale in MSG_TYPE_CONFIG
 #define MSG_CONFIG_TEMP_SCALE_IDX  10
 
@@ -239,8 +314,43 @@ static const uint8_t CHLOR_ORP_READING[]  = {0x1F, 0x0F, 0x3E, 0x02};
 static bool decode_message(const uint8_t *data, int len)
 {
     // Must start with 0x02 and end with 0x03
-    if (len < 2 || data[0] != 0x02 || data[len - 1] != 0x03) {
+    if (len < 7 || data[0] != 0x02 || data[len - 1] != 0x03) {
         return false;
+    }
+
+    // Extract source and destination addresses
+    uint8_t src_hi = data[1], src_lo = data[2];
+    uint8_t dst_hi = data[3], dst_lo = data[4];
+    const char *src_name = get_device_name(src_hi, src_lo);
+    const char *dst_name = get_device_name(dst_hi, dst_lo);
+
+    // Log addresses (format depends on whether names are known)
+    char addr_info[64];
+    if (src_name && dst_name) {
+        snprintf(addr_info, sizeof(addr_info), "[%s -> %s]", src_name, dst_name);
+    } else if (src_name) {
+        snprintf(addr_info, sizeof(addr_info), "[%s -> %02X%02X]", src_name, dst_hi, dst_lo);
+    } else if (dst_name) {
+        snprintf(addr_info, sizeof(addr_info), "[%02X%02X -> %s]", src_hi, src_lo, dst_name);
+    } else {
+        snprintf(addr_info, sizeof(addr_info), "[%02X%02X -> %02X%02X]", src_hi, src_lo, dst_hi, dst_lo);
+    }
+
+    // Channel name messages (byte 10 = 0x7C-0x83 for channels 1-8)
+    if (len >= sizeof(MSG_TYPE_38_BASE) + 5 && memcmp(data, MSG_TYPE_38_BASE, sizeof(MSG_TYPE_38_BASE)) == 0) {
+        uint8_t ch_id = data[10];
+        if (ch_id >= 0x7C && ch_id <= 0x83) {
+            uint8_t ch_num = ch_id - 0x7C + 1;
+            // Name starts at byte 12, null-terminated
+            const char *name = (const char *)&data[12];
+            // Check if it's an empty/unused channel (first byte is 0x00)
+            if (data[12] == 0x00) {
+                ESP_LOGI(TAG, "%s Channel %d name - (empty)", addr_info, ch_num);
+            } else {
+                ESP_LOGI(TAG, "%s Channel %d name - \"%s\"", addr_info, ch_num, name);
+            }
+            return true;
+        }
     }
 
     if (len >= sizeof(MSG_TYPE_38) && memcmp(data, MSG_TYPE_38, sizeof(MSG_TYPE_38)) == 0) {
@@ -248,31 +358,55 @@ static bool decode_message(const uint8_t *data, int len)
         uint8_t value1 = data[11];
         uint8_t value2 = data[12];
 
-        if ((channel & 0xF0) == 0xC0) {
+        if (channel >= 0xC0 && channel <= 0xC3) {
             // Lighting zone
             const char *state = (value2 < LIGHTING_STATE_COUNT) ? LIGHTING_STATE_NAMES[value2] : "Unknown";
-            ESP_LOGI(TAG, "MSG: Lighting zone 0x%02X - %s", channel, state);
+            ESP_LOGI(TAG, "%s Lighting zone %d - %s", addr_info, channel - 0xC0 + 1, state);
+        } else if (channel >= 0xD0 && channel <= 0xD3) {
+            // Lighting zone color (D0-D3 = zones 1-4)
+            uint8_t zone = channel - 0xD0 + 1;
+            uint8_t color = value2;
+            const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
+            ESP_LOGI(TAG, "%s Lighting zone %d color - %s (%d)", addr_info, zone, color_name, color);
+        } else if (channel >= 0xE0 && channel <= 0xE3) {
+            // Lighting zone active state (E0-E3 = zones 1-4)
+            uint8_t zone = channel - 0xE0 + 1;
+            uint8_t active = value2;
+            ESP_LOGI(TAG, "%s Lighting zone %d active - %s", addr_info, zone, active ? "Yes" : "No");
+        } else if (channel >= 0x6C && channel <= 0x73) {
+            // Channel type configuration (6C-73 = channels 1-8)
+            uint8_t ch_num = channel - 0x6C + 1;
+            uint8_t ch_type = value2;
+            if (ch_type == CHANNEL_END) {
+                ESP_LOGI(TAG, "%s Channel %d type - Unused (last channel)", addr_info, ch_num);
+            } else if (ch_type == CHANNEL_UNUSED) {
+                ESP_LOGI(TAG, "%s Channel %d type - Unused", addr_info, ch_num);
+            } else {
+                const char *type_name = (ch_type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[ch_type] : "Unknown";
+                ESP_LOGI(TAG, "%s Channel %d type - %s (%d)", addr_info, ch_num, type_name, ch_type);
+            }
+
         } else {
-            ESP_LOGI(TAG, "MSG: Type 0x38 - Channel=0x%02X, value1=%d, value2=%d", channel, value1, value2);
+            ESP_LOGI(TAG, "%s Type 0x38 - Channel=0x%02X, value1=%d, value2=%d", addr_info, channel, value1, value2);
         }
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CONFIG) && memcmp(data, MSG_TYPE_CONFIG, sizeof(MSG_TYPE_CONFIG)) == 0) {
         uint8_t config_byte = data[MSG_CONFIG_TEMP_SCALE_IDX];
         const char *scale_str = (config_byte & 0x10) ? "Fahrenheit" : "Celsius";
-        ESP_LOGI(TAG, "MSG: Config - temperature scale=%s", scale_str);
+        ESP_LOGI(TAG, "%s Config - temperature scale=%s", addr_info, scale_str);
         return false;
     }
     else if (len >= sizeof(MSG_TYPE_MODE) && memcmp(data, MSG_TYPE_MODE, sizeof(MSG_TYPE_MODE)) == 0) {
         uint8_t mode = data[MSG_MODE_IDX];
         const char *mode_str = (mode == 0x00) ? "Spa" : (mode == 0x01) ? "Pool" : "Unknown";
-        ESP_LOGI(TAG, "MSG: Mode - %s", mode_str);
+        ESP_LOGI(TAG, "%s Mode - %s", addr_info, mode_str);
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CHANNELS) + 2 && memcmp(data, MSG_TYPE_CHANNELS, sizeof(MSG_TYPE_CHANNELS)) == 0) {
         uint8_t bitmask = data[10];
-        ESP_LOGI(TAG, "MSG: Active channels - 0x%02X [%c%c%c%c%c%c%c%c]",
-                 bitmask,
+        ESP_LOGI(TAG, "%s Active channels - 0x%02X [%c%c%c%c%c%c%c%c]",
+                 addr_info, bitmask,
                  (bitmask & 0x80) ? '8' : '-',
                  (bitmask & 0x40) ? '7' : '-',
                  (bitmask & 0x20) ? '6' : '-',
@@ -285,7 +419,7 @@ static bool decode_message(const uint8_t *data, int len)
     }
     else if (len >= sizeof(MSG_TYPE_CHANNEL_STATUS) + 1 && memcmp(data, MSG_TYPE_CHANNEL_STATUS, sizeof(MSG_TYPE_CHANNEL_STATUS)) == 0) {
         uint8_t num_channels = data[10];
-        ESP_LOGI(TAG, "MSG: Channel status (%d channels):", num_channels);
+        ESP_LOGI(TAG, "%s Channel status (%d channels):", addr_info, num_channels);
         int idx = 11;  // Channel data starts after header
         int ch_num = 1;
         bool past_end = false;
@@ -319,17 +453,17 @@ static bool decode_message(const uint8_t *data, int len)
     else if (len >= sizeof(MSG_TYPE_TEMP_SETTING) && memcmp(data, MSG_TYPE_TEMP_SETTING, sizeof(MSG_TYPE_TEMP_SETTING)) == 0) {
         uint8_t spa_set_temp = data[MSG_17_SPA_SET_TEMP_IDX];
         uint8_t pool_set_temp = data[MSG_17_POOL_SET_TEMP_IDX];
-        ESP_LOGI(TAG, "MSG: Temperature settings - spa_set_temp=%d, pool_set_temp=%d", spa_set_temp, pool_set_temp);
+        ESP_LOGI(TAG, "%s Temperature settings - spa_set_temp=%d, pool_set_temp=%d", addr_info, spa_set_temp, pool_set_temp);
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_TEMP_READING) && memcmp(data, MSG_TYPE_TEMP_READING, sizeof(MSG_TYPE_TEMP_READING)) == 0) {
         uint8_t current_temp = data[MSG_16_CURRENT_TEMP_IDX];
-        ESP_LOGI(TAG, "MSG: Current temperature - current_temp=%d", current_temp);
+        ESP_LOGI(TAG, "%s Current temperature - %d", addr_info, current_temp);
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_HEATER) && memcmp(data, MSG_TYPE_HEATER, sizeof(MSG_TYPE_HEATER)) == 0) {
         uint8_t heater_state = data[MSG_HEATER_STATE_IDX];
-        ESP_LOGI(TAG, "MSG: Heater - %s", heater_state ? "On" : "Off");
+        ESP_LOGI(TAG, "%s Heater - %s", addr_info, heater_state ? "On" : "Off");
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CHLOR) + 6 && memcmp(data, MSG_TYPE_CHLOR, sizeof(MSG_TYPE_CHLOR)) == 0) {
@@ -337,19 +471,19 @@ static bool decode_message(const uint8_t *data, int len)
         uint16_t value = data[11] | (data[12] << 8);  // little endian
 
         if (memcmp(sub, CHLOR_PH_SETPOINT, sizeof(CHLOR_PH_SETPOINT)) == 0) {
-            ESP_LOGI(TAG, "MSG: Chlorinator pH setpoint - %.1f", value / 10.0);
+            ESP_LOGI(TAG, "%s Chlorinator pH setpoint - %.1f", addr_info, value / 10.0);
             return true;
         }
         else if (memcmp(sub, CHLOR_ORP_SETPOINT, sizeof(CHLOR_ORP_SETPOINT)) == 0) {
-            ESP_LOGI(TAG, "MSG: Chlorinator ORP setpoint - %d mV", value);
+            ESP_LOGI(TAG, "%s Chlorinator ORP setpoint - %d mV", addr_info, value);
             return true;
         }
         else if (memcmp(sub, CHLOR_PH_READING, sizeof(CHLOR_PH_READING)) == 0) {
-            ESP_LOGI(TAG, "MSG: Chlorinator pH reading - %.1f", value / 10.0);
+            ESP_LOGI(TAG, "%s Chlorinator pH reading - %.1f", addr_info, value / 10.0);
             return true;
         }
         else if (memcmp(sub, CHLOR_ORP_READING, sizeof(CHLOR_ORP_READING)) == 0) {
-            ESP_LOGI(TAG, "MSG: Chlorinator ORP reading - %d mV", value);
+            ESP_LOGI(TAG, "%s Chlorinator ORP reading - %d mV", addr_info, value);
             return true;
         }
     }

@@ -11,12 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Decoding of the following messages types:
 - Mode (Pool, Spa)
-- Lighting Zones (Off,Auto,On)
+- Lighting Zones (Off,Auto,On), color and active state
 - Temperature - Spa set temp, pool set temp, current temp
 - Chlorinator, pH etpoint, pH reading, ORP setpoint, ORP reading.
 - Temperature Scale, Celcius or Fahrenheit
 - Support for channels including lookup of names and states
 - Add support for heater state On/Off
+- Add logging of source and destination
 
 ### Changed
 - Cleanup lighting enum to be consistent with other enums instead of an embedded switch
