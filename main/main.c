@@ -16,7 +16,6 @@
 
 #include "driver/uart.h"
 #include "driver/gpio.h"
-#include "led_strip.h"
 
 #include "lwip/sockets.h"
 #include "lwip/inet.h"
@@ -26,6 +25,7 @@
 
 #include <esp_http_server.h>
 #include "nvs.h"
+#include "led_helper.h"
 
 // ==================== USER CONFIG =====================
 
@@ -41,10 +41,6 @@
 #define UART_RX_BUF_SIZE    (2048)
 #define UART_TX_BUF_SIZE    (2048)
 
-// RGB LED config (WS2812 on GPIO8)
-#define LED_GPIO            8
-#define LED_FLASH_MS        50  // flash duration in milliseconds
-
 // Wi-Fi event bits
 #define WIFI_CONNECTED_BIT  BIT0
 
@@ -57,7 +53,6 @@
 static const char *TAG = "POOL_BUS_BRIDGE";
 
 static EventGroupHandle_t s_wifi_event_group;
-static led_strip_handle_t s_led_strip;
 
 // Provisioning state
 static bool s_provisioning_active = false;
@@ -126,56 +121,6 @@ typedef struct {
 
 static pool_state_t s_pool_state = {0};
 static SemaphoreHandle_t s_pool_state_mutex = NULL;
-
-
-// ======================================================
-// LED handlers
-// ======================================================
-
-// Flash blue on startup
-static void led_set_startup(void)
-{
-    led_strip_set_pixel(s_led_strip, 0, 0, 0, 32);  // Blue (G=0, R=0, B=32)
-    led_strip_refresh(s_led_strip);
-    ESP_LOGW(TAG, "led_set_startup: LED set to blue");
-}
-
-// Flash green when receiving bytes from the bus (UART RX)
-static void led_flash_rx(void)
-{
-    led_strip_set_pixel(s_led_strip, 0, 32, 0, 0);  // Red (G=32, R=0, B=0)
-    led_strip_refresh(s_led_strip);
-    vTaskDelay(pdMS_TO_TICKS(LED_FLASH_MS));
-    led_strip_clear(s_led_strip);
-    led_strip_refresh(s_led_strip);
-}
-
-// Flash red when sending bytes to the bus(UART TX)
-static void led_flash_tx(void)
-{
-    led_strip_set_pixel(s_led_strip, 0, 0, 32, 0);  // Green (G=0, R=32, B=0)
-    led_strip_refresh(s_led_strip);
-    vTaskDelay(pdMS_TO_TICKS(LED_FLASH_MS));
-    led_strip_clear(s_led_strip);
-    led_strip_refresh(s_led_strip);
-}
-
-// Solid purple LED for unconfigured WiFi / provisioning mode
-static void led_set_unconfigured(void)
-{
-    led_strip_set_pixel(s_led_strip, 0, 0, 32, 32);  // Purple (G=0, R=32, B=32)
-    led_strip_refresh(s_led_strip);
-    ESP_LOGW(TAG, "led_set_unconfigured: LED set to purple");
-}
-
-// Solid yellow LED for WiFi connected
-static void led_set_connected(void)
-{
-    led_strip_set_pixel(s_led_strip, 0, 32, 32, 0);  // Yellow (G=32, R=32, B=0)
-    led_strip_refresh(s_led_strip);
-    ESP_LOGW(TAG, "led_set_connected: LED set to Yellow");
-}
-
 
 // ======================================================
 // Wi-Fi retry timer callback
@@ -255,33 +200,6 @@ static void wifi_event_handler(void *arg,
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
-
-// ======================================================
-// RGB LED init and helpers
-// ======================================================
-
-static void led_init(void)
-{
-    led_strip_config_t strip_config = {
-        .strip_gpio_num = LED_GPIO,
-        .max_leds = 1,
-        .led_model = LED_MODEL_WS2812,
-        .flags.invert_out = false,
-    };
-
-    led_strip_rmt_config_t rmt_config = {
-        .clk_src = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = 10 * 1000 * 1000, // 10 MHz
-        .mem_block_symbols = 64,
-        .flags.with_dma = false,
-    };
-
-    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &s_led_strip));
-    led_strip_clear(s_led_strip);
-
-    ESP_LOGI(TAG, "RGB LED initialised on GPIO %d", LED_GPIO);
-}
-
 
 // ======================================================
 // WiFi Provisioning Helper Functions
@@ -1511,7 +1429,7 @@ void app_main(void)
 
     // Initialize hardware
     uart_bus_init();
-    led_init();
+    ESP_ERROR_CHECK(led_init());
     led_set_startup();  // Show led on startup
 
     // Check WiFi configuration state and set LED color
