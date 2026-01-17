@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added `/status` endpoint which shows current state as json page (needs testing)
+
+
+## [0.0.2] - 2026-01-17
+
+### Added
 - Decoding of the following messages types:
 - Mode (Pool, Spa)
 - Lighting Zones (Off,Auto,On), color and active state

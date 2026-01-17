@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "freertos/timers.h"
+#include "freertos/semphr.h"
 
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -67,6 +68,64 @@ static TimerHandle_t s_wifi_retry_timer = NULL;
 
 #define WIFI_MAX_RETRY 5  // After 5 failed attempts, clear credentials and restart
 #define WIFI_RETRY_DELAY_MS 5000  // 5 second delay between retry attempts
+
+// ======================================================
+// Pool state structure
+// ======================================================
+
+typedef struct {
+    uint8_t id;
+    char name[32];
+    uint8_t type;
+    uint8_t state;
+    bool configured;
+} channel_state_t;
+
+typedef struct {
+    uint8_t zone;
+    uint8_t state;
+    uint8_t color;
+    bool active;
+    bool configured;
+} lighting_state_t;
+
+typedef struct {
+    // Temperature
+    uint8_t current_temp;
+    uint8_t pool_setpoint;
+    uint8_t spa_setpoint;
+    bool temp_scale_fahrenheit;
+    bool temp_valid;
+
+    // Heater
+    bool heater_on;
+    bool heater_valid;
+
+    // Mode
+    uint8_t mode;  // 0=Spa, 1=Pool
+    bool mode_valid;
+
+    // Channels (up to 8)
+    channel_state_t channels[8];
+    uint8_t num_channels;
+
+    // Lighting (up to 4 zones)
+    lighting_state_t lighting[4];
+
+    // Chlorinator
+    uint16_t ph_setpoint;      // pH * 10 (e.g., 74 = 7.4)
+    uint16_t ph_reading;       // pH * 10
+    uint16_t orp_setpoint;     // mV
+    uint16_t orp_reading;      // mV
+    bool ph_valid;
+    bool orp_valid;
+
+    // Last update timestamp (milliseconds since boot)
+    uint32_t last_update_ms;
+} pool_state_t;
+
+static pool_state_t s_pool_state = {0};
+static SemaphoreHandle_t s_pool_state_mutex = NULL;
 
 
 // ======================================================
@@ -296,198 +355,7 @@ static esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 }
 
 
-// ======================================================
-// Custom HTTP Handlers for Web Provisioning UI
-// ======================================================
 
-// HTML page for WiFi provisioning
-static const char HTML_PAGE[] = "<!DOCTYPE html>"
-"<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-"<title>Pool Controller WiFi Setup</title>"
-"<style>body{font-family:Arial,sans-serif;max-width:400px;margin:50px auto;padding:20px}"
-"h1{color:#333;text-align:center}button{background:#4CAF50;color:white;padding:10px 20px;"
-"border:none;border-radius:4px;cursor:pointer;width:100%;margin-top:10px}"
-"button:hover{background:#45a049}input,select{width:100%;padding:8px;margin:8px 0;"
-"box-sizing:border-box;border:1px solid #ddd;border-radius:4px}"
-"label{font-weight:bold}.status{padding:10px;margin:10px 0;border-radius:4px}"
-".success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}"
-"</style></head><body>"
-"<h1>Pool Controller WiFi Setup</h1>"
-"<div id='status'></div>"
-"<form id='wifiForm'><label>WiFi Network:</label>"
-"<select id='ssid' name='ssid' required><option value=''>Scanning...</option></select>"
-"<label>Password:</label><input type='password' id='password' name='password' required>"
-"<button type='submit'>Connect</button></form>"
-"<script>"
-"function showStatus(msg,isError){const d=document.getElementById('status');"
-"d.innerHTML='<div class=\"status '+(isError?'error':'success')+'\">'+msg+'</div>';}"
-"function scanWiFi(){fetch('/scan').then(r=>r.json()).then(data=>{"
-"const s=document.getElementById('ssid');s.innerHTML='';"
-"data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
-"o.text=n.ssid+' ('+n.rssi+' dBm)';s.appendChild(o);});}).catch(e=>{"
-"showStatus('Scan failed: '+e,true);});}"
-"document.getElementById('wifiForm').onsubmit=function(e){"
-"e.preventDefault();const ssid=document.getElementById('ssid').value;"
-"const pass=document.getElementById('password').value;"
-"showStatus('Connecting to '+ssid+'...',false);"
-"fetch('/provision',{method:'POST',headers:{'Content-Type':'application/json'},"
-"body:JSON.stringify({ssid:ssid,password:pass})}).then(r=>r.json()).then(data=>{"
-"if(data.success){showStatus('Connected! Device will restart.',false);"
-"}else{showStatus('Failed: '+data.message,true);}}).catch(e=>{"
-"showStatus('Error: '+e,true);});return false;};"
-"scanWiFi();</script></body></html>";
-
-// HTTP GET handler for root page
-static esp_err_t root_get_handler(httpd_req_t *req)
-{
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, HTML_PAGE, HTTPD_RESP_USE_STRLEN);
-    return ESP_OK;
-}
-
-// HTTP GET handler for WiFi scan
-static esp_err_t scan_get_handler(httpd_req_t *req)
-{
-    wifi_scan_config_t scan_config = {
-        .ssid = NULL,
-        .bssid = NULL,
-        .channel = 0,
-        .show_hidden = false,
-        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
-        .scan_time.active.min = 100,
-        .scan_time.active.max = 300,
-    };
-
-    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
-
-    uint16_t ap_count = 0;
-    esp_wifi_scan_get_ap_num(&ap_count);
-
-    wifi_ap_record_t *ap_list = malloc(sizeof(wifi_ap_record_t) * ap_count);
-    if (ap_list == NULL) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
-        return ESP_FAIL;
-    }
-
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_count, ap_list));
-
-    // Build JSON response
-    char *json_resp = malloc(4096);
-    if (json_resp == NULL) {
-        free(ap_list);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
-        return ESP_FAIL;
-    }
-
-    int len = snprintf(json_resp, 4096, "[");
-    for (int i = 0; i < ap_count && i < 20; i++) {
-        len += snprintf(json_resp + len, 4096 - len,
-                       "%s{\"ssid\":\"%s\",\"rssi\":%d}",
-                       i > 0 ? "," : "",
-                       ap_list[i].ssid,
-                       ap_list[i].rssi);
-    }
-    len += snprintf(json_resp + len, 4096 - len, "]");
-
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json_resp, len);
-
-    free(ap_list);
-    free(json_resp);
-    return ESP_OK;
-}
-
-// HTTP POST handler for provisioning
-static esp_err_t provision_post_handler(httpd_req_t *req)
-{
-    char content[200];
-    int ret = httpd_req_recv(req, content, sizeof(content) - 1);
-    if (ret <= 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid request");
-        return ESP_FAIL;
-    }
-    content[ret] = '\0';
-
-    // Simple JSON parsing (looking for ssid and password fields)
-    char ssid[33] = {0};
-    char password[64] = {0};
-
-    char *ssid_start = strstr(content, "\"ssid\":\"");
-    char *pass_start = strstr(content, "\"password\":\"");
-
-    if (ssid_start && pass_start) {
-        ssid_start += 8; // Skip "ssid":"
-        char *ssid_end = strchr(ssid_start, '"');
-        if (ssid_end) {
-            int ssid_len = ssid_end - ssid_start;
-            if (ssid_len < sizeof(ssid)) {
-                memcpy(ssid, ssid_start, ssid_len);
-                ssid[ssid_len] = '\0';
-            }
-        }
-
-        pass_start += 12; // Skip "password":"
-        char *pass_end = strchr(pass_start, '"');
-        if (pass_end) {
-            int pass_len = pass_end - pass_start;
-            if (pass_len < sizeof(password)) {
-                memcpy(password, pass_start, pass_len);
-                password[pass_len] = '\0';
-            }
-        }
-    }
-
-    if (strlen(ssid) == 0) {
-        const char *resp = "{\"success\":false,\"message\":\"Invalid SSID\"}";
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
-        return ESP_OK;
-    }
-
-    ESP_LOGI(TAG, "Received WiFi credentials: SSID=%s", ssid);
-
-    // Save credentials to NVS
-    esp_err_t err = wifi_credentials_save(ssid, password);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to save credentials to NVS: %s", esp_err_to_name(err));
-        const char *resp = "{\"success\":false,\"message\":\"Failed to save credentials\"}";
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
-        return ESP_OK;
-    }
-
-    ESP_LOGI(TAG, "Credentials saved to NVS successfully");
-
-    // Send success response
-    const char *resp = "{\"success\":true,\"message\":\"Connected! Device will restart...\"}";
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
-
-    // Restart device to apply new credentials
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    esp_restart();
-
-    return ESP_OK;
-}
-
-// URI handlers
-static const httpd_uri_t root_uri = {
-    .uri = "/",
-    .method = HTTP_GET,
-    .handler = root_get_handler
-};
-
-static const httpd_uri_t scan_uri = {
-    .uri = "/scan",
-    .method = HTTP_GET,
-    .handler = scan_get_handler
-};
-
-static const httpd_uri_t provision_uri = {
-    .uri = "/provision",
-    .method = HTTP_POST,
-    .handler = provision_post_handler
-};
 
 // ======================================================
 // Message decoder
@@ -652,24 +520,12 @@ static const char* get_device_name(uint8_t addr_hi, uint8_t addr_lo) {
     return NULL;
 }
 
-// Byte offset for temperature scale in MSG_TYPE_CONFIG
-#define MSG_CONFIG_TEMP_SCALE_IDX  10
-
-// Byte offset for pool/spa mode
-#define MSG_MODE_IDX  10
-
 // Chlorinator sub-type patterns (bytes 7-10)
 static const uint8_t CHLOR_PH_SETPOINT[]  = {0x1D, 0x0F, 0x3C, 0x01};
 static const uint8_t CHLOR_ORP_SETPOINT[] = {0x1D, 0x0F, 0x3C, 0x02};
 static const uint8_t CHLOR_PH_READING[]   = {0x1F, 0x0F, 0x3E, 0x01};
 static const uint8_t CHLOR_ORP_READING[]  = {0x1F, 0x0F, 0x3E, 0x02};
 
-// Byte offsets for MSG_TYPE_TEMP_SETTING (temperature settings)
-#define MSG_17_SPA_SET_TEMP_IDX   10
-#define MSG_17_POOL_SET_TEMP_IDX  11
-
-// Byte offsets for MSG_TYPE_TEMP_READING (current temperature)
-#define MSG_16_CURRENT_TEMP_IDX   10
 
 // Returns true if message was decoded, false otherwise
 static bool decode_message(const uint8_t *data, int len)
@@ -709,6 +565,16 @@ static bool decode_message(const uint8_t *data, int len)
                 ESP_LOGI(TAG, "%s Channel %d name - (empty)", addr_info, ch_num);
             } else {
                 ESP_LOGI(TAG, "%s Channel %d name - \"%s\"", addr_info, ch_num, name);
+
+                // Update pool state
+                if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                    if (ch_num <= 8) {
+                        strncpy(s_pool_state.channels[ch_num - 1].name, name, sizeof(s_pool_state.channels[ch_num - 1].name) - 1);
+                        s_pool_state.channels[ch_num - 1].id = ch_num;
+                        s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                    }
+                    xSemaphoreGive(s_pool_state_mutex);
+                }
             }
             return true;
         }
@@ -723,17 +589,45 @@ static bool decode_message(const uint8_t *data, int len)
             // Lighting zone
             const char *state = (value2 < LIGHTING_STATE_COUNT) ? LIGHTING_STATE_NAMES[value2] : "Unknown";
             ESP_LOGI(TAG, "%s Lighting zone %d - %s", addr_info, channel - 0xC0 + 1, state);
+
+            // Update pool state
+            if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                uint8_t zone_idx = channel - 0xC0;
+                s_pool_state.lighting[zone_idx].zone = zone_idx + 1;
+                s_pool_state.lighting[zone_idx].state = value2;
+                s_pool_state.lighting[zone_idx].configured = true;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                xSemaphoreGive(s_pool_state_mutex);
+            }
         } else if (channel >= 0xD0 && channel <= 0xD3) {
             // Lighting zone color (D0-D3 = zones 1-4)
             uint8_t zone = channel - 0xD0 + 1;
             uint8_t color = value2;
             const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
             ESP_LOGI(TAG, "%s Lighting zone %d color - %s (%d)", addr_info, zone, color_name, color);
+
+            // Update pool state
+            if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                uint8_t zone_idx = channel - 0xD0;
+                s_pool_state.lighting[zone_idx].color = color;
+                s_pool_state.lighting[zone_idx].configured = true;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                xSemaphoreGive(s_pool_state_mutex);
+            }
         } else if (channel >= 0xE0 && channel <= 0xE3) {
             // Lighting zone active state (E0-E3 = zones 1-4)
             uint8_t zone = channel - 0xE0 + 1;
             uint8_t active = value2;
             ESP_LOGI(TAG, "%s Lighting zone %d active - %s", addr_info, zone, active ? "Yes" : "No");
+
+            // Update pool state
+            if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                uint8_t zone_idx = channel - 0xE0;
+                s_pool_state.lighting[zone_idx].active = (active != 0);
+                s_pool_state.lighting[zone_idx].configured = true;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                xSemaphoreGive(s_pool_state_mutex);
+            }
         } else if (channel >= 0x6C && channel <= 0x73) {
             // Channel type configuration (6C-73 = channels 1-8)
             uint8_t ch_num = channel - 0x6C + 1;
@@ -745,6 +639,14 @@ static bool decode_message(const uint8_t *data, int len)
             } else {
                 const char *type_name = (ch_type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[ch_type] : "Unknown";
                 ESP_LOGI(TAG, "%s Channel %d type - %s (%d)", addr_info, ch_num, type_name, ch_type);
+
+                // Update pool state
+                if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                    s_pool_state.channels[ch_num - 1].type = ch_type;
+                    s_pool_state.channels[ch_num - 1].configured = true;
+                    s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                    xSemaphoreGive(s_pool_state_mutex);
+                }
             }
 
         } else {
@@ -753,15 +655,30 @@ static bool decode_message(const uint8_t *data, int len)
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CONFIG) && memcmp(data, MSG_TYPE_CONFIG, sizeof(MSG_TYPE_CONFIG)) == 0) {
-        uint8_t config_byte = data[MSG_CONFIG_TEMP_SCALE_IDX];
+        uint8_t config_byte = data[10];
         const char *scale_str = (config_byte & 0x10) ? "Fahrenheit" : "Celsius";
         ESP_LOGI(TAG, "%s Config - temperature scale=%s", addr_info, scale_str);
+
+        // Update pool state
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_pool_state.temp_scale_fahrenheit = (config_byte & 0x10) != 0;
+            s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(s_pool_state_mutex);
+        }
         return false;
     }
     else if (len >= sizeof(MSG_TYPE_MODE) && memcmp(data, MSG_TYPE_MODE, sizeof(MSG_TYPE_MODE)) == 0) {
-        uint8_t mode = data[MSG_MODE_IDX];
+        uint8_t mode = data[10];
         const char *mode_str = (mode == 0x00) ? "Spa" : (mode == 0x01) ? "Pool" : "Unknown";
         ESP_LOGI(TAG, "%s Mode - %s", addr_info, mode_str);
+
+        // Update pool state
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_pool_state.mode = mode;
+            s_pool_state.mode_valid = true;
+            s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(s_pool_state_mutex);
+        }
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CHANNELS) + 2 && memcmp(data, MSG_TYPE_CHANNELS, sizeof(MSG_TYPE_CHANNELS)) == 0) {
@@ -784,47 +701,86 @@ static bool decode_message(const uint8_t *data, int len)
         int idx = 11;  // Channel data starts after header
         int ch_num = 1;
         bool past_end = false;
-        while (ch_num <= num_channels) {
-            if (past_end || idx + 2 >= len - 1) {
-                ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
-                ch_num++;
-                continue;
-            }
-            uint8_t ch_type = data[idx];
-            if (ch_type == CHANNEL_END) {
-                past_end = true;
-                ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
-                ch_num++;
-                continue;
-            }
-            uint8_t state = data[idx + 1];
-            const char *state_name = (state < CHANNEL_STATE_COUNT) ? CHANNEL_STATE_NAMES[state] : "Unknown";
 
-            if (ch_type == CHANNEL_UNUSED) {
-                ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
-            } else {
-                const char *type_name = (ch_type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[ch_type] : "Unknown";
-                ESP_LOGI(TAG, "  Ch%d: %s (%d) = %s", ch_num, type_name, ch_type, state_name);
+        // Update pool state
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_pool_state.num_channels = num_channels;
+
+            while (ch_num <= num_channels) {
+                if (past_end || idx + 2 >= len - 1) {
+                    ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
+                    ch_num++;
+                    continue;
+                }
+                uint8_t ch_type = data[idx];
+                if (ch_type == CHANNEL_END) {
+                    past_end = true;
+                    ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
+                    ch_num++;
+                    continue;
+                }
+                uint8_t state = data[idx + 1];
+                const char *state_name = (state < CHANNEL_STATE_COUNT) ? CHANNEL_STATE_NAMES[state] : "Unknown";
+
+                if (ch_type == CHANNEL_UNUSED) {
+                    ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
+                    s_pool_state.channels[ch_num - 1].configured = false;
+                } else {
+                    const char *type_name = (ch_type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[ch_type] : "Unknown";
+                    ESP_LOGI(TAG, "  Ch%d: %s (%d) = %s", ch_num, type_name, ch_type, state_name);
+
+                    // Update channel state
+                    s_pool_state.channels[ch_num - 1].id = ch_num;
+                    s_pool_state.channels[ch_num - 1].type = ch_type;
+                    s_pool_state.channels[ch_num - 1].state = state;
+                    s_pool_state.channels[ch_num - 1].configured = true;
+                }
+                idx += 3;
+                ch_num++;
             }
-            idx += 3;
-            ch_num++;
+            s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(s_pool_state_mutex);
         }
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_TEMP_SETTING) && memcmp(data, MSG_TYPE_TEMP_SETTING, sizeof(MSG_TYPE_TEMP_SETTING)) == 0) {
-        uint8_t spa_set_temp = data[MSG_17_SPA_SET_TEMP_IDX];
-        uint8_t pool_set_temp = data[MSG_17_POOL_SET_TEMP_IDX];
+        uint8_t spa_set_temp = data[10];
+        uint8_t pool_set_temp = data[11];
         ESP_LOGI(TAG, "%s Temperature settings - spa_set_temp=%d, pool_set_temp=%d", addr_info, spa_set_temp, pool_set_temp);
+
+        // Update pool state
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_pool_state.spa_setpoint = spa_set_temp;
+            s_pool_state.pool_setpoint = pool_set_temp;
+            s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(s_pool_state_mutex);
+        }
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_TEMP_READING) && memcmp(data, MSG_TYPE_TEMP_READING, sizeof(MSG_TYPE_TEMP_READING)) == 0) {
-        uint8_t current_temp = data[MSG_16_CURRENT_TEMP_IDX];
+        uint8_t current_temp = data[10];
         ESP_LOGI(TAG, "%s Current temperature - %d", addr_info, current_temp);
+
+        // Update pool state
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_pool_state.current_temp = current_temp;
+            s_pool_state.temp_valid = true;
+            s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(s_pool_state_mutex);
+        }
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_HEATER) && memcmp(data, MSG_TYPE_HEATER, sizeof(MSG_TYPE_HEATER)) == 0) {
         uint8_t heater_state = data[MSG_HEATER_STATE_IDX];
         ESP_LOGI(TAG, "%s Heater - %s", addr_info, heater_state ? "On" : "Off");
+
+        // Update pool state
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_pool_state.heater_on = (heater_state != 0);
+            s_pool_state.heater_valid = true;
+            s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(s_pool_state_mutex);
+        }
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CHLOR) + 6 && memcmp(data, MSG_TYPE_CHLOR, sizeof(MSG_TYPE_CHLOR)) == 0) {
@@ -833,24 +789,397 @@ static bool decode_message(const uint8_t *data, int len)
 
         if (memcmp(sub, CHLOR_PH_SETPOINT, sizeof(CHLOR_PH_SETPOINT)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator pH setpoint - %.1f", addr_info, value / 10.0);
+
+            // Update pool state
+            if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                s_pool_state.ph_setpoint = value;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                xSemaphoreGive(s_pool_state_mutex);
+            }
             return true;
         }
         else if (memcmp(sub, CHLOR_ORP_SETPOINT, sizeof(CHLOR_ORP_SETPOINT)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator ORP setpoint - %d mV", addr_info, value);
+
+            // Update pool state
+            if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                s_pool_state.orp_setpoint = value;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                xSemaphoreGive(s_pool_state_mutex);
+            }
             return true;
         }
         else if (memcmp(sub, CHLOR_PH_READING, sizeof(CHLOR_PH_READING)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator pH reading - %.1f", addr_info, value / 10.0);
+
+            // Update pool state
+            if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                s_pool_state.ph_reading = value;
+                s_pool_state.ph_valid = true;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                xSemaphoreGive(s_pool_state_mutex);
+            }
             return true;
         }
         else if (memcmp(sub, CHLOR_ORP_READING, sizeof(CHLOR_ORP_READING)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator ORP reading - %d mV", addr_info, value);
+
+            // Update pool state
+            if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                s_pool_state.orp_reading = value;
+                s_pool_state.orp_valid = true;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                xSemaphoreGive(s_pool_state_mutex);
+            }
             return true;
         }
     }
 
     return false;
 }
+
+
+// ======================================================
+// Custom HTTP Handlers for Web Provisioning UI
+// ======================================================
+
+// HTML page for WiFi provisioning
+static const char HTML_PAGE[] = "<!DOCTYPE html>"
+"<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+"<title>Pool Controller WiFi Setup</title>"
+"<style>body{font-family:Arial,sans-serif;max-width:400px;margin:50px auto;padding:20px}"
+"h1{color:#333;text-align:center}button{background:#4CAF50;color:white;padding:10px 20px;"
+"border:none;border-radius:4px;cursor:pointer;width:100%;margin-top:10px}"
+"button:hover{background:#45a049}input,select{width:100%;padding:8px;margin:8px 0;"
+"box-sizing:border-box;border:1px solid #ddd;border-radius:4px}"
+"label{font-weight:bold}.status{padding:10px;margin:10px 0;border-radius:4px}"
+".success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}"
+"</style></head><body>"
+"<h2>Pool Controller WiFi Setup</h2>"
+"<div id='status'></div>"
+"<form id='wifiForm'><label>WiFi Network:</label>"
+"<select id='ssid' name='ssid' required><option value=''>Scanning...</option></select>"
+"<label>Password:</label><input type='password' id='password' name='password' required>"
+"<button type='submit'>Connect</button></form>"
+"<script>"
+"function showStatus(msg,isError){const d=document.getElementById('status');"
+"d.innerHTML='<div class=\"status '+(isError?'error':'success')+'\">'+msg+'</div>';}"
+"function scanWiFi(){fetch('/scan').then(r=>r.json()).then(data=>{"
+"const s=document.getElementById('ssid');s.innerHTML='';"
+"data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
+"o.text=n.ssid+' ('+n.rssi+' dBm)';s.appendChild(o);});}).catch(e=>{"
+"showStatus('Scan failed: '+e,true);});}"
+"document.getElementById('wifiForm').onsubmit=function(e){"
+"e.preventDefault();const ssid=document.getElementById('ssid').value;"
+"const pass=document.getElementById('password').value;"
+"showStatus('Connecting to '+ssid+'...',false);"
+"fetch('/provision',{method:'POST',headers:{'Content-Type':'application/json'},"
+"body:JSON.stringify({ssid:ssid,password:pass})}).then(r=>r.json()).then(data=>{"
+"if(data.success){showStatus('Connected! Device will restart.',false);"
+"}else{showStatus('Failed: '+data.message,true);}}).catch(e=>{"
+"showStatus('Error: '+e,true);});return false;};"
+"scanWiFi();</script></body></html>";
+
+// HTTP GET handler for root page
+static esp_err_t root_get_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, HTML_PAGE, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+// HTTP GET handler for WiFi scan
+static esp_err_t scan_get_handler(httpd_req_t *req)
+{
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = false,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time.active.min = 100,
+        .scan_time.active.max = 300,
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
+
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+
+    wifi_ap_record_t *ap_list = malloc(sizeof(wifi_ap_record_t) * ap_count);
+    if (ap_list == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        return ESP_FAIL;
+    }
+
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_count, ap_list));
+
+    // Build JSON response
+    char *json_resp = malloc(4096);
+    if (json_resp == NULL) {
+        free(ap_list);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        return ESP_FAIL;
+    }
+
+    int len = snprintf(json_resp, 4096, "[");
+    for (int i = 0; i < ap_count && i < 20; i++) {
+        len += snprintf(json_resp + len, 4096 - len,
+                       "%s{\"ssid\":\"%s\",\"rssi\":%d}",
+                       i > 0 ? "," : "",
+                       ap_list[i].ssid,
+                       ap_list[i].rssi);
+    }
+    len += snprintf(json_resp + len, 4096 - len, "]");
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_resp, len);
+
+    free(ap_list);
+    free(json_resp);
+    return ESP_OK;
+}
+
+// HTTP POST handler for provisioning
+static esp_err_t provision_post_handler(httpd_req_t *req)
+{
+    char content[200];
+    int ret = httpd_req_recv(req, content, sizeof(content) - 1);
+    if (ret <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid request");
+        return ESP_FAIL;
+    }
+    content[ret] = '\0';
+
+    // Simple JSON parsing (looking for ssid and password fields)
+    char ssid[33] = {0};
+    char password[64] = {0};
+
+    char *ssid_start = strstr(content, "\"ssid\":\"");
+    char *pass_start = strstr(content, "\"password\":\"");
+
+    if (ssid_start && pass_start) {
+        ssid_start += 8; // Skip "ssid":"
+        char *ssid_end = strchr(ssid_start, '"');
+        if (ssid_end) {
+            int ssid_len = ssid_end - ssid_start;
+            if (ssid_len < sizeof(ssid)) {
+                memcpy(ssid, ssid_start, ssid_len);
+                ssid[ssid_len] = '\0';
+            }
+        }
+
+        pass_start += 12; // Skip "password":"
+        char *pass_end = strchr(pass_start, '"');
+        if (pass_end) {
+            int pass_len = pass_end - pass_start;
+            if (pass_len < sizeof(password)) {
+                memcpy(password, pass_start, pass_len);
+                password[pass_len] = '\0';
+            }
+        }
+    }
+
+    if (strlen(ssid) == 0) {
+        const char *resp = "{\"success\":false,\"message\":\"Invalid SSID\"}";
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Received WiFi credentials: SSID=%s", ssid);
+
+    // Save credentials to NVS
+    esp_err_t err = wifi_credentials_save(ssid, password);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save credentials to NVS: %s", esp_err_to_name(err));
+        const char *resp = "{\"success\":false,\"message\":\"Failed to save credentials\"}";
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Credentials saved to NVS successfully");
+
+    // Send success response
+    const char *resp = "{\"success\":true,\"message\":\"Connected! Device will restart...\"}";
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+
+    // Restart device to apply new credentials
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+
+    return ESP_OK;
+}
+
+// HTTP GET handler for pool status
+static esp_err_t status_get_handler(httpd_req_t *req)
+{
+    // Allocate a buffer for JSON response (8KB should be enough)
+    char *json_resp = malloc(8192);
+    if (json_resp == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        return ESP_FAIL;
+    }
+
+    int len = 0;
+
+    // Lock the pool state and build JSON response
+    if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        // Start JSON object
+        len += snprintf(json_resp + len, 8192 - len, "{");
+
+        // Temperature section
+        len += snprintf(json_resp + len, 8192 - len, "\"temperature\":{");
+        if (s_pool_state.temp_valid) {
+            len += snprintf(json_resp + len, 8192 - len, "\"current\":%d,", s_pool_state.current_temp);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "\"current\":null,");
+        }
+        len += snprintf(json_resp + len, 8192 - len, "\"pool_setpoint\":%d,", s_pool_state.pool_setpoint);
+        len += snprintf(json_resp + len, 8192 - len, "\"spa_setpoint\":%d,", s_pool_state.spa_setpoint);
+        len += snprintf(json_resp + len, 8192 - len, "\"scale\":\"%s\"",
+                       s_pool_state.temp_scale_fahrenheit ? "Fahrenheit" : "Celsius");
+        len += snprintf(json_resp + len, 8192 - len, "},");
+
+        // Heater section
+        len += snprintf(json_resp + len, 8192 - len, "\"heater\":{");
+        if (s_pool_state.heater_valid) {
+            len += snprintf(json_resp + len, 8192 - len, "\"state\":\"%s\"",
+                           s_pool_state.heater_on ? "on" : "off");
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "\"state\":null");
+        }
+        len += snprintf(json_resp + len, 8192 - len, "},");
+
+        // Mode section
+        len += snprintf(json_resp + len, 8192 - len, "\"mode\":");
+        if (s_pool_state.mode_valid) {
+            const char *mode_str = (s_pool_state.mode == 0) ? "Spa" :
+                                   (s_pool_state.mode == 1) ? "Pool" : "Unknown";
+            len += snprintf(json_resp + len, 8192 - len, "\"%s\",", mode_str);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "null,");
+        }
+
+        // Channels section
+        len += snprintf(json_resp + len, 8192 - len, "\"channels\":[");
+        bool first_channel = true;
+        for (int i = 0; i < 8; i++) {
+            if (s_pool_state.channels[i].configured) {
+                if (!first_channel) {
+                    len += snprintf(json_resp + len, 8192 - len, ",");
+                }
+                first_channel = false;
+
+                const char *type_name = (s_pool_state.channels[i].type < CHANNEL_TYPE_COUNT) ?
+                                       CHANNEL_TYPE_NAMES[s_pool_state.channels[i].type] : "Unknown";
+                const char *state_name = (s_pool_state.channels[i].state < CHANNEL_STATE_COUNT) ?
+                                        CHANNEL_STATE_NAMES[s_pool_state.channels[i].state] : "Unknown";
+
+                len += snprintf(json_resp + len, 8192 - len,
+                               "{\"id\":%d,\"name\":\"%s\",\"type\":\"%s\",\"state\":\"%s\"}",
+                               s_pool_state.channels[i].id,
+                               s_pool_state.channels[i].name[0] ? s_pool_state.channels[i].name : type_name,
+                               type_name,
+                               state_name);
+            }
+        }
+        len += snprintf(json_resp + len, 8192 - len, "],");
+
+        // Lighting section
+        len += snprintf(json_resp + len, 8192 - len, "\"lighting\":[");
+        bool first_light = true;
+        for (int i = 0; i < 4; i++) {
+            if (s_pool_state.lighting[i].configured) {
+                if (!first_light) {
+                    len += snprintf(json_resp + len, 8192 - len, ",");
+                }
+                first_light = false;
+
+                const char *state_name = (s_pool_state.lighting[i].state < LIGHTING_STATE_COUNT) ?
+                                        LIGHTING_STATE_NAMES[s_pool_state.lighting[i].state] : "Unknown";
+                const char *color_name = (s_pool_state.lighting[i].color < LIGHTING_COLOR_COUNT) ?
+                                        LIGHTING_COLOR_NAMES[s_pool_state.lighting[i].color] : "Unknown";
+
+                len += snprintf(json_resp + len, 8192 - len,
+                               "{\"zone\":%d,\"state\":\"%s\",\"color\":\"%s\",\"active\":%s}",
+                               s_pool_state.lighting[i].zone,
+                               state_name,
+                               color_name,
+                               s_pool_state.lighting[i].active ? "true" : "false");
+            }
+        }
+        len += snprintf(json_resp + len, 8192 - len, "],");
+
+        // Chlorinator section
+        len += snprintf(json_resp + len, 8192 - len, "\"chlorinator\":{");
+        if (s_pool_state.ph_valid) {
+            len += snprintf(json_resp + len, 8192 - len, "\"ph_setpoint\":%.1f,",
+                           s_pool_state.ph_setpoint / 10.0);
+            len += snprintf(json_resp + len, 8192 - len, "\"ph_reading\":%.1f,",
+                           s_pool_state.ph_reading / 10.0);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "\"ph_setpoint\":null,\"ph_reading\":null,");
+        }
+        if (s_pool_state.orp_valid) {
+            len += snprintf(json_resp + len, 8192 - len, "\"orp_setpoint\":%d,",
+                           s_pool_state.orp_setpoint);
+            len += snprintf(json_resp + len, 8192 - len, "\"orp_reading\":%d",
+                           s_pool_state.orp_reading);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "\"orp_setpoint\":null,\"orp_reading\":null");
+        }
+        len += snprintf(json_resp + len, 8192 - len, "},");
+
+        // Last update timestamp
+        len += snprintf(json_resp + len, 8192 - len, "\"last_update_ms\":%lu",
+                       (unsigned long)s_pool_state.last_update_ms);
+
+        // Close JSON object
+        len += snprintf(json_resp + len, 8192 - len, "}");
+
+        xSemaphoreGive(s_pool_state_mutex);
+    } else {
+        free(json_resp);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to acquire state mutex");
+        return ESP_FAIL;
+    }
+
+    // Send JSON response
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_resp, len);
+
+    free(json_resp);
+    return ESP_OK;
+}
+
+// URI handlers
+static const httpd_uri_t root_uri = {
+    .uri = "/",
+    .method = HTTP_GET,
+    .handler = root_get_handler
+};
+
+static const httpd_uri_t scan_uri = {
+    .uri = "/scan",
+    .method = HTTP_GET,
+    .handler = scan_get_handler
+};
+
+static const httpd_uri_t provision_uri = {
+    .uri = "/provision",
+    .method = HTTP_POST,
+    .handler = provision_post_handler
+};
+
+static const httpd_uri_t status_uri = {
+    .uri = "/status",
+    .method = HTTP_GET,
+    .handler = status_get_handler
+};
+
 
 // ======================================================
 // Wi-Fi station init
@@ -962,7 +1291,9 @@ static esp_err_t start_provisioning(void)
         httpd_register_uri_handler(s_httpd_handle, &root_uri);
         httpd_register_uri_handler(s_httpd_handle, &scan_uri);
         httpd_register_uri_handler(s_httpd_handle, &provision_uri);
+        httpd_register_uri_handler(s_httpd_handle, &status_uri);
         ESP_LOGI(TAG, "HTTP server started - Navigate to http://192.168.4.1");
+        ESP_LOGI(TAG, "Pool status available at http://192.168.4.1/status");
     } else {
         ESP_LOGE(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
         return err;
@@ -1171,6 +1502,13 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
+    // Initialize pool state mutex
+    s_pool_state_mutex = xSemaphoreCreateMutex();
+    if (s_pool_state_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create pool state mutex");
+        return;
+    }
+
     // Initialize hardware
     uart_bus_init();
     led_init();
@@ -1201,7 +1539,21 @@ void app_main(void)
                             pdFALSE, pdFALSE,
                             portMAX_DELAY);
 
-        ESP_LOGI(TAG, "WiFi connected, starting TCP server...");
+        ESP_LOGI(TAG, "WiFi connected, starting HTTP server and TCP server...");
+
+        // Start HTTP server for status API
+        httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
+        httpd_config.server_port = 80;
+
+        esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
+        if (err == ESP_OK) {
+            httpd_register_uri_handler(s_httpd_handle, &status_uri);
+            ESP_LOGI(TAG, "HTTP server started - Pool status available at http://<device-ip>/status");
+        } else {
+            ESP_LOGW(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
+        }
+
+        // Start TCP server for UART bridge
         xTaskCreate(tcp_server_task,
                     "tcp_server_task",
                     4096,
