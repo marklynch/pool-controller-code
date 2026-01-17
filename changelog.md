@@ -18,10 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for channels including lookup of names and states
 - Add support for heater state On/Off
 - Add logging of source and destination
+- Add ability to configure wifi credentials via POOL_XXXXX Access point.
+- Improve feedback from LED to show state
 
 ### Changed
 - Cleanup lighting enum to be consistent with other enums instead of an embedded switch
 
+### Removed
+- Removed static config of Access point - secrets.h.example
 
 ## [0.0.1] - 2026-01-14
 

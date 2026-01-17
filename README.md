@@ -19,6 +19,30 @@ Bytes you send will be forwarded to the bus.
 00
 ```
 
+
+## Initial Provisioning:
+
+If the LED is purple then connect to the POOL_XXXXXX wifi access point on your phone
+In your phone browser navigate to http://192.168.4.1
+Here you can choose the wifi network and enter the password.
+This will save the details to the NVRam.
+
+Note - if the wrong password is entered - it will try to connect for about 30 seconds and then reset to access point mode and you can start again.
+
+Note 2: you need to clear the NVRam to redo this flow via "Erase Flash Memory from device"
+
+## Visual Feedback Flow:
+First Boot (No WiFi):
+* Blue solid (startup)
+* Purple solid (unconfigured detected)
+* Purple solid (provisioning mode active)
+* Connect to AP → Configure → Device restarts
+
+Subsequent Boots (With WiFi):
+* Blue solid (startup)
+* Yellow solid (connected & got IP)
+
+
 ## From ESP IDF template
 
 (See the README.md file in the upper level 'examples' directory for more information about examples.)
