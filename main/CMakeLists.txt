@@ -6,6 +6,7 @@ idf_component_register(
         "mqtt_publish.c"
         "mqtt_discovery.c"
         "mqtt_commands.c"
+        "web_handlers.c"
     INCLUDE_DIRS
          "."
 )

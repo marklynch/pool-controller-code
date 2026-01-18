@@ -28,6 +28,8 @@
 #include "led_helper.h"
 #include "mqtt_poolclient.h"
 #include "mqtt_publish.h"
+#include "pool_state.h"
+#include "web_handlers.h"
 
 // ==================== USER CONFIG =====================
 
@@ -67,62 +69,11 @@ static TimerHandle_t s_wifi_retry_timer = NULL;
 #define WIFI_RETRY_DELAY_MS 5000  // 5 second delay between retry attempts
 
 // ======================================================
-// Pool state structure
+// Pool state (structs defined in pool_state.h)
 // ======================================================
 
-typedef struct {
-    uint8_t id;
-    char name[32];
-    uint8_t type;
-    uint8_t state;
-    bool configured;
-} channel_state_t;
-
-typedef struct {
-    uint8_t zone;
-    uint8_t state;
-    uint8_t color;
-    bool active;
-    bool configured;
-} lighting_state_t;
-
-typedef struct {
-    // Temperature
-    uint8_t current_temp;
-    uint8_t pool_setpoint;
-    uint8_t spa_setpoint;
-    bool temp_scale_fahrenheit;
-    bool temp_valid;
-
-    // Heater
-    bool heater_on;
-    bool heater_valid;
-
-    // Mode
-    uint8_t mode;  // 0=Spa, 1=Pool
-    bool mode_valid;
-
-    // Channels (up to 8)
-    channel_state_t channels[8];
-    uint8_t num_channels;
-
-    // Lighting (up to 4 zones)
-    lighting_state_t lighting[4];
-
-    // Chlorinator
-    uint16_t ph_setpoint;      // pH * 10 (e.g., 74 = 7.4)
-    uint16_t ph_reading;       // pH * 10
-    uint16_t orp_setpoint;     // mV
-    uint16_t orp_reading;      // mV
-    bool ph_valid;
-    bool orp_valid;
-
-    // Last update timestamp (milliseconds since boot)
-    uint32_t last_update_ms;
-} pool_state_t;
-
-static pool_state_t s_pool_state = {0};
-static SemaphoreHandle_t s_pool_state_mutex = NULL;
+pool_state_t s_pool_state = {0};
+SemaphoreHandle_t s_pool_state_mutex = NULL;
 
 // ======================================================
 // Wi-Fi retry timer callback
@@ -260,7 +211,7 @@ static esp_err_t wifi_credentials_load(char *ssid, size_t ssid_len, char *passwo
 }
 
 // Save WiFi credentials to NVS
-static esp_err_t wifi_credentials_save(const char *ssid, const char *password)
+esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 {
     nvs_handle_t nvs_handle;
     esp_err_t err = nvs_open(PROV_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
@@ -323,7 +274,7 @@ static const uint8_t MSG_TYPE_HEATER[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x
 
 #define MSG_HEATER_STATE_IDX 11
 
-// 90 Chemistry (pH, ORP, Chlorinator)
+// 90 Chlorinator (pH, ORP)
 static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
 
 // 6F Touch Screen (source only)
@@ -332,7 +283,7 @@ static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x0
 
 
 // Channel type names
-static const char *CHANNEL_TYPE_NAMES[] = {
+const char *CHANNEL_TYPE_NAMES[] = {
     "Unknown",       // 0
     "Filter",        // 1
     "Cleaning",      // 2
@@ -358,7 +309,7 @@ static const char *CHANNEL_TYPE_NAMES[] = {
 #define CHANNEL_END    0xFD
 
 // Channel state names
-static const char *CHANNEL_STATE_NAMES[] = {
+const char *CHANNEL_STATE_NAMES[] = {
     "Off",          // 0
     "Auto",         // 1
     "On",           // 2
@@ -369,7 +320,7 @@ static const char *CHANNEL_STATE_NAMES[] = {
 #define CHANNEL_STATE_COUNT 6
 
 // Lighting state names
-static const char *LIGHTING_STATE_NAMES[] = {
+const char *LIGHTING_STATE_NAMES[] = {
     "Off",          // 0
     "Auto",         // 1
     "On",           // 2
@@ -377,7 +328,7 @@ static const char *LIGHTING_STATE_NAMES[] = {
 #define LIGHTING_STATE_COUNT 3
 
 // Lighting color names
-static const char *LIGHTING_COLOR_NAMES[] = {
+const char *LIGHTING_COLOR_NAMES[] = {
     "Unknown",           // 0
     "Red",               // 1
     "Orange",            // 2
@@ -825,7 +776,7 @@ static bool decode_message(const uint8_t *data, int len)
 // ======================================================
 
 // HTML page for WiFi provisioning
-static const char HTML_PAGE[] = "<!DOCTYPE html>"
+const char HTML_PAGE[] = "<!DOCTYPE html>"
 "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
 "<title>Pool Controller WiFi Setup</title>"
 "<style>body{font-family:Arial,sans-serif;max-width:400px;margin:50px auto;padding:20px}"
@@ -1716,9 +1667,14 @@ void app_main(void)
 
         esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
         if (err == ESP_OK) {
+
+            httpd_register_uri_handler(s_httpd_handle, &root_uri);
+            httpd_register_uri_handler(s_httpd_handle, &scan_uri);
+            httpd_register_uri_handler(s_httpd_handle, &provision_uri);
             httpd_register_uri_handler(s_httpd_handle, &status_uri);
             httpd_register_uri_handler(s_httpd_handle, &mqtt_config_get_uri);
             httpd_register_uri_handler(s_httpd_handle, &mqtt_config_post_uri);
+
             ESP_LOGI(TAG, "HTTP server started - Pool status available at http://<device-ip>/status");
             ESP_LOGI(TAG, "MQTT configuration at http://<device-ip>/mqtt_config");
         } else {

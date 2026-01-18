@@ -13,11 +13,13 @@ Don't publish to MQTT after every change - add small debounce to it
 ## [Unreleased]
 
 ### Added
-- Added `/status` endpoint which shows current state as json page (needs testing)
+- Added `/status` endpoint which shows current state as json page (needs testing).
 - Added initial MQTT config for home assistant configuration.
-- Added `/mqtt_config` endpoint to configure mqtt
+- Added `/mqtt_config` endpoint to configure mqtt.
 ### Changed
-- Pulled out led functions to helper file
+- Pulled out led functions to helper file.
+- Pulled out web handlers to own files.
+- Pulled out pool state to own file.
 
 ### Removed
 
