@@ -439,7 +439,7 @@ static const char* get_device_name(uint8_t addr_hi, uint8_t addr_lo) {
         switch (addr_lo) {
             case 0x50: return "Controller";
             case 0x62: return "Temp Sensor";
-            case 0x90: return "Chemistry";
+            case 0x90: return "Chlorinator";
             case 0x6F: return "Touch Screen";
             case 0xF0: return "Internet GW";
         }

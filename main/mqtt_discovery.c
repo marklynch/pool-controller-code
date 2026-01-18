@@ -47,7 +47,7 @@ static void publish_temperature_discovery(const char *device_id)
              "{\"name\":\"Pool Temperature\",\"device_class\":\"temperature\","
              "\"icon\": \"mdi:thermometer\","
              "\"state_topic\":\"%s\",\"unit_of_measurement\":\"°C\","
-             "\"value_template\":\"{{{{ value_json.current }}}}\","
+             "\"value_template\":\"{{ value_json.current }}\","
              "\"unique_id\":\"%s_temp\",\"availability_topic\":\"%s\",%s}",
              state_topic, device_id, avail_topic, device_json);
 
@@ -76,7 +76,7 @@ static void publish_pool_setpoint_discovery(const char *device_id)
              "\"icon\": \"mdi:thermometer\","
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,"
-             "\"value_template\":\"{{{{ value_json.pool_sp }}}}\","
+             "\"value_template\":\"{{ value_json.pool_sp }}\","
              "\"unique_id\":\"%s_pool_sp\",\"availability_topic\":\"%s\",%s}",
              state_topic, command_topic, device_id, avail_topic, device_json);
 
@@ -105,7 +105,7 @@ static void publish_spa_setpoint_discovery(const char *device_id)
              "\"icon\": \"mdi:thermometer\","
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,"
-             "\"value_template\":\"{{{{ value_json.spa_sp }}}}\","
+             "\"value_template\":\"{{ value_json.spa_sp }}\","
              "\"unique_id\":\"%s_spa_sp\",\"availability_topic\":\"%s\",%s}",
              state_topic, command_topic, device_id, avail_topic, device_json);
 
@@ -239,14 +239,17 @@ static void publish_ph_discovery(const char *device_id)
 
     char config[1024];
     snprintf(config, sizeof(config),
-             "{\"name\":\"pH Level\",\"device_class\":\"ph\","
+             "{\"name\":\"pH Level\","
              "\"state_topic\":\"%s\","
-             "\"value_template\":\"{{{{ value_json.ph }}}}\","
+             "\"state_class\":\"measurement\","
+             "\"value_template\":\"{{ value_json.ph }}\","
              "\"unit_of_measurement\":\"pH\","
+             "\"icon\":\"mdi:ph\","
              "\"unique_id\":\"%s_ph\",\"availability_topic\":\"%s\",%s}",
              state_topic, device_id, avail_topic, device_json);
 
-    publish_discovery("sensor", "ph", config);
+    ESP_LOGI(TAG, "Publishing pH discovery: %s", config);
+    publish_discovery("sensor", "ph_level", config);
 }
 
 // ======================================================
@@ -267,11 +270,13 @@ static void publish_orp_discovery(const char *device_id)
     snprintf(config, sizeof(config),
              "{\"name\":\"ORP Level\",\"device_class\":\"voltage\","
              "\"state_topic\":\"%s\","
-             "\"value_template\":\"{{{{ value_json.orp }}}}\","
+             "\"state_class\":\"measurement\","
+             "\"value_template\":\"{{ value_json.orp }}\","
              "\"unit_of_measurement\":\"mV\","
              "\"unique_id\":\"%s_orp\",\"availability_topic\":\"%s\",%s}",
              state_topic, device_id, avail_topic, device_json);
 
+    ESP_LOGI(TAG, "Publishing ORP discovery: %s", config);
     publish_discovery("sensor", "orp", config);
 }
 
