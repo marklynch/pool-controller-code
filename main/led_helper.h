@@ -21,4 +21,10 @@ void led_set_unconfigured(void);
 // Set LED to connected state (yellow)
 void led_set_connected(void);
 
+// Set LED to MQTT connected state (cyan)
+void led_set_mqtt_connected(void);
+
+// Set LED to MQTT disconnected state (orange)
+void led_set_mqtt_disconnected(void);
+
 #endif // LED_HELPER_H

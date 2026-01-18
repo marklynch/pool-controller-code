@@ -5,7 +5,7 @@
   "idf.openOcdConfigs": [
     "board/esp32c6-ftdi.cfg"
   ],
-  "idf.port": "/dev/tty.usbmodem2101",
+  "idf.port": "/dev/tty.usbmodem101",
   "idf.toolsPath": "/Users/markl/.espressif",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32c6"
@@ -17,5 +17,5 @@
     "--compile-commands-dir=${workspaceFolder}/build"
   ],
   "idf.flashType": "UART",
-  "idf.monitorPort": "/dev/tty.usbmodem2101"
+  "idf.monitorPort": "/dev/tty.usbmodem101"
 }

@@ -93,3 +93,23 @@ void led_set_connected(void)
     led_strip_refresh(s_led_strip);
     ESP_LOGW(TAG, "led_set_connected: LED set to Yellow");
 }
+
+// Set LED to MQTT connected state (cyan)
+void led_set_mqtt_connected(void)
+{
+    if (s_led_strip == NULL) return;
+
+    led_strip_set_pixel(s_led_strip, 0, 32, 0, 32);  // Cyan (G=32, R=0, B=32)
+    led_strip_refresh(s_led_strip);
+    ESP_LOGW(TAG, "led_set_mqtt_connected: LED set to Cyan");
+}
+
+// Set LED to MQTT disconnected state (orange)
+void led_set_mqtt_disconnected(void)
+{
+    if (s_led_strip == NULL) return;
+
+    led_strip_set_pixel(s_led_strip, 0, 16, 32, 0);  // Orange (G=16, R=32, B=0)
+    led_strip_refresh(s_led_strip);
+    ESP_LOGW(TAG, "led_set_mqtt_disconnected: LED set to Orange");
+}

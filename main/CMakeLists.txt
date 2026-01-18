@@ -2,6 +2,10 @@ idf_component_register(
     SRCS
         "main.c"
         "led_helper.c"
+        "mqtt_poolclient.c"
+        "mqtt_publish.c"
+        "mqtt_discovery.c"
+        "mqtt_commands.c"
     INCLUDE_DIRS
          "."
 )
