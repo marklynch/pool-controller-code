@@ -59,6 +59,7 @@ static bool s_wifi_connected = false;
 static httpd_handle_t s_httpd_handle = NULL;
 static int s_wifi_retry_count = 0;
 static TimerHandle_t s_wifi_retry_timer = NULL;
+static char s_device_ip_address[16] = {0};  // Stores current IP address (xxx.xxx.xxx.xxx)
 
 #define WIFI_MAX_RETRY 5  // After 5 failed attempts, clear credentials and restart
 #define WIFI_RETRY_DELAY_MS 5000  // 5 second delay between retry attempts
@@ -113,6 +114,7 @@ static void wifi_event_handler(void *arg,
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_wifi_connected = false;
+        s_device_ip_address[0] = '\0';  // Clear IP address
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
         // Stop MQTT client on WiFi disconnect
@@ -139,7 +141,12 @@ static void wifi_event_handler(void *arg,
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+
+        // Store IP address for logging/reference
+        snprintf(s_device_ip_address, sizeof(s_device_ip_address),
+                 IPSTR, IP2STR(&event->ip_info.ip));
+
+        ESP_LOGI(TAG, "Got IP: %s", s_device_ip_address);
         s_wifi_connected = true;
         s_wifi_retry_count = 0;  // Reset retry counter on successful connection
 
@@ -875,12 +882,7 @@ static esp_err_t start_provisioning(void)
 
     esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
     if (err == ESP_OK) {
-        // httpd_register_uri_handler(s_httpd_handle, &root_uri);
-        // httpd_register_uri_handler(s_httpd_handle, &scan_uri);
-        // httpd_register_uri_handler(s_httpd_handle, &provision_uri);
-        // httpd_register_uri_handler(s_httpd_handle, &status_uri);
-        // httpd_register_uri_handler(s_httpd_handle, &mqtt_config_get_uri);
-        // httpd_register_uri_handler(s_httpd_handle, &mqtt_config_post_uri);
+        // Register URI handlers
         web_handlers_register(s_httpd_handle);
         ESP_LOGI(TAG, "HTTP server started - Navigate to http://192.168.4.1");
         ESP_LOGI(TAG, "Pool status available at http://192.168.4.1/status");
@@ -1148,16 +1150,10 @@ void app_main(void)
 
         esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
         if (err == ESP_OK) {
-
-            // httpd_register_uri_handler(s_httpd_handle, &root_uri);
-            // httpd_register_uri_handler(s_httpd_handle, &scan_uri);
-            // httpd_register_uri_handler(s_httpd_handle, &provision_uri);
-            // httpd_register_uri_handler(s_httpd_handle, &status_uri);
-            // httpd_register_uri_handler(s_httpd_handle, &mqtt_config_get_uri);
-            // httpd_register_uri_handler(s_httpd_handle, &mqtt_config_post_uri);
+            // Register URI handlers
             web_handlers_register(s_httpd_handle);
-            ESP_LOGI(TAG, "HTTP server started - Pool status available at http://<device-ip>/status");
-            ESP_LOGI(TAG, "MQTT configuration at http://<device-ip>/mqtt_config");
+            ESP_LOGI(TAG, "HTTP server started - Pool status available at http://%s/status", s_device_ip_address);
+            ESP_LOGI(TAG, "MQTT configuration at http://%s/mqtt_config", s_device_ip_address);
         } else {
             ESP_LOGW(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
         }

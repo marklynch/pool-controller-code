@@ -16,10 +16,15 @@ Don't publish to MQTT after every change - add small debounce to it
 - Added `/status` endpoint which shows current state as json page (needs testing).
 - Added initial MQTT config for home assistant configuration.
 - Added `/mqtt_config` endpoint to configure mqtt.
+- Added navigation to the html pages and made use common headers
 ### Changed
 - Pulled out led functions to helper file.
 - Pulled out web handlers to own files.
 - Pulled out pool state to own file.
+
+### Fixed
+- Wifi page now deduplicates AP's and shows current network selected
+- Log out the IP address correctly when it has one.
 
 ### Removed
 
