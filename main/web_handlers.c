@@ -429,6 +429,11 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         len += snprintf(json_resp + len, 8192 - len, "\"last_update_ms\":%lu",
                        (unsigned long)s_pool_state.last_update_ms);
 
+        // Current system time in ms
+        uint64_t current_tick_count = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        len += snprintf(json_resp + len, 8192 - len, ",\"current_ms\":%lu",
+                       (unsigned long)current_tick_count);
+
         // Close JSON object
         len += snprintf(json_resp + len, 8192 - len, "}");
 

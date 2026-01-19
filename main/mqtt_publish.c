@@ -236,6 +236,10 @@ void mqtt_publish_light(uint8_t zone, uint8_t state, uint8_t color, bool active)
 
 void mqtt_publish_chlorinator(uint16_t ph_reading, uint16_t orp_reading, bool ph_valid, bool orp_valid)
 {
+
+    ESP_LOGI(TAG, "Prepare to Publish chlorinator: pH=%d (valid=%d), ORP=%d (valid=%d)",
+             ph_reading, ph_valid, orp_reading, orp_valid  );
+
     // Check if anything changed
     if (s_last_published.ph_valid == ph_valid &&
         s_last_published.orp_valid == orp_valid &&

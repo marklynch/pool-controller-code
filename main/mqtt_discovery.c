@@ -75,11 +75,12 @@ static void publish_pool_setpoint_discovery(const char *device_id)
              "{\"name\":\"Pool Setpoint\",\"device_class\":\"temperature\","
              "\"icon\": \"mdi:thermometer\","
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
-             "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,"
+             "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,\"mode\": \"box\","
              "\"value_template\":\"{{ value_json.pool_sp }}\","
              "\"unique_id\":\"%s_pool_sp\",\"availability_topic\":\"%s\",%s}",
              state_topic, command_topic, device_id, avail_topic, device_json);
 
+    ESP_LOGI(TAG, "Publishing pool setpoint discovery: %s", config);
     publish_discovery("number", "pool_setpoint", config);
 }
 
@@ -104,7 +105,7 @@ static void publish_spa_setpoint_discovery(const char *device_id)
              "{\"name\":\"Spa Setpoint\",\"device_class\":\"temperature\","
              "\"icon\": \"mdi:thermometer\","
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
-             "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,"
+             "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,\"mode\": \"box\","
              "\"value_template\":\"{{ value_json.spa_sp }}\","
              "\"unique_id\":\"%s_spa_sp\",\"availability_topic\":\"%s\",%s}",
              state_topic, command_topic, device_id, avail_topic, device_json);
@@ -216,7 +217,7 @@ static void publish_light_discovery(const char *device_id, int zone_num)
     snprintf(config, sizeof(config),
              "{\"name\":\"Light Zone %d\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
-             "\"value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
+             "\"state_value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
              "\"unique_id\":\"%s_light%d\",\"availability_topic\":\"%s\",%s}",
              zone_num, state_topic, command_topic, device_id, zone_num, avail_topic, device_json);
 
