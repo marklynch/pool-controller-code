@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Don't publish to MQTT after every change - add small debounce to it
 
 ## [Unreleased]
+### Added
+### Removed
+### Changed
+### Fixed
+
+## [0.0.3] - 2026-01-19
 
 ### Added
 - Added `/status` endpoint which shows current state as json page (needs testing).
@@ -19,6 +25,7 @@ Don't publish to MQTT after every change - add small debounce to it
 - Added navigation to the html pages and made use common headers
 - Added `current_ms` counter to status page
 - Add decoding for light configured messages 
+- Prepend Channel Id to the channel names
 
 ### Changed
 - Pulled out led functions to helper file.
@@ -32,9 +39,7 @@ Don't publish to MQTT after every change - add small debounce to it
 - Improved the display of Spa and Pool temps in home assistant box instead of slider
 - Fixed the display of pool light in home assistant
 - Only send discovery messages for channels and lights that actually are in use.
-
-
-### Removed
+- Make heater be a switch instead of a sensor
 
 ## [0.0.2] - 2026-01-17
 

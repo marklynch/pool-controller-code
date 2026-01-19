@@ -117,27 +117,30 @@ static void publish_spa_setpoint_discovery(const char *device_id)
 }
 
 // ======================================================
-// Heater Binary Sensor Discovery
+// Heater Switch Discovery
 // ======================================================
 
 static void publish_heater_discovery(const char *device_id)
 {
     char avail_topic[128];
     char state_topic[128];
+    char command_topic[128];
     snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
     snprintf(state_topic, sizeof(state_topic), "pool/%s/heater/state", device_id);
+    snprintf(command_topic, sizeof(command_topic), "pool/%s/heater/set", device_id);
 
     char device_json[256];
     build_device_json(device_json, sizeof(device_json), device_id);
 
     char config[1024];
     snprintf(config, sizeof(config),
-             "{\"name\":\"Heater\",\"device_class\":\"heat\","
-             "\"state_topic\":\"%s\","
+             "{\"name\":\"Heater\",\"icon\":\"mdi:radiator\","
+             "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
+             "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
              "\"unique_id\":\"%s_heater\",\"availability_topic\":\"%s\",%s}",
-             state_topic, device_id, avail_topic, device_json);
+             state_topic, command_topic, device_id, avail_topic, device_json);
 
-    publish_discovery("binary_sensor", "heater", config);
+    publish_discovery("switch", "heater", config);
 }
 
 // ======================================================
@@ -185,6 +188,10 @@ static void publish_channel_discovery(const char *device_id, int channel_num, co
     char object_id[32];
     snprintf(object_id, sizeof(object_id), "channel_%d", channel_num);
 
+    // Format name with channel number prefix: "Ch1 - Filter"
+    char formatted_name[64];
+    snprintf(formatted_name, sizeof(formatted_name), "Ch%d - %s", channel_num, channel_name);
+
     // Allocate config buffer on heap to avoid stack overflow
     char *config = malloc(1024);
     if (!config) {
@@ -197,7 +204,7 @@ static void publish_channel_discovery(const char *device_id, int channel_num, co
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
              "\"value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
              "\"unique_id\":\"%s_ch%d\",\"availability_topic\":\"%s\",%s}",
-             channel_name, state_topic, command_topic, device_id, channel_num, avail_topic, device_json);
+             formatted_name, state_topic, command_topic, device_id, channel_num, avail_topic, device_json);
 
     publish_discovery("switch", object_id, config);
     free(config);
