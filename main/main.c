@@ -269,6 +269,7 @@ static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x
 static const uint8_t MSG_TYPE_MODE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x14, 0x0D, 0xF1};
 static const uint8_t MSG_TYPE_CHANNELS[] = {0x02, 0x00, 0x50, 0x00, 0x6F, 0x80, 0x00, 0x0D, 0x0D, 0x5B};
 static const uint8_t MSG_TYPE_CHANNEL_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0B, 0x25, 0x00};
+static const uint8_t MSG_TYPE_LIGHT_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x06, 0x0E, 0xE4};
 
 // 62 Temperature sensor / Unknown subsystem
 static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
@@ -460,26 +461,52 @@ static bool decode_message(const uint8_t *data, int len)
         }
     }
 
+    // Lighting zone configuration messages - tells us which zones are actually installed
+    if (len >= sizeof(MSG_TYPE_LIGHT_CONFIG) + 4 && memcmp(data, MSG_TYPE_LIGHT_CONFIG, sizeof(MSG_TYPE_LIGHT_CONFIG)) == 0) {
+        uint8_t zone_idx = data[10];
+        if (zone_idx <= 3) {
+            // Mark this zone as configured (only publish if this is the first time)
+            if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                bool was_configured = s_pool_state.lighting[zone_idx].configured;
+
+                s_pool_state.lighting[zone_idx].zone = zone_idx + 1;
+                s_pool_state.lighting[zone_idx].configured = true;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                // Only log and publish if this is the first time we're marking it as configured
+                if (!was_configured) {
+                    ESP_LOGI(TAG, "%s Lighting zone %d configured", addr_info, zone_idx + 1);
+                    // Publish MQTT discovery for this zone now that we know it's configured
+                    mqtt_publish_light(&s_pool_state, zone_idx + 1);
+                }
+
+                xSemaphoreGive(s_pool_state_mutex);
+            }
+        }
+        return true;
+    }
+
     if (len >= sizeof(MSG_TYPE_38) && memcmp(data, MSG_TYPE_38, sizeof(MSG_TYPE_38)) == 0) {
         uint8_t channel = data[10];
         uint8_t value1 = data[11];
         uint8_t value2 = data[12];
 
         if (channel >= 0xC0 && channel <= 0xC3) {
-            // Lighting zone
+            // Lighting zone state
             const char *state = (value2 < LIGHTING_STATE_COUNT) ? LIGHTING_STATE_NAMES[value2] : "Unknown";
             ESP_LOGI(TAG, "%s Lighting zone %d - %s", addr_info, channel - 0xC0 + 1, state);
 
-            // Update pool state
+            // Update pool state (only publish if zone is already configured)
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xC0;
                 s_pool_state.lighting[zone_idx].zone = zone_idx + 1;
                 s_pool_state.lighting[zone_idx].state = value2;
-                s_pool_state.lighting[zone_idx].configured = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-                // Publish to MQTT
-                mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                // Only publish if this zone was configured via MSG_TYPE_LIGHT_CONFIG
+                if (s_pool_state.lighting[zone_idx].configured) {
+                    mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                }
 
                 xSemaphoreGive(s_pool_state_mutex);
             }
@@ -490,15 +517,16 @@ static bool decode_message(const uint8_t *data, int len)
             const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
             ESP_LOGI(TAG, "%s Lighting zone %d color - %s (%d)", addr_info, zone, color_name, color);
 
-            // Update pool state
+            // Update pool state (only publish if zone is already configured)
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xD0;
                 s_pool_state.lighting[zone_idx].color = color;
-                s_pool_state.lighting[zone_idx].configured = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-                // Publish to MQTT
-                mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                // Only publish if this zone was configured via MSG_TYPE_LIGHT_CONFIG
+                if (s_pool_state.lighting[zone_idx].configured) {
+                    mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                }
 
                 xSemaphoreGive(s_pool_state_mutex);
             }
@@ -508,15 +536,16 @@ static bool decode_message(const uint8_t *data, int len)
             uint8_t active = value2;
             ESP_LOGI(TAG, "%s Lighting zone %d active - %s", addr_info, zone, active ? "Yes" : "No");
 
-            // Update pool state
+            // Update pool state (only publish if zone is already configured)
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xE0;
                 s_pool_state.lighting[zone_idx].active = (active != 0);
-                s_pool_state.lighting[zone_idx].configured = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-                // Publish to MQTT
-                mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                // Only publish if this zone was configured via MSG_TYPE_LIGHT_CONFIG
+                if (s_pool_state.lighting[zone_idx].configured) {
+                    mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                }
 
                 xSemaphoreGive(s_pool_state_mutex);
             }
