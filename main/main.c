@@ -479,10 +479,7 @@ static bool decode_message(const uint8_t *data, int len)
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
                 // Publish to MQTT
-                mqtt_publish_light(s_pool_state.lighting[zone_idx].zone,
-                                  s_pool_state.lighting[zone_idx].state,
-                                  s_pool_state.lighting[zone_idx].color,
-                                  s_pool_state.lighting[zone_idx].active);
+                mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
 
                 xSemaphoreGive(s_pool_state_mutex);
             }
@@ -501,10 +498,7 @@ static bool decode_message(const uint8_t *data, int len)
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
                 // Publish to MQTT
-                mqtt_publish_light(s_pool_state.lighting[zone_idx].zone,
-                                  s_pool_state.lighting[zone_idx].state,
-                                  s_pool_state.lighting[zone_idx].color,
-                                  s_pool_state.lighting[zone_idx].active);
+                mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
 
                 xSemaphoreGive(s_pool_state_mutex);
             }
@@ -522,10 +516,7 @@ static bool decode_message(const uint8_t *data, int len)
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
                 // Publish to MQTT
-                mqtt_publish_light(s_pool_state.lighting[zone_idx].zone,
-                                  s_pool_state.lighting[zone_idx].state,
-                                  s_pool_state.lighting[zone_idx].color,
-                                  s_pool_state.lighting[zone_idx].active);
+                mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
 
                 xSemaphoreGive(s_pool_state_mutex);
             }
@@ -580,7 +571,7 @@ static bool decode_message(const uint8_t *data, int len)
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
             // Publish to MQTT
-            mqtt_publish_mode(s_pool_state.mode);
+            mqtt_publish_mode(&s_pool_state);
 
             xSemaphoreGive(s_pool_state_mutex);
         }
@@ -641,9 +632,7 @@ static bool decode_message(const uint8_t *data, int len)
                     s_pool_state.channels[ch_num - 1].configured = true;
 
                     // Publish to MQTT (outside mutex to avoid blocking)
-                    const char *ch_name = s_pool_state.channels[ch_num - 1].name[0] ?
-                                         s_pool_state.channels[ch_num - 1].name : type_name;
-                    mqtt_publish_channel(ch_num, ch_type, state, ch_name);
+                    mqtt_publish_channel(&s_pool_state, ch_num);
                 }
                 idx += 3;
                 ch_num++;
@@ -665,8 +654,7 @@ static bool decode_message(const uint8_t *data, int len)
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
             // Publish to MQTT
-            mqtt_publish_temperature(s_pool_state.current_temp, s_pool_state.pool_setpoint,
-                                    s_pool_state.spa_setpoint, s_pool_state.temp_scale_fahrenheit);
+            mqtt_publish_temperature(&s_pool_state);
 
             xSemaphoreGive(s_pool_state_mutex);
         }
@@ -683,8 +671,7 @@ static bool decode_message(const uint8_t *data, int len)
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
             // Publish to MQTT
-            mqtt_publish_temperature(s_pool_state.current_temp, s_pool_state.pool_setpoint,
-                                    s_pool_state.spa_setpoint, s_pool_state.temp_scale_fahrenheit);
+            mqtt_publish_temperature(&s_pool_state);
 
             xSemaphoreGive(s_pool_state_mutex);
         }
@@ -701,7 +688,7 @@ static bool decode_message(const uint8_t *data, int len)
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
             // Publish to MQTT
-            mqtt_publish_heater(s_pool_state.heater_on);
+            mqtt_publish_heater(&s_pool_state);
 
             xSemaphoreGive(s_pool_state_mutex);
         }
@@ -743,8 +730,7 @@ static bool decode_message(const uint8_t *data, int len)
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
                 // Publish to MQTT
-                mqtt_publish_chlorinator(s_pool_state.ph_reading, s_pool_state.orp_reading,
-                                        s_pool_state.ph_valid, s_pool_state.orp_valid);
+                mqtt_publish_chlorinator(&s_pool_state);
 
                 xSemaphoreGive(s_pool_state_mutex);
             }
@@ -760,8 +746,7 @@ static bool decode_message(const uint8_t *data, int len)
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
                 // Publish to MQTT
-                mqtt_publish_chlorinator(s_pool_state.ph_reading, s_pool_state.orp_reading,
-                                        s_pool_state.ph_valid, s_pool_state.orp_valid);
+                mqtt_publish_chlorinator(&s_pool_state);
 
                 xSemaphoreGive(s_pool_state_mutex);
             }

@@ -23,6 +23,7 @@ Don't publish to MQTT after every change - add small debounce to it
 - Pulled out led functions to helper file.
 - Pulled out web handlers to own files.
 - Pulled out pool state to own file.
+- Refactored the MQTT state management to use the pool_state 
 
 ### Fixed
 - Wifi page now deduplicates AP's and shows current network selected

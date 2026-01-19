@@ -3,23 +3,24 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "pool_state.h"
 
-// Publish temperature data (current, pool setpoint, spa setpoint)
-void mqtt_publish_temperature(uint8_t current_temp, uint8_t pool_setpoint, uint8_t spa_setpoint, bool temp_scale_fahrenheit);
+// Publish temperature data from pool state
+void mqtt_publish_temperature(const pool_state_t *current_state);
 
-// Publish heater state
-void mqtt_publish_heater(bool heater_on);
+// Publish heater state from pool state
+void mqtt_publish_heater(const pool_state_t *current_state);
 
-// Publish mode (Pool/Spa)
-void mqtt_publish_mode(uint8_t mode);
+// Publish mode (Pool/Spa) from pool state
+void mqtt_publish_mode(const pool_state_t *current_state);
 
-// Publish channel state by ID (1-8)
-void mqtt_publish_channel(uint8_t channel_id, uint8_t type, uint8_t state, const char *name);
+// Publish channel state by ID (1-8) from pool state
+void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id);
 
-// Publish light zone state (1-4)
-void mqtt_publish_light(uint8_t zone, uint8_t state, uint8_t color, bool active);
+// Publish light zone state (1-4) from pool state
+void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone);
 
-// Publish chlorinator data (pH and ORP)
-void mqtt_publish_chlorinator(uint16_t ph_reading, uint16_t orp_reading, bool ph_valid, bool orp_valid);
+// Publish chlorinator data (pH and ORP) from pool state
+void mqtt_publish_chlorinator(const pool_state_t *current_state);
 
 #endif // MQTT_PUBLISH_H

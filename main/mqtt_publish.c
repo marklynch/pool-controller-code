@@ -1,55 +1,26 @@
 #include "mqtt_publish.h"
 #include "mqtt_poolclient.h"
+#include "pool_state.h"
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
 
 static const char *TAG = "MQTT_PUBLISH";
 
-// Last published state (for change detection)
-static struct {
-    uint8_t current_temp;
-    uint8_t pool_setpoint;
-    uint8_t spa_setpoint;
-    bool temp_valid;
-
-    bool heater_on;
-    bool heater_valid;
-
-    uint8_t mode;
-    bool mode_valid;
-
-    struct {
-        uint8_t type;
-        uint8_t state;
-        char name[32];
-        bool valid;
-    } channels[8];
-
-    struct {
-        uint8_t state;
-        uint8_t color;
-        bool active;
-        bool valid;
-    } lights[4];
-
-    uint16_t ph_reading;
-    uint16_t orp_reading;
-    bool ph_valid;
-    bool orp_valid;
-} s_last_published = {0};
+// Last published state (for change detection) - using pool_state_t as single source of truth
+static pool_state_t s_last_published_state = {0};
 
 // ======================================================
 // Temperature Publishing
 // ======================================================
 
-void mqtt_publish_temperature(uint8_t current_temp, uint8_t pool_setpoint, uint8_t spa_setpoint, bool temp_scale_fahrenheit)
+void mqtt_publish_temperature(const pool_state_t *current_state)
 {
     // Check if anything changed
-    if (s_last_published.temp_valid &&
-        s_last_published.current_temp == current_temp &&
-        s_last_published.pool_setpoint == pool_setpoint &&
-        s_last_published.spa_setpoint == spa_setpoint) {
+    if (s_last_published_state.temp_valid &&
+        s_last_published_state.current_temp == current_state->current_temp &&
+        s_last_published_state.pool_setpoint == current_state->pool_setpoint &&
+        s_last_published_state.spa_setpoint == current_state->spa_setpoint) {
         return;  // No change, skip publish
     }
 
@@ -62,29 +33,30 @@ void mqtt_publish_temperature(uint8_t current_temp, uint8_t pool_setpoint, uint8
     char payload[256];
     snprintf(payload, sizeof(payload),
              "{\"current\":%d,\"pool_sp\":%d,\"spa_sp\":%d,\"scale\":\"%s\"}",
-             current_temp, pool_setpoint, spa_setpoint,
-             temp_scale_fahrenheit ? "F" : "C");
+             current_state->current_temp, current_state->pool_setpoint, current_state->spa_setpoint,
+             current_state->temp_scale_fahrenheit ? "F" : "C");
 
     mqtt_publish(topic, payload, 0, false);
 
     // Update last published state
-    s_last_published.current_temp = current_temp;
-    s_last_published.pool_setpoint = pool_setpoint;
-    s_last_published.spa_setpoint = spa_setpoint;
-    s_last_published.temp_valid = true;
+    s_last_published_state.current_temp = current_state->current_temp;
+    s_last_published_state.pool_setpoint = current_state->pool_setpoint;
+    s_last_published_state.spa_setpoint = current_state->spa_setpoint;
+    s_last_published_state.temp_valid = true;
 
     ESP_LOGI(TAG, "Published temperature: %d°%s (pool_sp=%d, spa_sp=%d)",
-             current_temp, temp_scale_fahrenheit ? "F" : "C", pool_setpoint, spa_setpoint);
+             current_state->current_temp, current_state->temp_scale_fahrenheit ? "F" : "C",
+             current_state->pool_setpoint, current_state->spa_setpoint);
 }
 
 // ======================================================
 // Heater Publishing
 // ======================================================
 
-void mqtt_publish_heater(bool heater_on)
+void mqtt_publish_heater(const pool_state_t *current_state)
 {
     // Check if anything changed
-    if (s_last_published.heater_valid && s_last_published.heater_on == heater_on) {
+    if (s_last_published_state.heater_valid && s_last_published_state.heater_on == current_state->heater_on) {
         return;  // No change, skip publish
     }
 
@@ -94,12 +66,12 @@ void mqtt_publish_heater(bool heater_on)
     char topic[128];
     snprintf(topic, sizeof(topic), "pool/%s/heater/state", device_id);
 
-    const char *payload = heater_on ? "ON" : "OFF";
+    const char *payload = current_state->heater_on ? "ON" : "OFF";
     mqtt_publish(topic, payload, 0, false);
 
     // Update last published state
-    s_last_published.heater_on = heater_on;
-    s_last_published.heater_valid = true;
+    s_last_published_state.heater_on = current_state->heater_on;
+    s_last_published_state.heater_valid = true;
 
     ESP_LOGI(TAG, "Published heater: %s", payload);
 }
@@ -108,10 +80,10 @@ void mqtt_publish_heater(bool heater_on)
 // Mode Publishing
 // ======================================================
 
-void mqtt_publish_mode(uint8_t mode)
+void mqtt_publish_mode(const pool_state_t *current_state)
 {
     // Check if anything changed
-    if (s_last_published.mode_valid && s_last_published.mode == mode) {
+    if (s_last_published_state.mode_valid && s_last_published_state.mode == current_state->mode) {
         return;  // No change, skip publish
     }
 
@@ -121,12 +93,12 @@ void mqtt_publish_mode(uint8_t mode)
     char topic[128];
     snprintf(topic, sizeof(topic), "pool/%s/mode/state", device_id);
 
-    const char *payload = (mode == 0) ? "Spa" : (mode == 1) ? "Pool" : "Unknown";
+    const char *payload = (current_state->mode == 0) ? "Spa" : (current_state->mode == 1) ? "Pool" : "Unknown";
     mqtt_publish(topic, payload, 0, false);
 
     // Update last published state
-    s_last_published.mode = mode;
-    s_last_published.mode_valid = true;
+    s_last_published_state.mode = current_state->mode;
+    s_last_published_state.mode_valid = true;
 
     ESP_LOGI(TAG, "Published mode: %s", payload);
 }
@@ -135,19 +107,20 @@ void mqtt_publish_mode(uint8_t mode)
 // Channel Publishing
 // ======================================================
 
-void mqtt_publish_channel(uint8_t channel_id, uint8_t type, uint8_t state, const char *name)
+void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
 {
     if (channel_id < 1 || channel_id > 8) {
         return;
     }
 
     int idx = channel_id - 1;
+    const channel_state_t *channel = &current_state->channels[idx];
 
     // Check if anything changed
-    if (s_last_published.channels[idx].valid &&
-        s_last_published.channels[idx].type == type &&
-        s_last_published.channels[idx].state == state &&
-        strcmp(s_last_published.channels[idx].name, name) == 0) {
+    if (s_last_published_state.channels[idx].configured &&
+        s_last_published_state.channels[idx].type == channel->type &&
+        s_last_published_state.channels[idx].state == channel->state &&
+        strcmp(s_last_published_state.channels[idx].name, channel->name) == 0) {
         return;  // No change, skip publish
     }
 
@@ -159,41 +132,42 @@ void mqtt_publish_channel(uint8_t channel_id, uint8_t type, uint8_t state, const
 
     // State names
     static const char *STATE_NAMES[] = {"Off", "Auto", "On", "Low", "Medium", "High"};
-    const char *state_name = (state < 6) ? STATE_NAMES[state] : "Unknown";
+    const char *state_name = (channel->state < 6) ? STATE_NAMES[channel->state] : "Unknown";
 
     char payload[256];
     snprintf(payload, sizeof(payload),
              "{\"state\":\"%s\",\"name\":\"%s\"}",
-             state_name, name);
+             state_name, channel->name);
 
     mqtt_publish(topic, payload, 0, false);
 
     // Update last published state
-    s_last_published.channels[idx].type = type;
-    s_last_published.channels[idx].state = state;
-    strncpy(s_last_published.channels[idx].name, name, sizeof(s_last_published.channels[idx].name) - 1);
-    s_last_published.channels[idx].valid = true;
+    s_last_published_state.channels[idx].type = channel->type;
+    s_last_published_state.channels[idx].state = channel->state;
+    strncpy(s_last_published_state.channels[idx].name, channel->name, sizeof(s_last_published_state.channels[idx].name) - 1);
+    s_last_published_state.channels[idx].configured = true;
 
-    ESP_LOGI(TAG, "Published channel %d: %s (%s)", channel_id, state_name, name);
+    ESP_LOGI(TAG, "Published channel %d: %s (%s)", channel_id, state_name, channel->name);
 }
 
 // ======================================================
 // Lighting Publishing
 // ======================================================
 
-void mqtt_publish_light(uint8_t zone, uint8_t state, uint8_t color, bool active)
+void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
 {
     if (zone < 1 || zone > 4) {
         return;
     }
 
     int idx = zone - 1;
+    const lighting_state_t *light = &current_state->lighting[idx];
 
     // Check if anything changed
-    if (s_last_published.lights[idx].valid &&
-        s_last_published.lights[idx].state == state &&
-        s_last_published.lights[idx].color == color &&
-        s_last_published.lights[idx].active == active) {
+    if (s_last_published_state.lighting[idx].configured &&
+        s_last_published_state.lighting[idx].state == light->state &&
+        s_last_published_state.lighting[idx].color == light->color &&
+        s_last_published_state.lighting[idx].active == light->active) {
         return;  // No change, skip publish
     }
 
@@ -205,46 +179,46 @@ void mqtt_publish_light(uint8_t zone, uint8_t state, uint8_t color, bool active)
 
     // State names
     static const char *STATE_NAMES[] = {"Off", "Auto", "On"};
-    const char *state_name = (state < 3) ? STATE_NAMES[state] : "Unknown";
+    const char *state_name = (light->state < 3) ? STATE_NAMES[light->state] : "Unknown";
 
     // Color names (subset - full list is in main.c)
     static const char *COLOR_NAMES[] = {
         "Unknown", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "White",
         "User1", "User2", "Disco", "Smooth", "Fade", "Magenta", "Cyan"
     };
-    const char *color_name = (color < 15) ? COLOR_NAMES[color] : "Unknown";
+    const char *color_name = (light->color < 15) ? COLOR_NAMES[light->color] : "Unknown";
 
     char payload[256];
     snprintf(payload, sizeof(payload),
              "{\"state\":\"%s\",\"color\":\"%s\",\"active\":%s}",
-             state_name, color_name, active ? "true" : "false");
+             state_name, color_name, light->active ? "true" : "false");
 
     mqtt_publish(topic, payload, 0, false);
 
     // Update last published state
-    s_last_published.lights[idx].state = state;
-    s_last_published.lights[idx].color = color;
-    s_last_published.lights[idx].active = active;
-    s_last_published.lights[idx].valid = true;
+    s_last_published_state.lighting[idx].state = light->state;
+    s_last_published_state.lighting[idx].color = light->color;
+    s_last_published_state.lighting[idx].active = light->active;
+    s_last_published_state.lighting[idx].configured = true;
 
-    ESP_LOGI(TAG, "Published light %d: %s, %s, active=%d", zone, state_name, color_name, active);
+    ESP_LOGI(TAG, "Published light %d: %s, %s, active=%d", zone, state_name, color_name, light->active);
 }
 
 // ======================================================
 // Chlorinator Publishing
 // ======================================================
 
-void mqtt_publish_chlorinator(uint16_t ph_reading, uint16_t orp_reading, bool ph_valid, bool orp_valid)
+void mqtt_publish_chlorinator(const pool_state_t *current_state)
 {
-
     ESP_LOGI(TAG, "Prepare to Publish chlorinator: pH=%d (valid=%d), ORP=%d (valid=%d)",
-             ph_reading, ph_valid, orp_reading, orp_valid  );
+             current_state->ph_reading, current_state->ph_valid,
+             current_state->orp_reading, current_state->orp_valid);
 
     // Check if anything changed
-    if (s_last_published.ph_valid == ph_valid &&
-        s_last_published.orp_valid == orp_valid &&
-        s_last_published.ph_reading == ph_reading &&
-        s_last_published.orp_reading == orp_reading) {
+    if (s_last_published_state.ph_valid == current_state->ph_valid &&
+        s_last_published_state.orp_valid == current_state->orp_valid &&
+        s_last_published_state.ph_reading == current_state->ph_reading &&
+        s_last_published_state.orp_reading == current_state->orp_reading) {
         return;  // No change, skip publish
     }
 
@@ -255,18 +229,18 @@ void mqtt_publish_chlorinator(uint16_t ph_reading, uint16_t orp_reading, bool ph
     snprintf(topic, sizeof(topic), "pool/%s/chlorinator/state", device_id);
 
     char payload[256];
-    if (ph_valid && orp_valid) {
+    if (current_state->ph_valid && current_state->orp_valid) {
         snprintf(payload, sizeof(payload),
                  "{\"ph\":%.1f,\"orp\":%d}",
-                 ph_reading / 10.0, orp_reading);
-    } else if (ph_valid) {
+                 current_state->ph_reading / 10.0, current_state->orp_reading);
+    } else if (current_state->ph_valid) {
         snprintf(payload, sizeof(payload),
                  "{\"ph\":%.1f,\"orp\":null}",
-                 ph_reading / 10.0);
-    } else if (orp_valid) {
+                 current_state->ph_reading / 10.0);
+    } else if (current_state->orp_valid) {
         snprintf(payload, sizeof(payload),
                  "{\"ph\":null,\"orp\":%d}",
-                 orp_reading);
+                 current_state->orp_reading);
     } else {
         snprintf(payload, sizeof(payload), "{\"ph\":null,\"orp\":null}");
     }
@@ -274,10 +248,11 @@ void mqtt_publish_chlorinator(uint16_t ph_reading, uint16_t orp_reading, bool ph
     mqtt_publish(topic, payload, 0, false);
 
     // Update last published state
-    s_last_published.ph_reading = ph_reading;
-    s_last_published.orp_reading = orp_reading;
-    s_last_published.ph_valid = ph_valid;
-    s_last_published.orp_valid = orp_valid;
+    s_last_published_state.ph_reading = current_state->ph_reading;
+    s_last_published_state.orp_reading = current_state->orp_reading;
+    s_last_published_state.ph_valid = current_state->ph_valid;
+    s_last_published_state.orp_valid = current_state->orp_valid;
 
-    ESP_LOGI(TAG, "Published chlorinator: pH=%.1f, ORP=%d", ph_reading / 10.0, orp_reading);
+    ESP_LOGI(TAG, "Published chlorinator: pH=%.1f, ORP=%d",
+             current_state->ph_reading / 10.0, current_state->orp_reading);
 }
