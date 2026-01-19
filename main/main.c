@@ -26,6 +26,10 @@
 #include <esp_http_server.h>
 #include "nvs.h"
 #include "led_helper.h"
+#include "mqtt_poolclient.h"
+#include "mqtt_publish.h"
+#include "pool_state.h"
+#include "web_handlers.h"
 
 // ==================== USER CONFIG =====================
 
@@ -44,11 +48,6 @@
 // Wi-Fi event bits
 #define WIFI_CONNECTED_BIT  BIT0
 
-// Provisioning configuration
-#define PROV_SOFTAP_SSID_PREFIX    "POOL_"
-#define PROV_NVS_NAMESPACE         "wifi_config"
-#define PROV_NVS_KEY_SSID          "ssid"
-#define PROV_NVS_KEY_PASS          "password"
 
 static const char *TAG = "POOL_BUS_BRIDGE";
 
@@ -60,67 +59,17 @@ static bool s_wifi_connected = false;
 static httpd_handle_t s_httpd_handle = NULL;
 static int s_wifi_retry_count = 0;
 static TimerHandle_t s_wifi_retry_timer = NULL;
+static char s_device_ip_address[16] = {0};  // Stores current IP address (xxx.xxx.xxx.xxx)
 
 #define WIFI_MAX_RETRY 5  // After 5 failed attempts, clear credentials and restart
 #define WIFI_RETRY_DELAY_MS 5000  // 5 second delay between retry attempts
 
 // ======================================================
-// Pool state structure
+// Pool state (structs defined in pool_state.h)
 // ======================================================
 
-typedef struct {
-    uint8_t id;
-    char name[32];
-    uint8_t type;
-    uint8_t state;
-    bool configured;
-} channel_state_t;
-
-typedef struct {
-    uint8_t zone;
-    uint8_t state;
-    uint8_t color;
-    bool active;
-    bool configured;
-} lighting_state_t;
-
-typedef struct {
-    // Temperature
-    uint8_t current_temp;
-    uint8_t pool_setpoint;
-    uint8_t spa_setpoint;
-    bool temp_scale_fahrenheit;
-    bool temp_valid;
-
-    // Heater
-    bool heater_on;
-    bool heater_valid;
-
-    // Mode
-    uint8_t mode;  // 0=Spa, 1=Pool
-    bool mode_valid;
-
-    // Channels (up to 8)
-    channel_state_t channels[8];
-    uint8_t num_channels;
-
-    // Lighting (up to 4 zones)
-    lighting_state_t lighting[4];
-
-    // Chlorinator
-    uint16_t ph_setpoint;      // pH * 10 (e.g., 74 = 7.4)
-    uint16_t ph_reading;       // pH * 10
-    uint16_t orp_setpoint;     // mV
-    uint16_t orp_reading;      // mV
-    bool ph_valid;
-    bool orp_valid;
-
-    // Last update timestamp (milliseconds since boot)
-    uint32_t last_update_ms;
-} pool_state_t;
-
-static pool_state_t s_pool_state = {0};
-static SemaphoreHandle_t s_pool_state_mutex = NULL;
+pool_state_t s_pool_state = {0};
+SemaphoreHandle_t s_pool_state_mutex = NULL;
 
 // ======================================================
 // Wi-Fi retry timer callback
@@ -165,7 +114,12 @@ static void wifi_event_handler(void *arg,
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_wifi_connected = false;
+        s_device_ip_address[0] = '\0';  // Clear IP address
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+        // Stop MQTT client on WiFi disconnect
+        mqtt_client_stop();
+
         if (!s_provisioning_active) {
             s_wifi_retry_count++;
             ESP_LOGW(TAG, "WiFi disconnected (attempt %d/%d)",
@@ -187,7 +141,12 @@ static void wifi_event_handler(void *arg,
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+
+        // Store IP address for logging/reference
+        snprintf(s_device_ip_address, sizeof(s_device_ip_address),
+                 IPSTR, IP2STR(&event->ip_info.ip));
+
+        ESP_LOGI(TAG, "Got IP: %s", s_device_ip_address);
         s_wifi_connected = true;
         s_wifi_retry_count = 0;  // Reset retry counter on successful connection
 
@@ -198,6 +157,9 @@ static void wifi_event_handler(void *arg,
 
         led_set_connected();  // Set green LED when connected
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+        // Start MQTT client on WiFi connect
+        mqtt_client_start();
     }
 }
 
@@ -251,7 +213,7 @@ static esp_err_t wifi_credentials_load(char *ssid, size_t ssid_len, char *passwo
 }
 
 // Save WiFi credentials to NVS
-static esp_err_t wifi_credentials_save(const char *ssid, const char *password)
+esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 {
     nvs_handle_t nvs_handle;
     esp_err_t err = nvs_open(PROV_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
@@ -307,6 +269,7 @@ static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x
 static const uint8_t MSG_TYPE_MODE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x14, 0x0D, 0xF1};
 static const uint8_t MSG_TYPE_CHANNELS[] = {0x02, 0x00, 0x50, 0x00, 0x6F, 0x80, 0x00, 0x0D, 0x0D, 0x5B};
 static const uint8_t MSG_TYPE_CHANNEL_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0B, 0x25, 0x00};
+static const uint8_t MSG_TYPE_LIGHT_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x06, 0x0E, 0xE4};
 
 // 62 Temperature sensor / Unknown subsystem
 static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
@@ -314,7 +277,7 @@ static const uint8_t MSG_TYPE_HEATER[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x
 
 #define MSG_HEATER_STATE_IDX 11
 
-// 90 Chemistry (pH, ORP, Chlorinator)
+// 90 Chlorinator (pH, ORP)
 static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
 
 // 6F Touch Screen (source only)
@@ -323,7 +286,7 @@ static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x0
 
 
 // Channel type names
-static const char *CHANNEL_TYPE_NAMES[] = {
+const char *CHANNEL_TYPE_NAMES[] = {
     "Unknown",       // 0
     "Filter",        // 1
     "Cleaning",      // 2
@@ -349,7 +312,7 @@ static const char *CHANNEL_TYPE_NAMES[] = {
 #define CHANNEL_END    0xFD
 
 // Channel state names
-static const char *CHANNEL_STATE_NAMES[] = {
+const char *CHANNEL_STATE_NAMES[] = {
     "Off",          // 0
     "Auto",         // 1
     "On",           // 2
@@ -360,7 +323,7 @@ static const char *CHANNEL_STATE_NAMES[] = {
 #define CHANNEL_STATE_COUNT 6
 
 // Lighting state names
-static const char *LIGHTING_STATE_NAMES[] = {
+const char *LIGHTING_STATE_NAMES[] = {
     "Off",          // 0
     "Auto",         // 1
     "On",           // 2
@@ -368,7 +331,7 @@ static const char *LIGHTING_STATE_NAMES[] = {
 #define LIGHTING_STATE_COUNT 3
 
 // Lighting color names
-static const char *LIGHTING_COLOR_NAMES[] = {
+const char *LIGHTING_COLOR_NAMES[] = {
     "Unknown",           // 0
     "Red",               // 1
     "Orange",            // 2
@@ -430,7 +393,7 @@ static const char* get_device_name(uint8_t addr_hi, uint8_t addr_lo) {
         switch (addr_lo) {
             case 0x50: return "Controller";
             case 0x62: return "Temp Sensor";
-            case 0x90: return "Chemistry";
+            case 0x90: return "Chlorinator";
             case 0x6F: return "Touch Screen";
             case 0xF0: return "Internet GW";
         }
@@ -498,23 +461,53 @@ static bool decode_message(const uint8_t *data, int len)
         }
     }
 
+    // Lighting zone configuration messages - tells us which zones are actually installed
+    if (len >= sizeof(MSG_TYPE_LIGHT_CONFIG) + 4 && memcmp(data, MSG_TYPE_LIGHT_CONFIG, sizeof(MSG_TYPE_LIGHT_CONFIG)) == 0) {
+        uint8_t zone_idx = data[10];
+        if (zone_idx <= 3) {
+            // Mark this zone as configured (only publish if this is the first time)
+            if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                bool was_configured = s_pool_state.lighting[zone_idx].configured;
+
+                s_pool_state.lighting[zone_idx].zone = zone_idx + 1;
+                s_pool_state.lighting[zone_idx].configured = true;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                // Only log and publish if this is the first time we're marking it as configured
+                if (!was_configured) {
+                    ESP_LOGI(TAG, "%s Lighting zone %d configured", addr_info, zone_idx + 1);
+                    // Publish MQTT discovery for this zone now that we know it's configured
+                    mqtt_publish_light(&s_pool_state, zone_idx + 1);
+                }
+
+                xSemaphoreGive(s_pool_state_mutex);
+            }
+        }
+        return true;
+    }
+
     if (len >= sizeof(MSG_TYPE_38) && memcmp(data, MSG_TYPE_38, sizeof(MSG_TYPE_38)) == 0) {
         uint8_t channel = data[10];
         uint8_t value1 = data[11];
         uint8_t value2 = data[12];
 
         if (channel >= 0xC0 && channel <= 0xC3) {
-            // Lighting zone
+            // Lighting zone state
             const char *state = (value2 < LIGHTING_STATE_COUNT) ? LIGHTING_STATE_NAMES[value2] : "Unknown";
             ESP_LOGI(TAG, "%s Lighting zone %d - %s", addr_info, channel - 0xC0 + 1, state);
 
-            // Update pool state
+            // Update pool state (only publish if zone is already configured)
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xC0;
                 s_pool_state.lighting[zone_idx].zone = zone_idx + 1;
                 s_pool_state.lighting[zone_idx].state = value2;
-                s_pool_state.lighting[zone_idx].configured = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                // Only publish if this zone was configured via MSG_TYPE_LIGHT_CONFIG
+                if (s_pool_state.lighting[zone_idx].configured) {
+                    mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                }
+
                 xSemaphoreGive(s_pool_state_mutex);
             }
         } else if (channel >= 0xD0 && channel <= 0xD3) {
@@ -524,12 +517,17 @@ static bool decode_message(const uint8_t *data, int len)
             const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
             ESP_LOGI(TAG, "%s Lighting zone %d color - %s (%d)", addr_info, zone, color_name, color);
 
-            // Update pool state
+            // Update pool state (only publish if zone is already configured)
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xD0;
                 s_pool_state.lighting[zone_idx].color = color;
-                s_pool_state.lighting[zone_idx].configured = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                // Only publish if this zone was configured via MSG_TYPE_LIGHT_CONFIG
+                if (s_pool_state.lighting[zone_idx].configured) {
+                    mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                }
+
                 xSemaphoreGive(s_pool_state_mutex);
             }
         } else if (channel >= 0xE0 && channel <= 0xE3) {
@@ -538,12 +536,17 @@ static bool decode_message(const uint8_t *data, int len)
             uint8_t active = value2;
             ESP_LOGI(TAG, "%s Lighting zone %d active - %s", addr_info, zone, active ? "Yes" : "No");
 
-            // Update pool state
+            // Update pool state (only publish if zone is already configured)
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xE0;
                 s_pool_state.lighting[zone_idx].active = (active != 0);
-                s_pool_state.lighting[zone_idx].configured = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                // Only publish if this zone was configured via MSG_TYPE_LIGHT_CONFIG
+                if (s_pool_state.lighting[zone_idx].configured) {
+                    mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                }
+
                 xSemaphoreGive(s_pool_state_mutex);
             }
         } else if (channel >= 0x6C && channel <= 0x73) {
@@ -595,6 +598,10 @@ static bool decode_message(const uint8_t *data, int len)
             s_pool_state.mode = mode;
             s_pool_state.mode_valid = true;
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+            // Publish to MQTT
+            mqtt_publish_mode(&s_pool_state);
+
             xSemaphoreGive(s_pool_state_mutex);
         }
         return true;
@@ -652,6 +659,9 @@ static bool decode_message(const uint8_t *data, int len)
                     s_pool_state.channels[ch_num - 1].type = ch_type;
                     s_pool_state.channels[ch_num - 1].state = state;
                     s_pool_state.channels[ch_num - 1].configured = true;
+
+                    // Publish to MQTT (outside mutex to avoid blocking)
+                    mqtt_publish_channel(&s_pool_state, ch_num);
                 }
                 idx += 3;
                 ch_num++;
@@ -671,6 +681,10 @@ static bool decode_message(const uint8_t *data, int len)
             s_pool_state.spa_setpoint = spa_set_temp;
             s_pool_state.pool_setpoint = pool_set_temp;
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+            // Publish to MQTT
+            mqtt_publish_temperature(&s_pool_state);
+
             xSemaphoreGive(s_pool_state_mutex);
         }
         return true;
@@ -684,6 +698,10 @@ static bool decode_message(const uint8_t *data, int len)
             s_pool_state.current_temp = current_temp;
             s_pool_state.temp_valid = true;
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+            // Publish to MQTT
+            mqtt_publish_temperature(&s_pool_state);
+
             xSemaphoreGive(s_pool_state_mutex);
         }
         return true;
@@ -697,6 +715,10 @@ static bool decode_message(const uint8_t *data, int len)
             s_pool_state.heater_on = (heater_state != 0);
             s_pool_state.heater_valid = true;
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+            // Publish to MQTT
+            mqtt_publish_heater(&s_pool_state);
+
             xSemaphoreGive(s_pool_state_mutex);
         }
         return true;
@@ -735,6 +757,10 @@ static bool decode_message(const uint8_t *data, int len)
                 s_pool_state.ph_reading = value;
                 s_pool_state.ph_valid = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                // Publish to MQTT
+                mqtt_publish_chlorinator(&s_pool_state);
+
                 xSemaphoreGive(s_pool_state_mutex);
             }
             return true;
@@ -747,6 +773,10 @@ static bool decode_message(const uint8_t *data, int len)
                 s_pool_state.orp_reading = value;
                 s_pool_state.orp_valid = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                // Publish to MQTT
+                mqtt_publish_chlorinator(&s_pool_state);
+
                 xSemaphoreGive(s_pool_state_mutex);
             }
             return true;
@@ -757,346 +787,6 @@ static bool decode_message(const uint8_t *data, int len)
 }
 
 
-// ======================================================
-// Custom HTTP Handlers for Web Provisioning UI
-// ======================================================
-
-// HTML page for WiFi provisioning
-static const char HTML_PAGE[] = "<!DOCTYPE html>"
-"<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-"<title>Pool Controller WiFi Setup</title>"
-"<style>body{font-family:Arial,sans-serif;max-width:400px;margin:50px auto;padding:20px}"
-"h1{color:#333;text-align:center}button{background:#4CAF50;color:white;padding:10px 20px;"
-"border:none;border-radius:4px;cursor:pointer;width:100%;margin-top:10px}"
-"button:hover{background:#45a049}input,select{width:100%;padding:8px;margin:8px 0;"
-"box-sizing:border-box;border:1px solid #ddd;border-radius:4px}"
-"label{font-weight:bold}.status{padding:10px;margin:10px 0;border-radius:4px}"
-".success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}"
-"</style></head><body>"
-"<h2>Pool Controller WiFi Setup</h2>"
-"<div id='status'></div>"
-"<form id='wifiForm'><label>WiFi Network:</label>"
-"<select id='ssid' name='ssid' required><option value=''>Scanning...</option></select>"
-"<label>Password:</label><input type='password' id='password' name='password' required>"
-"<button type='submit'>Connect</button></form>"
-"<script>"
-"function showStatus(msg,isError){const d=document.getElementById('status');"
-"d.innerHTML='<div class=\"status '+(isError?'error':'success')+'\">'+msg+'</div>';}"
-"function scanWiFi(){fetch('/scan').then(r=>r.json()).then(data=>{"
-"const s=document.getElementById('ssid');s.innerHTML='';"
-"data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
-"o.text=n.ssid+' ('+n.rssi+' dBm)';s.appendChild(o);});}).catch(e=>{"
-"showStatus('Scan failed: '+e,true);});}"
-"document.getElementById('wifiForm').onsubmit=function(e){"
-"e.preventDefault();const ssid=document.getElementById('ssid').value;"
-"const pass=document.getElementById('password').value;"
-"showStatus('Connecting to '+ssid+'...',false);"
-"fetch('/provision',{method:'POST',headers:{'Content-Type':'application/json'},"
-"body:JSON.stringify({ssid:ssid,password:pass})}).then(r=>r.json()).then(data=>{"
-"if(data.success){showStatus('Connected! Device will restart.',false);"
-"}else{showStatus('Failed: '+data.message,true);}}).catch(e=>{"
-"showStatus('Error: '+e,true);});return false;};"
-"scanWiFi();</script></body></html>";
-
-// HTTP GET handler for root page
-static esp_err_t root_get_handler(httpd_req_t *req)
-{
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, HTML_PAGE, HTTPD_RESP_USE_STRLEN);
-    return ESP_OK;
-}
-
-// HTTP GET handler for WiFi scan
-static esp_err_t scan_get_handler(httpd_req_t *req)
-{
-    wifi_scan_config_t scan_config = {
-        .ssid = NULL,
-        .bssid = NULL,
-        .channel = 0,
-        .show_hidden = false,
-        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
-        .scan_time.active.min = 100,
-        .scan_time.active.max = 300,
-    };
-
-    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
-
-    uint16_t ap_count = 0;
-    esp_wifi_scan_get_ap_num(&ap_count);
-
-    wifi_ap_record_t *ap_list = malloc(sizeof(wifi_ap_record_t) * ap_count);
-    if (ap_list == NULL) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
-        return ESP_FAIL;
-    }
-
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_count, ap_list));
-
-    // Build JSON response
-    char *json_resp = malloc(4096);
-    if (json_resp == NULL) {
-        free(ap_list);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
-        return ESP_FAIL;
-    }
-
-    int len = snprintf(json_resp, 4096, "[");
-    for (int i = 0; i < ap_count && i < 20; i++) {
-        len += snprintf(json_resp + len, 4096 - len,
-                       "%s{\"ssid\":\"%s\",\"rssi\":%d}",
-                       i > 0 ? "," : "",
-                       ap_list[i].ssid,
-                       ap_list[i].rssi);
-    }
-    len += snprintf(json_resp + len, 4096 - len, "]");
-
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json_resp, len);
-
-    free(ap_list);
-    free(json_resp);
-    return ESP_OK;
-}
-
-// HTTP POST handler for provisioning
-static esp_err_t provision_post_handler(httpd_req_t *req)
-{
-    char content[200];
-    int ret = httpd_req_recv(req, content, sizeof(content) - 1);
-    if (ret <= 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid request");
-        return ESP_FAIL;
-    }
-    content[ret] = '\0';
-
-    // Simple JSON parsing (looking for ssid and password fields)
-    char ssid[33] = {0};
-    char password[64] = {0};
-
-    char *ssid_start = strstr(content, "\"ssid\":\"");
-    char *pass_start = strstr(content, "\"password\":\"");
-
-    if (ssid_start && pass_start) {
-        ssid_start += 8; // Skip "ssid":"
-        char *ssid_end = strchr(ssid_start, '"');
-        if (ssid_end) {
-            int ssid_len = ssid_end - ssid_start;
-            if (ssid_len < sizeof(ssid)) {
-                memcpy(ssid, ssid_start, ssid_len);
-                ssid[ssid_len] = '\0';
-            }
-        }
-
-        pass_start += 12; // Skip "password":"
-        char *pass_end = strchr(pass_start, '"');
-        if (pass_end) {
-            int pass_len = pass_end - pass_start;
-            if (pass_len < sizeof(password)) {
-                memcpy(password, pass_start, pass_len);
-                password[pass_len] = '\0';
-            }
-        }
-    }
-
-    if (strlen(ssid) == 0) {
-        const char *resp = "{\"success\":false,\"message\":\"Invalid SSID\"}";
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
-        return ESP_OK;
-    }
-
-    ESP_LOGI(TAG, "Received WiFi credentials: SSID=%s", ssid);
-
-    // Save credentials to NVS
-    esp_err_t err = wifi_credentials_save(ssid, password);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to save credentials to NVS: %s", esp_err_to_name(err));
-        const char *resp = "{\"success\":false,\"message\":\"Failed to save credentials\"}";
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
-        return ESP_OK;
-    }
-
-    ESP_LOGI(TAG, "Credentials saved to NVS successfully");
-
-    // Send success response
-    const char *resp = "{\"success\":true,\"message\":\"Connected! Device will restart...\"}";
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
-
-    // Restart device to apply new credentials
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    esp_restart();
-
-    return ESP_OK;
-}
-
-// HTTP GET handler for pool status
-static esp_err_t status_get_handler(httpd_req_t *req)
-{
-    // Allocate a buffer for JSON response (8KB should be enough)
-    char *json_resp = malloc(8192);
-    if (json_resp == NULL) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
-        return ESP_FAIL;
-    }
-
-    int len = 0;
-
-    // Lock the pool state and build JSON response
-    if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        // Start JSON object
-        len += snprintf(json_resp + len, 8192 - len, "{");
-
-        // Temperature section
-        len += snprintf(json_resp + len, 8192 - len, "\"temperature\":{");
-        if (s_pool_state.temp_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"current\":%d,", s_pool_state.current_temp);
-        } else {
-            len += snprintf(json_resp + len, 8192 - len, "\"current\":null,");
-        }
-        len += snprintf(json_resp + len, 8192 - len, "\"pool_setpoint\":%d,", s_pool_state.pool_setpoint);
-        len += snprintf(json_resp + len, 8192 - len, "\"spa_setpoint\":%d,", s_pool_state.spa_setpoint);
-        len += snprintf(json_resp + len, 8192 - len, "\"scale\":\"%s\"",
-                       s_pool_state.temp_scale_fahrenheit ? "Fahrenheit" : "Celsius");
-        len += snprintf(json_resp + len, 8192 - len, "},");
-
-        // Heater section
-        len += snprintf(json_resp + len, 8192 - len, "\"heater\":{");
-        if (s_pool_state.heater_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"state\":\"%s\"",
-                           s_pool_state.heater_on ? "on" : "off");
-        } else {
-            len += snprintf(json_resp + len, 8192 - len, "\"state\":null");
-        }
-        len += snprintf(json_resp + len, 8192 - len, "},");
-
-        // Mode section
-        len += snprintf(json_resp + len, 8192 - len, "\"mode\":");
-        if (s_pool_state.mode_valid) {
-            const char *mode_str = (s_pool_state.mode == 0) ? "Spa" :
-                                   (s_pool_state.mode == 1) ? "Pool" : "Unknown";
-            len += snprintf(json_resp + len, 8192 - len, "\"%s\",", mode_str);
-        } else {
-            len += snprintf(json_resp + len, 8192 - len, "null,");
-        }
-
-        // Channels section
-        len += snprintf(json_resp + len, 8192 - len, "\"channels\":[");
-        bool first_channel = true;
-        for (int i = 0; i < 8; i++) {
-            if (s_pool_state.channels[i].configured) {
-                if (!first_channel) {
-                    len += snprintf(json_resp + len, 8192 - len, ",");
-                }
-                first_channel = false;
-
-                const char *type_name = (s_pool_state.channels[i].type < CHANNEL_TYPE_COUNT) ?
-                                       CHANNEL_TYPE_NAMES[s_pool_state.channels[i].type] : "Unknown";
-                const char *state_name = (s_pool_state.channels[i].state < CHANNEL_STATE_COUNT) ?
-                                        CHANNEL_STATE_NAMES[s_pool_state.channels[i].state] : "Unknown";
-
-                len += snprintf(json_resp + len, 8192 - len,
-                               "{\"id\":%d,\"name\":\"%s\",\"type\":\"%s\",\"state\":\"%s\"}",
-                               s_pool_state.channels[i].id,
-                               s_pool_state.channels[i].name[0] ? s_pool_state.channels[i].name : type_name,
-                               type_name,
-                               state_name);
-            }
-        }
-        len += snprintf(json_resp + len, 8192 - len, "],");
-
-        // Lighting section
-        len += snprintf(json_resp + len, 8192 - len, "\"lighting\":[");
-        bool first_light = true;
-        for (int i = 0; i < 4; i++) {
-            if (s_pool_state.lighting[i].configured) {
-                if (!first_light) {
-                    len += snprintf(json_resp + len, 8192 - len, ",");
-                }
-                first_light = false;
-
-                const char *state_name = (s_pool_state.lighting[i].state < LIGHTING_STATE_COUNT) ?
-                                        LIGHTING_STATE_NAMES[s_pool_state.lighting[i].state] : "Unknown";
-                const char *color_name = (s_pool_state.lighting[i].color < LIGHTING_COLOR_COUNT) ?
-                                        LIGHTING_COLOR_NAMES[s_pool_state.lighting[i].color] : "Unknown";
-
-                len += snprintf(json_resp + len, 8192 - len,
-                               "{\"zone\":%d,\"state\":\"%s\",\"color\":\"%s\",\"active\":%s}",
-                               s_pool_state.lighting[i].zone,
-                               state_name,
-                               color_name,
-                               s_pool_state.lighting[i].active ? "true" : "false");
-            }
-        }
-        len += snprintf(json_resp + len, 8192 - len, "],");
-
-        // Chlorinator section
-        len += snprintf(json_resp + len, 8192 - len, "\"chlorinator\":{");
-        if (s_pool_state.ph_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"ph_setpoint\":%.1f,",
-                           s_pool_state.ph_setpoint / 10.0);
-            len += snprintf(json_resp + len, 8192 - len, "\"ph_reading\":%.1f,",
-                           s_pool_state.ph_reading / 10.0);
-        } else {
-            len += snprintf(json_resp + len, 8192 - len, "\"ph_setpoint\":null,\"ph_reading\":null,");
-        }
-        if (s_pool_state.orp_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"orp_setpoint\":%d,",
-                           s_pool_state.orp_setpoint);
-            len += snprintf(json_resp + len, 8192 - len, "\"orp_reading\":%d",
-                           s_pool_state.orp_reading);
-        } else {
-            len += snprintf(json_resp + len, 8192 - len, "\"orp_setpoint\":null,\"orp_reading\":null");
-        }
-        len += snprintf(json_resp + len, 8192 - len, "},");
-
-        // Last update timestamp
-        len += snprintf(json_resp + len, 8192 - len, "\"last_update_ms\":%lu",
-                       (unsigned long)s_pool_state.last_update_ms);
-
-        // Close JSON object
-        len += snprintf(json_resp + len, 8192 - len, "}");
-
-        xSemaphoreGive(s_pool_state_mutex);
-    } else {
-        free(json_resp);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to acquire state mutex");
-        return ESP_FAIL;
-    }
-
-    // Send JSON response
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json_resp, len);
-
-    free(json_resp);
-    return ESP_OK;
-}
-
-// URI handlers
-static const httpd_uri_t root_uri = {
-    .uri = "/",
-    .method = HTTP_GET,
-    .handler = root_get_handler
-};
-
-static const httpd_uri_t scan_uri = {
-    .uri = "/scan",
-    .method = HTTP_GET,
-    .handler = scan_get_handler
-};
-
-static const httpd_uri_t provision_uri = {
-    .uri = "/provision",
-    .method = HTTP_POST,
-    .handler = provision_post_handler
-};
-
-static const httpd_uri_t status_uri = {
-    .uri = "/status",
-    .method = HTTP_GET,
-    .handler = status_get_handler
-};
 
 
 // ======================================================
@@ -1206,12 +896,11 @@ static esp_err_t start_provisioning(void)
 
     esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
     if (err == ESP_OK) {
-        httpd_register_uri_handler(s_httpd_handle, &root_uri);
-        httpd_register_uri_handler(s_httpd_handle, &scan_uri);
-        httpd_register_uri_handler(s_httpd_handle, &provision_uri);
-        httpd_register_uri_handler(s_httpd_handle, &status_uri);
+        // Register URI handlers
+        web_handlers_register(s_httpd_handle);
         ESP_LOGI(TAG, "HTTP server started - Navigate to http://192.168.4.1");
         ESP_LOGI(TAG, "Pool status available at http://192.168.4.1/status");
+        ESP_LOGI(TAG, "MQTT configuration at http://192.168.4.1/mqtt_config");
     } else {
         ESP_LOGE(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
         return err;
@@ -1442,6 +1131,16 @@ void app_main(void)
     wifi_init_sta();
     ESP_ERROR_CHECK(start_provisioning());
 
+    // Initialize MQTT client (will start when WiFi connects)
+    esp_err_t mqtt_err = mqtt_client_init();
+    if (mqtt_err == ESP_OK) {
+        ESP_LOGI(TAG, "MQTT client initialized");
+    } else if (mqtt_err == ESP_ERR_NOT_FOUND) {
+        ESP_LOGI(TAG, "MQTT not configured");
+    } else {
+        ESP_LOGW(TAG, "MQTT initialization failed: %s", esp_err_to_name(mqtt_err));
+    }
+
     if (s_provisioning_active) {
         ESP_LOGI(TAG, "Provisioning mode active - waiting for configuration...");
         ESP_LOGI(TAG, "Connect to the WiFi AP and navigate to http://192.168.4.1");
@@ -1465,8 +1164,10 @@ void app_main(void)
 
         esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
         if (err == ESP_OK) {
-            httpd_register_uri_handler(s_httpd_handle, &status_uri);
-            ESP_LOGI(TAG, "HTTP server started - Pool status available at http://<device-ip>/status");
+            // Register URI handlers
+            web_handlers_register(s_httpd_handle);
+            ESP_LOGI(TAG, "HTTP server started - Pool status available at http://%s/status", s_device_ip_address);
+            ESP_LOGI(TAG, "MQTT configuration at http://%s/mqtt_config", s_device_ip_address);
         } else {
             ESP_LOGW(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
         }
@@ -1474,7 +1175,7 @@ void app_main(void)
         // Start TCP server for UART bridge
         xTaskCreate(tcp_server_task,
                     "tcp_server_task",
-                    4096,
+                    8192,  // Increased from 4096 to handle MQTT discovery publishing
                     NULL,
                     5,
                     NULL);

@@ -41,6 +41,38 @@ First Boot (No WiFi):
 Subsequent Boots (With WiFi):
 * Blue solid (startup)
 * Yellow solid (connected & got IP)
+TODO - add the MQTT States
+
+
+
+## General architecture
+
+```mermaid
+flowchart TD
+
+    Pool[fa:fa-life-ring Pool Connect 10]
+
+    subgraph Astral Pool Controller
+        Comms[Comms Module]
+        Core[fa:fa-microchip Core System]
+        Web[Web Interface]
+        MQTT[MQTT]
+    end
+
+    HA[Home Assistant]
+
+    Pool <-->|fa:fa-plug via RJ12| Comms
+    Comms <--> Core
+    Web <--> Core
+    MQTT <--> Core
+    MQTT <-->|fa:fa-wifi via wifi| HA
+```
+
+The system consists of an ESP32 C6 module that can be daisy chained into and existing connect 10 system via a RJ12 connection.
+
+It setups up a wifi AP on 192.168.4.1 for initial configuration to connect to the existing network.
+
+It used MQTT to connect and publish information and recieve information from Home Assistant.
 
 
 ## From ESP IDF template
