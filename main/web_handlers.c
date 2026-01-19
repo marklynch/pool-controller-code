@@ -10,13 +10,98 @@
 static const char *TAG = "WEB_HANDLERS";
 
 // ======================================================
+// Common HTML Page Parts (Header and footer)
+// ======================================================
+static const char PAGE_FOOTER[] = "</body></html>";
+
+// Dynamic functions for page header and navigation
+char *get_page_header(const char *title) {
+    const char *fmt = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<style>body{font-family:Arial;margin:40px;background:#f0f0f0}"
+        "h1{color:#333}.container{background:white;padding:30px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);max-width:500px}"
+        "label{display:block;margin:15px 0 5px;font-weight:bold;color:#555}"
+        "input[type=text],input[type=number],input[type=password]{width:100%%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box}"
+        "input[type=checkbox]{margin-right:10px}"
+        ".checkbox-label{display:inline;font-weight:normal}"
+        "button{background:#4CAF50;color:white;padding:12px 30px;border:none;border-radius:4px;cursor:pointer;font-size:16px;margin-top:20px}"
+        "button:hover{background:#45a049}"
+        ".status{margin-top:15px;padding:10px;border-radius:4px;display:none}"
+        ".success{background:#d4edda;color:#155724;border:1px solid #c3e6cb}"
+        ".error{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}"
+        "</style><title>%s</title></head><body>";
+    // calculate the required size
+    int n = snprintf(NULL, 0, fmt, title);
+    if (n < 0) return NULL;
+
+    // allocate memory for the header
+    char *header = malloc((size_t)n + 1);
+    if (!header) return NULL;
+
+    snprintf(header, (size_t)n + 1, fmt, title);
+    return header;
+}
+
+char *get_page_nav(const char page) {
+    // TODO - Make 'page' indicate current page for highlighting
+    const char *fmt = "<div class='nav'><a href='/'>WiFi Scan</a> | "
+        "<a href='/mqtt_config'>MQTT Config</a> | "
+        "<a href='/status'>Status</a>"
+        "</div><hr>";
+    // calculate the required size
+    int n = snprintf(NULL, 0, fmt, page);
+    if (n < 0) return NULL;
+
+    // allocate memory for the header
+    char *header = malloc((size_t)n + 1);
+    if (!header) return NULL;
+
+    snprintf(header, (size_t)n + 1, fmt, page);
+    return header;
+}
+
+// ======================================================
 // Root Page Handler
 // ======================================================
 
+// HTML page for WiFi provisioning
+const char WIFI_PAGE[] = "<div class='container'><h2>Pool Controller WiFi Setup</h2>"
+"<div id='status'></div>"
+"<form id='wifiForm'><label>WiFi Network:</label>"
+"<select id='ssid' name='ssid' required><option value=''>Scanning...</option></select>"
+"<label>Password:</label><input type='password' id='password' name='password' required>"
+"<button type='submit'>Connect</button></form></div>"
+"<script>"
+"function showStatus(msg,isError){const d=document.getElementById('status');"
+"d.innerHTML='<div class=\"status '+(isError?'error':'success')+'\">'+msg+'</div>';}"
+"function scanWiFi(){fetch('/scan').then(r=>r.json()).then(data=>{"
+"const s=document.getElementById('ssid');s.innerHTML='';"
+"data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
+"o.text=n.ssid+' ('+n.rssi+' dBm)';s.appendChild(o);});}).catch(e=>{"
+"showStatus('Scan failed: '+e,true);});}"
+"document.getElementById('wifiForm').onsubmit=function(e){"
+"e.preventDefault();const ssid=document.getElementById('ssid').value;"
+"const pass=document.getElementById('password').value;"
+"showStatus('Connecting to '+ssid+'...',false);"
+"fetch('/provision',{method:'POST',headers:{'Content-Type':'application/json'},"
+"body:JSON.stringify({ssid:ssid,password:pass})}).then(r=>r.json()).then(data=>{"
+"if(data.success){showStatus('Connected! Device will restart.',false);"
+"}else{showStatus('Failed: '+data.message,true);}}).catch(e=>{"
+"showStatus('Error: '+e,true);});return false;};"
+"scanWiFi();</script>";
+
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
+    char page_title[] = "Pool Controller WiFi Setup";
+    char *header = get_page_header(page_title);
+    char *nav = get_page_nav('/');
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, HTML_PAGE, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN); 
+    httpd_resp_send_chunk(req, WIFI_PAGE, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, PAGE_FOOTER, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+    free(nav);
+    free(header);
     return ESP_OK;
 }
 
@@ -77,6 +162,11 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
 
 // ======================================================
 // WiFi Provisioning Handler
+// ======================================================
+
+
+// ======================================================
+// Custom HTTP Handlers for Web Provisioning UI
 // ======================================================
 
 static esp_err_t provision_post_handler(httpd_req_t *req)
@@ -307,19 +397,7 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
     mqtt_load_config(&config);
 
     const char *html_start =
-        "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<style>body{font-family:Arial;margin:40px;background:#f0f0f0}"
-        "h1{color:#333}.container{background:white;padding:30px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);max-width:500px}"
-        "label{display:block;margin:15px 0 5px;font-weight:bold;color:#555}"
-        "input[type=text],input[type=number],input[type=password]{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box}"
-        "input[type=checkbox]{margin-right:10px}"
-        ".checkbox-label{display:inline;font-weight:normal}"
-        "button{background:#4CAF50;color:white;padding:12px 30px;border:none;border-radius:4px;cursor:pointer;font-size:16px;margin-top:20px}"
-        "button:hover{background:#45a049}"
-        ".status{margin-top:15px;padding:10px;border-radius:4px;display:none}"
-        ".success{background:#d4edda;color:#155724;border:1px solid #c3e6cb}"
-        ".error{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}"
-        "</style></head><body><div class='container'>"
+        "<div class='container'>"
         "<h1>MQTT Configuration</h1>"
         "<form id='mqttForm'>"
         "<label><input type='checkbox' id='enabled' name='enabled'";
@@ -361,13 +439,22 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         "s.textContent='Failed to save configuration';"
         "s.className='status error';s.style.display='block';});"
         "});"
-        "</script></div></body></html>";
+        "</script></div>";
 
+
+    char page_title[] = "MQTT Configuration";
+    char *header = get_page_header(page_title);
+    char *nav = get_page_nav('/');
     httpd_resp_set_type(req, "text/html");
+    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_mid, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_end, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, PAGE_FOOTER, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
+    free(nav);
+    free(header);
 
     return ESP_OK;
 }

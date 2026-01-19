@@ -79,10 +79,4 @@ typedef struct {
 extern pool_state_t s_pool_state;
 extern SemaphoreHandle_t s_pool_state_mutex;
 
-// HTML provisioning page
-extern const char HTML_PAGE[];
-
-// WiFi credentials save function
-esp_err_t wifi_credentials_save(const char *ssid, const char *password);
-
 #endif // POOL_STATE_H
