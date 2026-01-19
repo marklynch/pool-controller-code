@@ -1,5 +1,6 @@
 #include "mqtt_publish.h"
 #include "mqtt_poolclient.h"
+#include "mqtt_discovery.h"
 #include "pool_state.h"
 #include "esp_log.h"
 #include <string.h>
@@ -9,6 +10,12 @@ static const char *TAG = "MQTT_PUBLISH";
 
 // Last published state (for change detection) - using pool_state_t as single source of truth
 static pool_state_t s_last_published_state = {0};
+
+// Track whether discovery has been published for each channel/light
+static struct {
+    bool channels[8];
+    bool lights[4];
+} s_discovery_published = {0};
 
 // ======================================================
 // Temperature Publishing
@@ -116,6 +123,22 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
     int idx = channel_id - 1;
     const channel_state_t *channel = &current_state->channels[idx];
 
+    // Skip unconfigured/unused channels
+    if (!channel->configured) {
+        ESP_LOGD(TAG, "Skipping unconfigured channel %d", channel_id);
+        return;
+    }
+
+    // Use channel name if set, otherwise fall back to type name
+    const char *type_name = (channel->type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[channel->type] : "Unknown";
+    const char *display_name = (channel->name[0] != '\0') ? channel->name : type_name;
+
+    // Publish discovery if this is the first time seeing this channel
+    if (!s_discovery_published.channels[idx]) {
+        mqtt_publish_channel_discovery_single(channel_id, display_name);
+        s_discovery_published.channels[idx] = true;
+    }
+
     // Check if anything changed
     if (s_last_published_state.channels[idx].configured &&
         s_last_published_state.channels[idx].type == channel->type &&
@@ -137,7 +160,7 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
     char payload[256];
     snprintf(payload, sizeof(payload),
              "{\"state\":\"%s\",\"name\":\"%s\"}",
-             state_name, channel->name);
+             state_name, display_name);
 
     mqtt_publish(topic, payload, 0, false);
 
@@ -147,7 +170,7 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
     strncpy(s_last_published_state.channels[idx].name, channel->name, sizeof(s_last_published_state.channels[idx].name) - 1);
     s_last_published_state.channels[idx].configured = true;
 
-    ESP_LOGI(TAG, "Published channel %d: %s (%s)", channel_id, state_name, channel->name);
+    ESP_LOGI(TAG, "Published channel %d: %s (%s)", channel_id, state_name, display_name);
 }
 
 // ======================================================
@@ -162,6 +185,18 @@ void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
 
     int idx = zone - 1;
     const lighting_state_t *light = &current_state->lighting[idx];
+
+    // Skip unconfigured/unused lighting zones
+    if (!light->configured) {
+        ESP_LOGD(TAG, "Skipping unconfigured light zone %d", zone);
+        return;
+    }
+
+    // Publish discovery if this is the first time seeing this light zone
+    if (!s_discovery_published.lights[idx]) {
+        mqtt_publish_light_discovery_single(zone);
+        s_discovery_published.lights[idx] = true;
+    }
 
     // Check if anything changed
     if (s_last_published_state.lighting[idx].configured &&

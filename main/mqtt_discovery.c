@@ -1,8 +1,10 @@
 #include "mqtt_discovery.h"
 #include "mqtt_poolclient.h"
+#include "pool_state.h"
 #include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static const char *TAG = "MQTT_DISCOVERY";
 
@@ -168,7 +170,7 @@ static void publish_mode_discovery(const char *device_id)
 // Channel Switch Discovery (8 channels)
 // ======================================================
 
-static void publish_channel_discovery(const char *device_id, int channel_num)
+static void publish_channel_discovery(const char *device_id, int channel_num, const char *channel_name)
 {
     char avail_topic[128];
     char state_topic[128];
@@ -183,15 +185,22 @@ static void publish_channel_discovery(const char *device_id, int channel_num)
     char object_id[32];
     snprintf(object_id, sizeof(object_id), "channel_%d", channel_num);
 
-    char config[1024];
-    snprintf(config, sizeof(config),
-             "{\"name\":\"Channel %d\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
+    // Allocate config buffer on heap to avoid stack overflow
+    char *config = malloc(1024);
+    if (!config) {
+        ESP_LOGE(TAG, "Failed to allocate memory for channel discovery config");
+        return;
+    }
+
+    snprintf(config, 1024,
+             "{\"name\":\"%s\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
              "\"value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
              "\"unique_id\":\"%s_ch%d\",\"availability_topic\":\"%s\",%s}",
-             channel_num, state_topic, command_topic, device_id, channel_num, avail_topic, device_json);
+             channel_name, state_topic, command_topic, device_id, channel_num, avail_topic, device_json);
 
     publish_discovery("switch", object_id, config);
+    free(config);
 }
 
 // ======================================================
@@ -213,8 +222,14 @@ static void publish_light_discovery(const char *device_id, int zone_num)
     char object_id[32];
     snprintf(object_id, sizeof(object_id), "light_%d", zone_num);
 
-    char config[1024];
-    snprintf(config, sizeof(config),
+    // Allocate config buffer on heap to avoid stack overflow
+    char *config = malloc(1024);
+    if (!config) {
+        ESP_LOGE(TAG, "Failed to allocate memory for light discovery config");
+        return;
+    }
+
+    snprintf(config, 1024,
              "{\"name\":\"Light Zone %d\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
              "\"state_value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
@@ -222,6 +237,7 @@ static void publish_light_discovery(const char *device_id, int zone_num)
              zone_num, state_topic, command_topic, device_id, zone_num, avail_topic, device_json);
 
     publish_discovery("light", object_id, config);
+    free(config);
 }
 
 // ======================================================
@@ -282,6 +298,28 @@ static void publish_orp_discovery(const char *device_id)
 }
 
 // ======================================================
+// Individual Discovery Functions (called when items first configured)
+// ======================================================
+
+void mqtt_publish_channel_discovery_single(int channel_num, const char *channel_name)
+{
+    char device_id[32];
+    mqtt_get_device_id(device_id, sizeof(device_id));
+
+    ESP_LOGI(TAG, "Publishing discovery for channel %d: %s", channel_num, channel_name);
+    publish_channel_discovery(device_id, channel_num, channel_name);
+}
+
+void mqtt_publish_light_discovery_single(int zone_num)
+{
+    char device_id[32];
+    mqtt_get_device_id(device_id, sizeof(device_id));
+
+    ESP_LOGI(TAG, "Publishing discovery for light zone %d", zone_num);
+    publish_light_discovery(device_id, zone_num);
+}
+
+// ======================================================
 // Main Discovery Function
 // ======================================================
 
@@ -303,15 +341,8 @@ void mqtt_publish_discovery(void)
     // Mode
     publish_mode_discovery(device_id);
 
-    // Channels (8)
-    for (int i = 1; i <= 8; i++) {
-        publish_channel_discovery(device_id, i);
-    }
-
-    // Lights (4)
-    for (int i = 1; i <= 4; i++) {
-        publish_light_discovery(device_id, i);
-    }
+    // Note: Channels and lights are NOT published here.
+    // They are published individually when first configured (see mqtt_publish.c)
 
     // Chemistry
     publish_ph_discovery(device_id);

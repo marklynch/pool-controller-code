@@ -30,6 +30,7 @@ Don't publish to MQTT after every change - add small debounce to it
 - Log out the IP address correctly when it has one.
 - Improved the display of Spa and Pool temps in home assistant box instead of slider
 - Fixed the display of pool light in home assistant
+- Only show channels that are actually configured.
 
 
 ### Removed

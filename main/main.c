@@ -1146,7 +1146,7 @@ void app_main(void)
         // Start TCP server for UART bridge
         xTaskCreate(tcp_server_task,
                     "tcp_server_task",
-                    4096,
+                    8192,  // Increased from 4096 to handle MQTT discovery publishing
                     NULL,
                     5,
                     NULL);
