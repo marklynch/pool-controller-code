@@ -48,11 +48,6 @@
 // Wi-Fi event bits
 #define WIFI_CONNECTED_BIT  BIT0
 
-// Provisioning configuration
-#define PROV_SOFTAP_SSID_PREFIX    "POOL_"
-#define PROV_NVS_NAMESPACE         "wifi_config"
-#define PROV_NVS_KEY_SSID          "ssid"
-#define PROV_NVS_KEY_PASS          "password"
 
 static const char *TAG = "POOL_BUS_BRIDGE";
 

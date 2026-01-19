@@ -4,6 +4,7 @@
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "nvs_flash.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -76,7 +77,8 @@ const char WIFI_PAGE[] = "<div class='container'><h2>Pool Controller WiFi Setup<
 "function scanWiFi(){fetch('/scan').then(r=>r.json()).then(data=>{"
 "const s=document.getElementById('ssid');s.innerHTML='';"
 "data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
-"o.text=n.ssid+' ('+n.rssi+' dBm)';s.appendChild(o);});}).catch(e=>{"
+"o.text=n.ssid+' ('+n.rssi+' dBm)'+(n.current?' - Current':'');"
+"if(n.current)o.selected=true;s.appendChild(o);});}).catch(e=>{"
 "showStatus('Scan failed: '+e,true);});}"
 "document.getElementById('wifiForm').onsubmit=function(e){"
 "e.preventDefault();const ssid=document.getElementById('ssid').value;"
@@ -111,6 +113,23 @@ static esp_err_t root_get_handler(httpd_req_t *req)
 
 static esp_err_t scan_get_handler(httpd_req_t *req)
 {
+    // Load current WiFi SSID from NVS to mark it in results
+    char current_ssid[33] = {0};
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (err == ESP_OK) {
+        size_t ssid_len = sizeof(current_ssid);
+        err = nvs_get_str(nvs_handle, PROV_NVS_KEY_SSID, current_ssid, &ssid_len);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "Loaded current SSID from NVS: '%s' (len=%d)", current_ssid, ssid_len);
+        } else {
+            ESP_LOGW(TAG, "Failed to read SSID from NVS: %s", esp_err_to_name(err));
+        }
+        nvs_close(nvs_handle);
+    } else {
+        ESP_LOGW(TAG, "Failed to open %s NVS: %s", PROV_NVS_NAMESPACE, esp_err_to_name(err));
+    }
+
     wifi_scan_config_t scan_config = {
         .ssid = NULL,
         .bssid = NULL,
@@ -134,21 +153,62 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
 
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_count, ap_list));
 
-    // Build JSON response
-    char *json_resp = malloc(4096);
-    if (json_resp == NULL) {
+    // Deduplicate - track unique SSIDs and their best RSSI
+    typedef struct {
+        char ssid[33];
+        int8_t rssi;
+    } unique_ap_t;
+
+    unique_ap_t *unique_aps = malloc(sizeof(unique_ap_t) * ap_count);
+    if (unique_aps == NULL) {
         free(ap_list);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
         return ESP_FAIL;
     }
 
+    int unique_count = 0;
+    for (int i = 0; i < ap_count; i++) {
+        // Check if this SSID already exists in unique list
+        bool found = false;
+        for (int j = 0; j < unique_count; j++) {
+            if (strcmp((char *)ap_list[i].ssid, unique_aps[j].ssid) == 0) {
+                // Update RSSI if this one is stronger (less negative)
+                if (ap_list[i].rssi > unique_aps[j].rssi) {
+                    unique_aps[j].rssi = ap_list[i].rssi;
+                }
+                found = true;
+                break;
+            }
+        }
+
+        // If new SSID, add it
+        if (!found && unique_count < ap_count) {
+            strncpy(unique_aps[unique_count].ssid, (char *)ap_list[i].ssid, sizeof(unique_aps[unique_count].ssid) - 1);
+            unique_aps[unique_count].ssid[32] = '\0';
+            unique_aps[unique_count].rssi = ap_list[i].rssi;
+            unique_count++;
+        }
+    }
+
+    // Build JSON response from unique list
+    char *json_resp = malloc(4096);
+    if (json_resp == NULL) {
+        free(ap_list);
+        free(unique_aps);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        return ESP_FAIL;
+    }
+
     int len = snprintf(json_resp, 4096, "[");
-    for (int i = 0; i < ap_count && i < 20; i++) {
+    for (int i = 0; i < unique_count && i < 20; i++) {
+        bool is_current = (strcmp(unique_aps[i].ssid, current_ssid) == 0);
+        ESP_LOGI(TAG, "Comparing '%s' with '%s': %s", unique_aps[i].ssid, current_ssid, is_current ? "MATCH" : "no match");
         len += snprintf(json_resp + len, 4096 - len,
-                       "%s{\"ssid\":\"%s\",\"rssi\":%d}",
+                       "%s{\"ssid\":\"%s\",\"rssi\":%d,\"current\":%s}",
                        i > 0 ? "," : "",
-                       ap_list[i].ssid,
-                       ap_list[i].rssi);
+                       unique_aps[i].ssid,
+                       unique_aps[i].rssi,
+                       is_current ? "true" : "false");
     }
     len += snprintf(json_resp + len, 4096 - len, "]");
 
@@ -156,6 +216,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     httpd_resp_send(req, json_resp, len);
 
     free(ap_list);
+    free(unique_aps);
     free(json_resp);
     return ESP_OK;
 }
