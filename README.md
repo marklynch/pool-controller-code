@@ -55,8 +55,10 @@ flowchart TD
     subgraph Astral Pool Controller
         Comms[Comms Module]
         Core[fa:fa-microchip Core System]
-        Web[Web Interface]
-        MQTT[MQTT]
+        Web[HTTP Interface]
+        Telnet[Serial Debug]
+        MQTT[MQTT Client]
+        LED[Led signals]
     end
 
     HA[Home Assistant]
@@ -65,6 +67,8 @@ flowchart TD
     Comms <--> Core
     Web <--> Core
     MQTT <--> Core
+    Telnet <--> Core
+    LED <--> Core
     MQTT <-->|fa:fa-wifi via wifi| HA
 ```
 
