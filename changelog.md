@@ -28,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed MSG_TYPE_38 to MSG_TYPE_REGISTER_STATUS
 - Change heater on/off to On/Off to match other values in /status page
 - Improved the internal locking/mutex for MQTT publishing
-- Pulled the TCP server out of main to own file
+- Pulled the TCP server out of main.c to own tcp_bridge.c
+- Pulled the message decoder out of main.c to message_decoder.c
 
 ### Fixed
 - Publish ORP and PH setpoint to MQTT
