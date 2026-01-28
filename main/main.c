@@ -290,6 +290,30 @@ static const uint8_t CHLOR_ORP_READING[]  = {0x1F, 0x0F, 0x3E, 0x02};
 
 // F0 Internet Gateway
 static const uint8_t MSG_TYPE_SERIAL_NUMBER[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x11};
+static const uint8_t MSG_TYPE_GATEWAY_IP[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x15};
+static const uint8_t MSG_TYPE_GATEWAY_COMMS[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x0F};
+
+// Gateway comms status lookup table
+typedef struct {
+    uint16_t code;
+    const char *text;
+} gateway_comms_status_t;
+
+static const gateway_comms_status_t GATEWAY_COMMS_STATUS[] = {
+    {32769, "Communicating with server"},
+    // Add more status codes here as they are discovered
+};
+#define GATEWAY_COMMS_STATUS_COUNT (sizeof(GATEWAY_COMMS_STATUS) / sizeof(GATEWAY_COMMS_STATUS[0]))
+
+// Lookup gateway comms status text
+const char* get_gateway_comms_status_text(uint16_t code) {
+    for (int i = 0; i < GATEWAY_COMMS_STATUS_COUNT; i++) {
+        if (GATEWAY_COMMS_STATUS[i].code == code) {
+            return GATEWAY_COMMS_STATUS[i].text;
+        }
+    }
+    return "Unknown";
+}
 
 
 // Channel type names
@@ -864,6 +888,44 @@ static bool decode_message(const uint8_t *data, int len)
         if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             s_pool_state.serial_number = serial;
             s_pool_state.serial_number_valid = true;
+            s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(s_pool_state_mutex);
+        }
+        return true;
+    }
+    else if (len >= sizeof(MSG_TYPE_GATEWAY_IP) + 10 && memcmp(data, MSG_TYPE_GATEWAY_IP, sizeof(MSG_TYPE_GATEWAY_IP)) == 0) {
+        // IP address is in bytes 14-17, signal level at byte 18
+        uint8_t ip[4];
+        ip[0] = data[14];
+        ip[1] = data[15];
+        ip[2] = data[16];
+        ip[3] = data[17];
+        uint8_t signal_level = data[18];
+
+        ESP_LOGI(TAG, "%s Internet Gateway IP - %d.%d.%d.%d, signal level: %d",
+                 addr_info, ip[0], ip[1], ip[2], ip[3], signal_level);
+
+        // Update pool state
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            memcpy(s_pool_state.gateway_ip, ip, 4);
+            s_pool_state.gateway_signal_level = signal_level;
+            s_pool_state.gateway_ip_valid = true;
+            s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(s_pool_state_mutex);
+        }
+        return true;
+    }
+    else if (len >= sizeof(MSG_TYPE_GATEWAY_COMMS) + 5 && memcmp(data, MSG_TYPE_GATEWAY_COMMS, sizeof(MSG_TYPE_GATEWAY_COMMS)) == 0) {
+        // Comms status is in bytes 11-12 (big endian)
+        uint16_t comms_status = (data[11] << 8) | data[12];
+        const char *status_text = get_gateway_comms_status_text(comms_status);
+
+        ESP_LOGI(TAG, "%s Internet Gateway comms status - %u (%s)", addr_info, comms_status, status_text);
+
+        // Update pool state
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_pool_state.gateway_comms_status = comms_status;
+            s_pool_state.gateway_comms_status_valid = true;
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             xSemaphoreGive(s_pool_state_mutex);
         }

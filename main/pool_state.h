@@ -77,6 +77,15 @@ typedef struct {
     uint32_t serial_number;
     bool serial_number_valid;
 
+    // Internet Gateway IP address
+    uint8_t gateway_ip[4];  // IPv4 address bytes
+    uint8_t gateway_signal_level;  // Signal level
+    bool gateway_ip_valid;
+
+    // Internet Gateway communications status
+    uint16_t gateway_comms_status;
+    bool gateway_comms_status_valid;
+
     // Chlorinator
     uint16_t ph_setpoint;      // pH * 10 (e.g., 74 = 7.4)
     uint16_t ph_reading;       // pH * 10

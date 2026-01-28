@@ -70,7 +70,19 @@ CMD_SUB_LABELS: Dict[Tuple[int, int, int], str] = {
 
     (0x26, 0x0E, 0x04): "Temperature Scale C/F",
 
-
+    # 02 00 50 FF FF 80 00 38 0F 17 C0 01 00 C1 03
+    # 02 00 50 FF FF 80 00 38 0F 17 C1 01 00 C2 03
+    # 02 00 50 FF FF 80 00 38 0F 17 C2 01 00 C3 03
+    # 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03
+    # 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03
+    # 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03
+    # 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03
+    # 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03
+    # 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03
+    # 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03
+    # 02 00 50 FF FF 80 00 38 0F 17 E2 01 00 E3 03
+    # 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03
+    (0x38, 0x0F, 0x17): "Register State Data", 
 
     # These labels are strange as the data holds the channel reference - but I can't figure out the CMD/SUB/REG that identifies the channel label itself
     (0x38, 0x12, 0x1A): "Spa Label",
@@ -102,8 +114,15 @@ CMD_SUB_LABELS: Dict[Tuple[int, int, int], str] = {
 
     (0x37, 0x11, 0xB8): "IG Serial number",    # Data: 02 00 F0 FF FF 80 00 37 11 B8 04 A3 15 21 00 DD 03
 
+    # 02 00 F0 FF FF 80 00 37 15 BC 01 00 00 03 00 00 00 00 00 04 03 - not configured
+    # 02 00 F0 FF FF 80 00 37 15 BC 01 01 01 07 C0 A8 00 17 2B B4 03 - configured and connected with wifi
+    (0x37, 0x15, 0xBC): "IG Gateway IP",    # Data: 02 00 F0 FF FF 80 00 37 15 BC 01 01 01 03 00 00 00 00 00 06 03
 
 
+    # 32769 - comunicating with server
+    # = 80 01 or 01 80
+    # 02 00 F0 FF FF 80 00 37 0F B6 02 01 80 83 03
+    (0x37, 0x0F, 0xB6): "IG GW to Server Comm",    # Data: 02 00 F0 FF FF 80 00 37 0F B6 02 80 01 83 03
 
 }
 

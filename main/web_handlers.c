@@ -10,6 +10,9 @@
 
 static const char *TAG = "WEB_HANDLERS";
 
+// Forward declaration - defined in main.c
+const char* get_gateway_comms_status_text(uint16_t code);
+
 // ======================================================
 // Common HTML Page Parts (Header and footer)
 // ======================================================
@@ -425,13 +428,53 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         }
         len += snprintf(json_resp + len, 8192 - len, "},");
 
-        // Internet Gateway Serial number
-        len += snprintf(json_resp + len, 8192 - len, "\"internet_gateway_serial_number\":");
+        // Internet Gateway section
+        len += snprintf(json_resp + len, 8192 - len, "\"internet_gateway\":{");
+
+        // Serial number
+        len += snprintf(json_resp + len, 8192 - len, "\"serial_number\":");
         if (s_pool_state.serial_number_valid) {
             len += snprintf(json_resp + len, 8192 - len, "%lu,", (unsigned long)s_pool_state.serial_number);
         } else {
             len += snprintf(json_resp + len, 8192 - len, "null,");
         }
+
+        // IP address
+        len += snprintf(json_resp + len, 8192 - len, "\"ip\":");
+        if (s_pool_state.gateway_ip_valid) {
+            len += snprintf(json_resp + len, 8192 - len, "\"%d.%d.%d.%d\",",
+                           s_pool_state.gateway_ip[0], s_pool_state.gateway_ip[1],
+                           s_pool_state.gateway_ip[2], s_pool_state.gateway_ip[3]);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "null,");
+        }
+
+        // Signal level
+        len += snprintf(json_resp + len, 8192 - len, "\"signal_level\":");
+        if (s_pool_state.gateway_ip_valid) {
+            len += snprintf(json_resp + len, 8192 - len, "%d,", s_pool_state.gateway_signal_level);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "null,");
+        }
+
+        // Comms status
+        len += snprintf(json_resp + len, 8192 - len, "\"comms_status\":");
+        if (s_pool_state.gateway_comms_status_valid) {
+            len += snprintf(json_resp + len, 8192 - len, "%u,", s_pool_state.gateway_comms_status);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "null,");
+        }
+
+        // Comms status text
+        len += snprintf(json_resp + len, 8192 - len, "\"comms_status_text\":");
+        if (s_pool_state.gateway_comms_status_valid) {
+            const char *status_text = get_gateway_comms_status_text(s_pool_state.gateway_comms_status);
+            len += snprintf(json_resp + len, 8192 - len, "\"%s\"", status_text);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "null");
+        }
+
+        len += snprintf(json_resp + len, 8192 - len, "},");
 
         // Last update timestamp
         len += snprintf(json_resp + len, 8192 - len, "\"last_update_ms\":%lu",
