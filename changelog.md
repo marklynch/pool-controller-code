@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added label message type
 - Added IP address and wifi signal level for internet gateway
 - Added comms status for internet gateway
+- Added tests for the protocol decoder
 
 ### Removed
 ### Changed
