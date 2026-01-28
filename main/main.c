@@ -553,6 +553,8 @@ static bool decode_message(const uint8_t *data, int len)
         uint8_t zone_idx = data[10];
         if (zone_idx <= 3) {
             // Mark this zone as configured (only publish if this is the first time)
+            bool should_publish = false;
+            pool_state_t state_snapshot;
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 bool was_configured = s_pool_state.lighting[zone_idx].configured;
 
@@ -563,11 +565,17 @@ static bool decode_message(const uint8_t *data, int len)
                 // Only log and publish if this is the first time we're marking it as configured
                 if (!was_configured) {
                     ESP_LOGI(TAG, "%s Lighting zone %d configured", addr_info, zone_idx + 1);
-                    // Publish MQTT discovery for this zone now that we know it's configured
-                    mqtt_publish_light(&s_pool_state, zone_idx + 1);
+                    should_publish = true;
                 }
 
+                // Take snapshot while holding mutex
+                state_snapshot = s_pool_state;
                 xSemaphoreGive(s_pool_state_mutex);
+            }
+
+            // Publish MQTT discovery for this zone (outside mutex)
+            if (should_publish) {
+                mqtt_publish_light(&state_snapshot, zone_idx + 1);
             }
         }
         return true;
@@ -584,7 +592,10 @@ static bool decode_message(const uint8_t *data, int len)
             const char *state = (value2 < LIGHTING_STATE_COUNT) ? LIGHTING_STATE_NAMES[value2] : "Unknown";
             ESP_LOGI(TAG, "%s Lighting zone %d - %s", addr_info, channel - 0xC0 + 1, state);
 
-            // Update pool state (only publish if zone is already configured)
+            // Update pool state and create snapshot (only publish if zone is already configured)
+            bool should_publish = false;
+            uint8_t zone_num = 0;
+            pool_state_t state_snapshot;
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xC0;
                 s_pool_state.lighting[zone_idx].zone = zone_idx + 1;
@@ -593,10 +604,18 @@ static bool decode_message(const uint8_t *data, int len)
 
                 // Only publish if this zone was configured via MSG_TYPE_LIGHT_CONFIG
                 if (s_pool_state.lighting[zone_idx].configured) {
-                    mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                    should_publish = true;
+                    zone_num = s_pool_state.lighting[zone_idx].zone;
                 }
 
+                // Take snapshot while holding mutex
+                state_snapshot = s_pool_state;
                 xSemaphoreGive(s_pool_state_mutex);
+            }
+
+            // Publish using snapshot (outside mutex)
+            if (should_publish) {
+                mqtt_publish_light(&state_snapshot, zone_num);
             }
         } else if (channel >= 0xD0 && channel <= 0xD3) {
             // Lighting zone color (D0-D3 = zones 1-4)
@@ -605,7 +624,10 @@ static bool decode_message(const uint8_t *data, int len)
             const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
             ESP_LOGI(TAG, "%s Lighting zone %d color - %s (%d)", addr_info, zone, color_name, color);
 
-            // Update pool state (only publish if zone is already configured)
+            // Update pool state and create snapshot (only publish if zone is already configured)
+            bool should_publish = false;
+            uint8_t zone_num = 0;
+            pool_state_t state_snapshot;
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xD0;
                 s_pool_state.lighting[zone_idx].color = color;
@@ -613,10 +635,18 @@ static bool decode_message(const uint8_t *data, int len)
 
                 // Only publish if this zone was configured via MSG_TYPE_LIGHT_CONFIG
                 if (s_pool_state.lighting[zone_idx].configured) {
-                    mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                    should_publish = true;
+                    zone_num = s_pool_state.lighting[zone_idx].zone;
                 }
 
+                // Take snapshot while holding mutex
+                state_snapshot = s_pool_state;
                 xSemaphoreGive(s_pool_state_mutex);
+            }
+
+            // Publish using snapshot (outside mutex)
+            if (should_publish) {
+                mqtt_publish_light(&state_snapshot, zone_num);
             }
         } else if (channel >= 0xE0 && channel <= 0xE3) {
             // Lighting zone active state (E0-E3 = zones 1-4)
@@ -624,7 +654,10 @@ static bool decode_message(const uint8_t *data, int len)
             uint8_t active = value2;
             ESP_LOGI(TAG, "%s Lighting zone %d active - %s", addr_info, zone, active ? "Yes" : "No");
 
-            // Update pool state (only publish if zone is already configured)
+            // Update pool state and create snapshot (only publish if zone is already configured)
+            bool should_publish = false;
+            uint8_t zone_num = 0;
+            pool_state_t state_snapshot;
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xE0;
                 s_pool_state.lighting[zone_idx].active = (active != 0);
@@ -632,10 +665,18 @@ static bool decode_message(const uint8_t *data, int len)
 
                 // Only publish if this zone was configured via MSG_TYPE_LIGHT_CONFIG
                 if (s_pool_state.lighting[zone_idx].configured) {
-                    mqtt_publish_light(&s_pool_state, s_pool_state.lighting[zone_idx].zone);
+                    should_publish = true;
+                    zone_num = s_pool_state.lighting[zone_idx].zone;
                 }
 
+                // Take snapshot while holding mutex
+                state_snapshot = s_pool_state;
                 xSemaphoreGive(s_pool_state_mutex);
+            }
+
+            // Publish using snapshot (outside mutex)
+            if (should_publish) {
+                mqtt_publish_light(&state_snapshot, zone_num);
             }
         } else if (channel >= 0x6C && channel <= 0x73) {
             // Channel type configuration (6C-73 = channels 1-8)
@@ -681,17 +722,21 @@ static bool decode_message(const uint8_t *data, int len)
         const char *mode_str = (mode == 0x00) ? "Spa" : (mode == 0x01) ? "Pool" : "Unknown";
         ESP_LOGI(TAG, "%s Mode - %s", addr_info, mode_str);
 
-        // Update pool state
+        // Update pool state and create snapshot for publishing
+        pool_state_t state_snapshot;
         if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             s_pool_state.mode = mode;
             s_pool_state.mode_valid = true;
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-            // Publish to MQTT
-            mqtt_publish_mode(&s_pool_state);
-
+            // Take snapshot while holding mutex
+            state_snapshot = s_pool_state;
             xSemaphoreGive(s_pool_state_mutex);
         }
+
+        // Publish to MQTT using snapshot (outside mutex to avoid blocking)
+        mqtt_publish_mode(&state_snapshot);
+
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CHANNELS) + 2 && memcmp(data, MSG_TYPE_CHANNELS, sizeof(MSG_TYPE_CHANNELS)) == 0) {
@@ -714,8 +759,11 @@ static bool decode_message(const uint8_t *data, int len)
         int idx = 11;  // Channel data starts after header
         int ch_num = 1;
         bool past_end = false;
+        uint8_t channels_to_publish[8] = {0};  // Track which channels to publish
+        int num_to_publish = 0;
 
         // Update pool state
+        pool_state_t state_snapshot;
         if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             s_pool_state.num_channels = num_channels;
 
@@ -748,15 +796,24 @@ static bool decode_message(const uint8_t *data, int len)
                     s_pool_state.channels[ch_num - 1].state = state;
                     s_pool_state.channels[ch_num - 1].configured = true;
 
-                    // Publish to MQTT (outside mutex to avoid blocking)
-                    mqtt_publish_channel(&s_pool_state, ch_num);
+                    // Mark this channel for publishing
+                    channels_to_publish[num_to_publish++] = ch_num;
                 }
                 idx += 3;
                 ch_num++;
             }
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+            // Take snapshot while holding mutex
+            state_snapshot = s_pool_state;
             xSemaphoreGive(s_pool_state_mutex);
         }
+
+        // Publish all channels using snapshot (outside mutex to avoid blocking)
+        for (int i = 0; i < num_to_publish; i++) {
+            mqtt_publish_channel(&state_snapshot, channels_to_publish[i]);
+        }
+
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_TEMP_SETTING) && memcmp(data, MSG_TYPE_TEMP_SETTING, sizeof(MSG_TYPE_TEMP_SETTING)) == 0) {
@@ -764,51 +821,63 @@ static bool decode_message(const uint8_t *data, int len)
         uint8_t pool_set_temp = data[11];
         ESP_LOGI(TAG, "%s Temperature settings - spa_set_temp=%d, pool_set_temp=%d", addr_info, spa_set_temp, pool_set_temp);
 
-        // Update pool state
+        // Update pool state and create snapshot for publishing
+        pool_state_t state_snapshot;
         if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             s_pool_state.spa_setpoint = spa_set_temp;
             s_pool_state.pool_setpoint = pool_set_temp;
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-            // Publish to MQTT
-            mqtt_publish_temperature(&s_pool_state);
-
+            // Take snapshot while holding mutex
+            state_snapshot = s_pool_state;
             xSemaphoreGive(s_pool_state_mutex);
         }
+
+        // Publish to MQTT using snapshot (outside mutex to avoid blocking)
+        mqtt_publish_temperature(&state_snapshot);
+
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_TEMP_READING) && memcmp(data, MSG_TYPE_TEMP_READING, sizeof(MSG_TYPE_TEMP_READING)) == 0) {
         uint8_t current_temp = data[10];
         ESP_LOGI(TAG, "%s Current temperature - %d", addr_info, current_temp);
 
-        // Update pool state
+        // Update pool state and create snapshot for publishing
+        pool_state_t state_snapshot;
         if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             s_pool_state.current_temp = current_temp;
             s_pool_state.temp_valid = true;
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-            // Publish to MQTT
-            mqtt_publish_temperature(&s_pool_state);
-
+            // Take snapshot while holding mutex
+            state_snapshot = s_pool_state;
             xSemaphoreGive(s_pool_state_mutex);
         }
+
+        // Publish to MQTT using snapshot (outside mutex to avoid blocking)
+        mqtt_publish_temperature(&state_snapshot);
+
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_HEATER) && memcmp(data, MSG_TYPE_HEATER, sizeof(MSG_TYPE_HEATER)) == 0) {
         uint8_t heater_state = data[11];
         ESP_LOGI(TAG, "%s Heater - %s", addr_info, heater_state ? "On" : "Off");
 
-        // Update pool state
+        // Update pool state and create snapshot for publishing
+        pool_state_t state_snapshot;
         if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             s_pool_state.heater_on = (heater_state != 0);
             s_pool_state.heater_valid = true;
             s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-            // Publish to MQTT
-            mqtt_publish_heater(&s_pool_state);
-
+            // Take snapshot while holding mutex
+            state_snapshot = s_pool_state;
             xSemaphoreGive(s_pool_state_mutex);
         }
+
+        // Publish to MQTT using snapshot (outside mutex to avoid blocking)
+        mqtt_publish_heater(&state_snapshot);
+
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_CHLOR) + 6 && memcmp(data, MSG_TYPE_CHLOR, sizeof(MSG_TYPE_CHLOR)) == 0) {
@@ -819,63 +888,79 @@ static bool decode_message(const uint8_t *data, int len)
         if (memcmp(sub, CHLOR_PH_SETPOINT, sizeof(CHLOR_PH_SETPOINT)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator pH setpoint - %.1f", addr_info, value / 10.0);
 
-            // Update pool state
+            // Update pool state and create snapshot for publishing
+            pool_state_t state_snapshot;
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 s_pool_state.ph_setpoint = value;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-                // Publish to MQTT
-                mqtt_publish_chlorinator(&s_pool_state);
-
+                // Take snapshot while holding mutex
+                state_snapshot = s_pool_state;
                 xSemaphoreGive(s_pool_state_mutex);
             }
+
+            // Publish to MQTT using snapshot (outside mutex to avoid blocking)
+            mqtt_publish_chlorinator(&state_snapshot);
+
             return true;
         }
         else if (memcmp(sub, CHLOR_ORP_SETPOINT, sizeof(CHLOR_ORP_SETPOINT)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator ORP setpoint - %d mV", addr_info, value);
 
-            // Update pool state
+            // Update pool state and create snapshot for publishing
+            pool_state_t state_snapshot;
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 s_pool_state.orp_setpoint = value;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-                // Publish to MQTT
-                mqtt_publish_chlorinator(&s_pool_state);
-
+                // Take snapshot while holding mutex
+                state_snapshot = s_pool_state;
                 xSemaphoreGive(s_pool_state_mutex);
             }
+
+            // Publish to MQTT using snapshot (outside mutex to avoid blocking)
+            mqtt_publish_chlorinator(&state_snapshot);
+
             return true;
         }
         else if (memcmp(sub, CHLOR_PH_READING, sizeof(CHLOR_PH_READING)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator pH reading - %.1f", addr_info, value / 10.0);
 
-            // Update pool state
+            // Update pool state and create snapshot for publishing
+            pool_state_t state_snapshot;
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 s_pool_state.ph_reading = value;
                 s_pool_state.ph_valid = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-                // Publish to MQTT
-                mqtt_publish_chlorinator(&s_pool_state);
-
+                // Take snapshot while holding mutex
+                state_snapshot = s_pool_state;
                 xSemaphoreGive(s_pool_state_mutex);
             }
+
+            // Publish to MQTT using snapshot (outside mutex to avoid blocking)
+            mqtt_publish_chlorinator(&state_snapshot);
+
             return true;
         }
         else if (memcmp(sub, CHLOR_ORP_READING, sizeof(CHLOR_ORP_READING)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator ORP reading - %d mV", addr_info, value);
 
-            // Update pool state
+            // Update pool state and create snapshot for publishing
+            pool_state_t state_snapshot;
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 s_pool_state.orp_reading = value;
                 s_pool_state.orp_valid = true;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-                // Publish to MQTT
-                mqtt_publish_chlorinator(&s_pool_state);
-
+                // Take snapshot while holding mutex
+                state_snapshot = s_pool_state;
                 xSemaphoreGive(s_pool_state_mutex);
             }
+
+            // Publish to MQTT using snapshot (outside mutex to avoid blocking)
+            mqtt_publish_chlorinator(&state_snapshot);
+
             return true;
         }
     }
