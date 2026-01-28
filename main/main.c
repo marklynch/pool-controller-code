@@ -263,6 +263,7 @@ esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 // Message type patterns (messages start with 0x02, end with 0x03)
 // 50 Main Controller (Connect 10)
 static const uint8_t MSG_TYPE_REGISTER_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F, 0x17};  // Register Status
+static const uint8_t MSG_TYPE_REGISTER_LABEL[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x1A, 0x22};  // Register labels (favourites, etc.)
 static const uint8_t MSG_TYPE_38_BASE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38};  // Shorter pattern for channel names
 static const uint8_t MSG_TYPE_TEMP_SETTING[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x17, 0x10};
 static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x26, 0x0E};
@@ -288,6 +289,7 @@ static const uint8_t CHLOR_ORP_READING[]  = {0x1F, 0x0F, 0x3E, 0x02};
 // 6F Touch Screen (source only)
 
 // F0 Internet Gateway
+static const uint8_t MSG_TYPE_SERIAL_NUMBER[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x11};
 
 
 // Channel type names
@@ -459,6 +461,40 @@ static bool decode_message(const uint8_t *data, int len)
         snprintf(addr_info, sizeof(addr_info), "[%02X%02X -> %s]", src_hi, src_lo, dst_name);
     } else {
         snprintf(addr_info, sizeof(addr_info), "[%02X%02X -> %02X%02X]", src_hi, src_lo, dst_hi, dst_lo);
+    }
+
+    // Register label messages (byte 10 = register ID, byte 12+ = label string)
+    if (len >= sizeof(MSG_TYPE_REGISTER_LABEL) + 3 && memcmp(data, MSG_TYPE_REGISTER_LABEL, sizeof(MSG_TYPE_REGISTER_LABEL)) == 0) {
+        uint8_t reg_id = data[10];
+        // Label string starts at byte 12, null-terminated
+        const char *label = (const char *)&data[12];
+
+        ESP_LOGI(TAG, "%s Register 0x%02X label - \"%s\"", addr_info, reg_id, label);
+
+        // Update pool state - find or create entry for this register
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            // Find existing entry or first available slot
+            int slot = -1;
+            for (int i = 0; i < 32; i++) {
+                if (s_pool_state.register_labels[i].valid && s_pool_state.register_labels[i].reg_id == reg_id) {
+                    slot = i;  // Found existing entry
+                    break;
+                } else if (!s_pool_state.register_labels[i].valid && slot == -1) {
+                    slot = i;  // Remember first available slot
+                }
+            }
+
+            if (slot >= 0) {
+                s_pool_state.register_labels[slot].reg_id = reg_id;
+                strncpy(s_pool_state.register_labels[slot].label, label, sizeof(s_pool_state.register_labels[slot].label) - 1);
+                s_pool_state.register_labels[slot].label[sizeof(s_pool_state.register_labels[slot].label) - 1] = '\0';
+                s_pool_state.register_labels[slot].valid = true;
+                s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            }
+
+            xSemaphoreGive(s_pool_state_mutex);
+        }
+        return true;
     }
 
     // Channel name messages (byte 10 = 0x7C-0x83 for channels 1-8)
@@ -809,6 +845,20 @@ static bool decode_message(const uint8_t *data, int len)
             }
             return true;
         }
+    }
+    else if (len >= sizeof(MSG_TYPE_SERIAL_NUMBER) + 6 && memcmp(data, MSG_TYPE_SERIAL_NUMBER, sizeof(MSG_TYPE_SERIAL_NUMBER)) == 0) {
+        // Serial number is in bytes 11-14 (little endian)
+        uint32_t serial = data[11] | (data[12] << 8) | (data[13] << 16) | (data[14] << 24);
+        ESP_LOGI(TAG, "%s Serial number - %u (0x%08X)", addr_info, serial, serial);
+
+        // Update pool state
+        if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_pool_state.serial_number = serial;
+            s_pool_state.serial_number_valid = true;
+            s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(s_pool_state_mutex);
+        }
+        return true;
     }
 
     return false;

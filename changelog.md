@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for telnet sending messages.
 - Do checksums on all messages
 - Added checkdata.py helper script
+- Added serial number for internet gateway
+- Added label message type
 
 ### Removed
 ### Changed

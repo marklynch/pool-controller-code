@@ -425,6 +425,14 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         }
         len += snprintf(json_resp + len, 8192 - len, "},");
 
+        // Internet Gateway Serial number
+        len += snprintf(json_resp + len, 8192 - len, "\"internet_gateway_serial_number\":");
+        if (s_pool_state.serial_number_valid) {
+            len += snprintf(json_resp + len, 8192 - len, "%lu,", (unsigned long)s_pool_state.serial_number);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "null,");
+        }
+
         // Last update timestamp
         len += snprintf(json_resp + len, 8192 - len, "\"last_update_ms\":%lu",
                        (unsigned long)s_pool_state.last_update_ms);

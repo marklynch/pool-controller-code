@@ -40,6 +40,13 @@ typedef struct {
     bool configured;
 } lighting_state_t;
 
+// Register label storage entry
+typedef struct {
+    uint8_t reg_id;      // Register identifier (byte 10 from message)
+    char label[32];      // Label string
+    bool valid;          // True if this entry has been populated
+} register_label_t;
+
 typedef struct {
     // Temperature
     uint8_t current_temp;
@@ -62,6 +69,13 @@ typedef struct {
 
     // Lighting (up to 4 zones)
     lighting_state_t lighting[4];
+
+    // Register labels (general storage for register names like favourites, etc.)
+    register_label_t register_labels[32];  // Support up to 32 different register labels
+
+    // Device serial number
+    uint32_t serial_number;
+    bool serial_number_valid;
 
     // Chlorinator
     uint16_t ph_setpoint;      // pH * 10 (e.g., 74 = 7.4)
