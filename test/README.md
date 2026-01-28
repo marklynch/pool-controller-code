@@ -17,15 +17,19 @@ This directory contains unit tests for the message decoder module.
 Compile and run the tests on your development machine:
 
 ```bash
+# Navigate to the test directory
+cd test
+
 # Compile the tests
-gcc -I.. -o test_decoder \
+gcc -I. -I.. -o test_decoder \
     test_message_decoder.c \
-    ../main/message_decoder.c \
-    -DESP_PLATFORM=1
+    ../main/message_decoder.c
 
 # Run the tests
 ./test_decoder
 ```
+
+The test directory includes mock headers for FreeRTOS and ESP-IDF logging that allow compilation without the full ESP-IDF toolchain.
 
 ### Option 2: ESP-IDF Unity Framework
 

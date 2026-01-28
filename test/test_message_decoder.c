@@ -14,23 +14,22 @@
 #include "../main/message_decoder.h"
 #include "../main/pool_state.h"
 
-// Mock FreeRTOS functions for testing without FreeRTOS
-#define portTICK_PERIOD_MS 1
-#define pdMS_TO_TICKS(ms) (ms)
-#define pdTRUE 1
-#define pdFALSE 0
-
-typedef void* SemaphoreHandle_t;
-
-uint32_t xTaskGetTickCount(void) {
+// Mock FreeRTOS function implementations
+uint32_t xTaskGetTickCount(void)
+{
     return 1000;  // Mock tick count
 }
 
-int xSemaphoreTake(SemaphoreHandle_t sem, uint32_t timeout) {
+BaseType_t xSemaphoreTake(SemaphoreHandle_t xSemaphore, TickType_t xBlockTime)
+{
+    (void)xSemaphore;
+    (void)xBlockTime;
     return pdTRUE;  // Always succeed in tests
 }
 
-void xSemaphoreGive(SemaphoreHandle_t sem) {
+void xSemaphoreGive(SemaphoreHandle_t xSemaphore)
+{
+    (void)xSemaphore;
     // No-op in tests
 }
 
@@ -45,10 +44,20 @@ void mqtt_publish_channel(const pool_state_t *state, uint8_t channel) {}
 // Test context
 static pool_state_t test_pool_state;
 static message_decoder_context_t test_ctx;
+static int dummy_mutex = 0;  // Dummy mutex for testing
 
 // Test counter
 static int tests_passed = 0;
 static int tests_failed = 0;
+
+// Helper to initialize test context with dummy mutex
+static void init_test_context(void)
+{
+    memset(&test_pool_state, 0, sizeof(test_pool_state));
+    test_ctx.pool_state = &test_pool_state;
+    test_ctx.state_mutex = (SemaphoreHandle_t)&dummy_mutex;
+    test_ctx.enable_mqtt = false;
+}
 
 #define TEST_ASSERT(condition, message) \
     do { \
@@ -66,22 +75,17 @@ static int tests_failed = 0;
  */
 void test_checksum_valid(void)
 {
-    // Valid temperature setting message: 02 00 50 FF FF 80 00 17 10 4B 50 B4 03
-    // Checksum should be: (0x4B + 0x50) & 0xFF = 0x9B & 0xFF = 0x9B
-    // But the provided checksum is 0xB4, let me recalculate...
-    // Sum from byte 10 to byte 11: 0x4B + 0x50 = 0x9B
-    // Wait, I need a real message. Let me use one from the codebase.
-
-    // Let's create a simple valid message
+    // Simple mode message with valid checksum
+    // Checksum is the sum of data bytes (byte 10 only in this case)
     uint8_t msg[] = {
         0x02,               // Start
         0x00, 0x50,         // Source: Controller
         0xFF, 0xFF,         // Dest: Broadcast
         0x80, 0x00,         // Control
         0x14, 0x0D, 0xF1,   // Command (Mode message)
-        0x01,               // Data: Mode = Pool
-        0xF2,               // Checksum: sum of bytes 10-10 = 0xF1 + 0x01 = 0xF2
-        0x03                // End
+        0x01,               // Byte 10: Data (Mode = Pool)
+        0x01,               // Byte 11: Checksum (sum of byte 10 = 0x01)
+        0x03                // Byte 12: End
     };
 
     bool result = verify_message_checksum(msg, sizeof(msg));
@@ -125,10 +129,7 @@ void test_checksum_too_short(void)
 void test_decode_mode_spa(void)
 {
     // Reset test state
-    memset(&test_pool_state, 0, sizeof(test_pool_state));
-    test_ctx.pool_state = &test_pool_state;
-    test_ctx.state_mutex = NULL;
-    test_ctx.enable_mqtt = false;  // Disable MQTT in tests
+    init_test_context();
 
     // Mode message: Spa mode (0x00)
     uint8_t msg[] = {
@@ -137,9 +138,9 @@ void test_decode_mode_spa(void)
         0xFF, 0xFF,             // Dest: Broadcast
         0x80, 0x00,             // Control
         0x14, 0x0D, 0xF1,       // Command (Mode)
-        0x00,                   // Data: Spa mode
-        0xF1,                   // Checksum
-        0x03                    // End
+        0x00,                   // Byte 10: Data (Spa mode)
+        0x00,                   // Byte 11: Checksum (sum of byte 10 = 0x00)
+        0x03                    // Byte 12: End
     };
 
     bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
@@ -155,10 +156,7 @@ void test_decode_mode_spa(void)
 void test_decode_mode_pool(void)
 {
     // Reset test state
-    memset(&test_pool_state, 0, sizeof(test_pool_state));
-    test_ctx.pool_state = &test_pool_state;
-    test_ctx.state_mutex = NULL;
-    test_ctx.enable_mqtt = false;
+    init_test_context();
 
     // Mode message: Pool mode (0x01)
     uint8_t msg[] = {
@@ -167,9 +165,9 @@ void test_decode_mode_pool(void)
         0xFF, 0xFF,             // Dest: Broadcast
         0x80, 0x00,             // Control
         0x14, 0x0D, 0xF1,       // Command (Mode)
-        0x01,                   // Data: Pool mode
-        0xF2,                   // Checksum (0xF1 + 0x01)
-        0x03                    // End
+        0x01,                   // Byte 10: Data (Pool mode)
+        0x01,                   // Byte 11: Checksum (sum of byte 10 = 0x01)
+        0x03                    // Byte 12: End
     };
 
     bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
@@ -185,22 +183,21 @@ void test_decode_mode_pool(void)
 void test_decode_temperature_setting(void)
 {
     // Reset test state
-    memset(&test_pool_state, 0, sizeof(test_pool_state));
-    test_ctx.pool_state = &test_pool_state;
-    test_ctx.state_mutex = NULL;
-    test_ctx.enable_mqtt = false;
+    init_test_context();
 
     // Temperature setting message
+    // Data starts at byte 10 (spa setpoint) and byte 11 (pool setpoint)
     uint8_t msg[] = {
-        0x02,                   // Start
-        0x00, 0x50,             // Source: Controller
-        0xFF, 0xFF,             // Dest: Broadcast
-        0x80, 0x00,             // Control
-        0x17, 0x10,             // Command (Temperature setting)
-        75,                     // Spa setpoint: 75°F
-        80,                     // Pool setpoint: 80°F
-        0x9B,                   // Checksum (75 + 80 = 155 = 0x9B)
-        0x03                    // End
+        0x02,                   // Byte 0: Start
+        0x00, 0x50,             // Bytes 1-2: Source: Controller
+        0xFF, 0xFF,             // Bytes 3-4: Dest: Broadcast
+        0x80, 0x00,             // Bytes 5-6: Control
+        0x17, 0x10,             // Bytes 7-8: Command (Temperature setting)
+        0x00,                   // Byte 9: Padding/extra data
+        75,                     // Byte 10: Spa setpoint: 75°F
+        80,                     // Byte 11: Pool setpoint: 80°F
+        155,                    // Byte 12: Checksum (75 + 80 = 155 = 0x9B)
+        0x03                    // Byte 13: End
     };
 
     bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
@@ -216,22 +213,21 @@ void test_decode_temperature_setting(void)
 void test_decode_heater_on(void)
 {
     // Reset test state
-    memset(&test_pool_state, 0, sizeof(test_pool_state));
-    test_ctx.pool_state = &test_pool_state;
-    test_ctx.state_mutex = NULL;
-    test_ctx.enable_mqtt = false;
+    init_test_context();
 
     // Heater status message (ON)
+    // Checksum is sum of data bytes from index 10 to (len-3)
     uint8_t msg[] = {
-        0x02,                   // Start
-        0x00, 0x62,             // Source: Temp Sensor
-        0xFF, 0xFF,             // Dest: Broadcast
-        0x80, 0x00,             // Control
-        0x12, 0x0F,             // Command (Heater)
-        0x00,                   // Padding/data
-        0x01,                   // Heater ON
-        0x10,                   // Checksum
-        0x03                    // End
+        0x02,                   // Byte 0: Start
+        0x00, 0x62,             // Bytes 1-2: Source: Temp Sensor
+        0xFF, 0xFF,             // Bytes 3-4: Dest: Broadcast
+        0x80, 0x00,             // Bytes 5-6: Control
+        0x12, 0x0F,             // Bytes 7-8: Command (Heater)
+        0x00,                   // Byte 9: Padding
+        0x00,                   // Byte 10: Data
+        0x01,                   // Byte 11: Heater ON
+        0x01,                   // Byte 12: Checksum (0x00 + 0x01 = 0x01)
+        0x03                    // Byte 13: End
     };
 
     bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
@@ -246,10 +242,7 @@ void test_decode_heater_on(void)
  */
 void test_decode_malformed_start(void)
 {
-    memset(&test_pool_state, 0, sizeof(test_pool_state));
-    test_ctx.pool_state = &test_pool_state;
-    test_ctx.state_mutex = NULL;
-    test_ctx.enable_mqtt = false;
+    init_test_context();
 
     uint8_t msg[] = {0xFF, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x03};  // Wrong start byte
 
@@ -263,10 +256,7 @@ void test_decode_malformed_start(void)
  */
 void test_decode_malformed_end(void)
 {
-    memset(&test_pool_state, 0, sizeof(test_pool_state));
-    test_ctx.pool_state = &test_pool_state;
-    test_ctx.state_mutex = NULL;
-    test_ctx.enable_mqtt = false;
+    init_test_context();
 
     uint8_t msg[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0xFF};  // Wrong end byte
 
