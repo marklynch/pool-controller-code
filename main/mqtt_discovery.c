@@ -305,6 +305,61 @@ static void publish_orp_discovery(const char *device_id)
 }
 
 // ======================================================
+// pH Setpoint Sensor Discovery
+// ======================================================
+
+static void publish_ph_setpoint_discovery(const char *device_id)
+{
+    char avail_topic[128];
+    char state_topic[128];
+    snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
+    snprintf(state_topic, sizeof(state_topic), "pool/%s/chlorinator/state", device_id);
+
+    char device_json[256];
+    build_device_json(device_json, sizeof(device_json), device_id);
+
+    char config[1024];
+    snprintf(config, sizeof(config),
+             "{\"name\":\"pH Setpoint\","
+             "\"state_topic\":\"%s\","
+             "\"value_template\":\"{{ value_json.ph_setpoint }}\","
+             "\"unit_of_measurement\":\"pH\","
+             "\"icon\":\"mdi:ph\","
+             "\"unique_id\":\"%s_ph_setpoint\",\"availability_topic\":\"%s\",%s}",
+             state_topic, device_id, avail_topic, device_json);
+
+    ESP_LOGI(TAG, "Publishing pH setpoint discovery: %s", config);
+    publish_discovery("sensor", "ph_setpoint", config);
+}
+
+// ======================================================
+// ORP Setpoint Sensor Discovery
+// ======================================================
+
+static void publish_orp_setpoint_discovery(const char *device_id)
+{
+    char avail_topic[128];
+    char state_topic[128];
+    snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
+    snprintf(state_topic, sizeof(state_topic), "pool/%s/chlorinator/state", device_id);
+
+    char device_json[256];
+    build_device_json(device_json, sizeof(device_json), device_id);
+
+    char config[1024];
+    snprintf(config, sizeof(config),
+             "{\"name\":\"ORP Setpoint\",\"device_class\":\"voltage\","
+             "\"state_topic\":\"%s\","
+             "\"value_template\":\"{{ value_json.orp_setpoint }}\","
+             "\"unit_of_measurement\":\"mV\","
+             "\"unique_id\":\"%s_orp_setpoint\",\"availability_topic\":\"%s\",%s}",
+             state_topic, device_id, avail_topic, device_json);
+
+    ESP_LOGI(TAG, "Publishing ORP setpoint discovery: %s", config);
+    publish_discovery("sensor", "orp_setpoint", config);
+}
+
+// ======================================================
 // Individual Discovery Functions (called when items first configured)
 // ======================================================
 
@@ -354,6 +409,8 @@ void mqtt_publish_discovery(void)
     // Chemistry
     publish_ph_discovery(device_id);
     publish_orp_discovery(device_id);
+    publish_ph_setpoint_discovery(device_id);
+    publish_orp_setpoint_discovery(device_id);
 
     ESP_LOGI(TAG, "Discovery messages published");
 }

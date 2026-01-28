@@ -245,15 +245,18 @@ void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
 
 void mqtt_publish_chlorinator(const pool_state_t *current_state)
 {
-    ESP_LOGI(TAG, "Prepare to Publish chlorinator: pH=%d (valid=%d), ORP=%d (valid=%d)",
+    ESP_LOGI(TAG, "Prepare to Publish chlorinator: pH=%d (valid=%d), ORP=%d (valid=%d), pH_sp=%d, ORP_sp=%d",
              current_state->ph_reading, current_state->ph_valid,
-             current_state->orp_reading, current_state->orp_valid);
+             current_state->orp_reading, current_state->orp_valid,
+             current_state->ph_setpoint, current_state->orp_setpoint);
 
     // Check if anything changed
     if (s_last_published_state.ph_valid == current_state->ph_valid &&
         s_last_published_state.orp_valid == current_state->orp_valid &&
         s_last_published_state.ph_reading == current_state->ph_reading &&
-        s_last_published_state.orp_reading == current_state->orp_reading) {
+        s_last_published_state.orp_reading == current_state->orp_reading &&
+        s_last_published_state.ph_setpoint == current_state->ph_setpoint &&
+        s_last_published_state.orp_setpoint == current_state->orp_setpoint) {
         return;  // No change, skip publish
     }
 
@@ -263,31 +266,44 @@ void mqtt_publish_chlorinator(const pool_state_t *current_state)
     char topic[128];
     snprintf(topic, sizeof(topic), "pool/%s/chlorinator/state", device_id);
 
-    char payload[256];
-    if (current_state->ph_valid && current_state->orp_valid) {
-        snprintf(payload, sizeof(payload),
-                 "{\"ph\":%.1f,\"orp\":%d}",
-                 current_state->ph_reading / 10.0, current_state->orp_reading);
-    } else if (current_state->ph_valid) {
-        snprintf(payload, sizeof(payload),
-                 "{\"ph\":%.1f,\"orp\":null}",
-                 current_state->ph_reading / 10.0);
-    } else if (current_state->orp_valid) {
-        snprintf(payload, sizeof(payload),
-                 "{\"ph\":null,\"orp\":%d}",
-                 current_state->orp_reading);
+    char payload[512];
+    int len = snprintf(payload, sizeof(payload), "{");
+
+    // pH reading
+    if (current_state->ph_valid) {
+        len += snprintf(payload + len, sizeof(payload) - len,
+                       "\"ph\":%.1f", current_state->ph_reading / 10.0);
     } else {
-        snprintf(payload, sizeof(payload), "{\"ph\":null,\"orp\":null}");
+        len += snprintf(payload + len, sizeof(payload) - len, "\"ph\":null");
     }
+
+    // pH setpoint
+    len += snprintf(payload + len, sizeof(payload) - len,
+                   ",\"ph_setpoint\":%.1f", current_state->ph_setpoint / 10.0);
+
+    // ORP reading
+    if (current_state->orp_valid) {
+        len += snprintf(payload + len, sizeof(payload) - len,
+                       ",\"orp\":%d", current_state->orp_reading);
+    } else {
+        len += snprintf(payload + len, sizeof(payload) - len, ",\"orp\":null");
+    }
+
+    // ORP setpoint
+    len += snprintf(payload + len, sizeof(payload) - len,
+                   ",\"orp_setpoint\":%d}", current_state->orp_setpoint);
 
     mqtt_publish(topic, payload, 0, false);
 
     // Update last published state
     s_last_published_state.ph_reading = current_state->ph_reading;
     s_last_published_state.orp_reading = current_state->orp_reading;
+    s_last_published_state.ph_setpoint = current_state->ph_setpoint;
+    s_last_published_state.orp_setpoint = current_state->orp_setpoint;
     s_last_published_state.ph_valid = current_state->ph_valid;
     s_last_published_state.orp_valid = current_state->orp_valid;
 
-    ESP_LOGI(TAG, "Published chlorinator: pH=%.1f, ORP=%d",
-             current_state->ph_reading / 10.0, current_state->orp_reading);
+    ESP_LOGI(TAG, "Published chlorinator: pH=%.1f (sp=%.1f), ORP=%d (sp=%d)",
+             current_state->ph_reading / 10.0, current_state->ph_setpoint / 10.0,
+             current_state->orp_reading, current_state->orp_setpoint);
 }

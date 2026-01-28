@@ -24,8 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 ### Changed
 - Changed MSG_TYPE_38 to MSG_TYPE_REGISTER_STATUS
+- Change heater on/off to On/Off to match other values in /status page
 
 ### Fixed
+- Publish ORP and PH setpoint to MQTT
+
 
 ## [0.0.3] - 2026-01-19
 

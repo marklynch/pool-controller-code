@@ -339,7 +339,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         len += snprintf(json_resp + len, 8192 - len, "\"heater\":{");
         if (s_pool_state.heater_valid) {
             len += snprintf(json_resp + len, 8192 - len, "\"state\":\"%s\"",
-                           s_pool_state.heater_on ? "on" : "off");
+                           s_pool_state.heater_on ? "On" : "Off");
         } else {
             len += snprintf(json_resp + len, 8192 - len, "\"state\":null");
         }

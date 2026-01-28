@@ -791,6 +791,7 @@ static bool decode_message(const uint8_t *data, int len)
         const uint8_t *sub = &data[7];
         uint16_t value = data[11] | (data[12] << 8);  // little endian
 
+        
         if (memcmp(sub, CHLOR_PH_SETPOINT, sizeof(CHLOR_PH_SETPOINT)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator pH setpoint - %.1f", addr_info, value / 10.0);
 
@@ -798,6 +799,10 @@ static bool decode_message(const uint8_t *data, int len)
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 s_pool_state.ph_setpoint = value;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                // Publish to MQTT
+                mqtt_publish_chlorinator(&s_pool_state);
+
                 xSemaphoreGive(s_pool_state_mutex);
             }
             return true;
@@ -809,6 +814,10 @@ static bool decode_message(const uint8_t *data, int len)
             if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 s_pool_state.orp_setpoint = value;
                 s_pool_state.last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                // Publish to MQTT
+                mqtt_publish_chlorinator(&s_pool_state);
+
                 xSemaphoreGive(s_pool_state_mutex);
             }
             return true;
