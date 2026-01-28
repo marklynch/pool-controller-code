@@ -8,12 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [TODO]
-Don't publish to MQTT after every change - add small debounce to it
+- Don't publish to MQTT after every change - add small debounce to it (verify frequency)
+- add mDNS config
+- 
 
 ## [Unreleased]
 ### Added
+- Functions for sending messages
+- Support for telnet sending messages.
+- Do checksums on all messages
+- Added checkdata.py helper script
+
 ### Removed
 ### Changed
+- Changed MSG_TYPE_38 to MSG_TYPE_REGISTER_STATUS
+
 ### Fixed
 
 ## [0.0.3] - 2026-01-19

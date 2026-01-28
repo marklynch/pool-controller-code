@@ -245,7 +245,7 @@ esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 // 50 Main Controller (Connect 10)
 // 62 Temperature sensor
 // 90 Chemistry (pH, ORP, Chlorinator)
-// 6F Touch Screen (source only) ????
+// 6F Touch Screen (dest only) ????
 // F0 Internet Gateway
 
 // Assumption of message structure is:
@@ -253,16 +253,16 @@ esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 // 00 50 - Source Address (example: 50 = Main Controller)
 // FF FF - Destination Address (FF FF = Broadcast)
 // 80 00 Control Byte or Flags
-// 12 - command
-// 0D - sub-command or length
-// 2F - register/parameter
-// 01 - value
-// 01 - value or checksum component
+// 12 - command 1
+// 0D - command 2
+// 2F - command 3
+// 01 - data bytes (variable length) 
+// 01 - value or checksum component - sum of all data bytes (low byte)
 // 03 End Byte
 
 // Message type patterns (messages start with 0x02, end with 0x03)
 // 50 Main Controller (Connect 10)
-static const uint8_t MSG_TYPE_38[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F};
+static const uint8_t MSG_TYPE_REGISTER_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F, 0x17};  // Register Status
 static const uint8_t MSG_TYPE_38_BASE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38};  // Shorter pattern for channel names
 static const uint8_t MSG_TYPE_TEMP_SETTING[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x17, 0x10};
 static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x26, 0x0E};
@@ -275,10 +275,15 @@ static const uint8_t MSG_TYPE_LIGHT_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x
 static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
 static const uint8_t MSG_TYPE_HEATER[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x12, 0x0F};
 
-#define MSG_HEATER_STATE_IDX 11
-
 // 90 Chlorinator (pH, ORP)
 static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
+
+// Chlorinator sub-type patterns (bytes 7-10)
+static const uint8_t CHLOR_PH_SETPOINT[]  = {0x1D, 0x0F, 0x3C, 0x01};
+static const uint8_t CHLOR_ORP_SETPOINT[] = {0x1D, 0x0F, 0x3C, 0x02};
+static const uint8_t CHLOR_PH_READING[]   = {0x1F, 0x0F, 0x3E, 0x01};
+static const uint8_t CHLOR_ORP_READING[]  = {0x1F, 0x0F, 0x3E, 0x02};
+
 
 // 6F Touch Screen (source only)
 
@@ -401,12 +406,8 @@ static const char* get_device_name(uint8_t addr_hi, uint8_t addr_lo) {
     return NULL;
 }
 
-// Chlorinator sub-type patterns (bytes 7-10)
-static const uint8_t CHLOR_PH_SETPOINT[]  = {0x1D, 0x0F, 0x3C, 0x01};
-static const uint8_t CHLOR_ORP_SETPOINT[] = {0x1D, 0x0F, 0x3C, 0x02};
-static const uint8_t CHLOR_PH_READING[]   = {0x1F, 0x0F, 0x3E, 0x01};
-static const uint8_t CHLOR_ORP_READING[]  = {0x1F, 0x0F, 0x3E, 0x02};
-
+// Forward declaration for checksum verification
+bool verify_message_checksum(const uint8_t *data, int len);
 
 // Returns true if message was decoded, false otherwise
 static bool decode_message(const uint8_t *data, int len)
@@ -414,6 +415,32 @@ static bool decode_message(const uint8_t *data, int len)
     // Must start with 0x02 and end with 0x03
     if (len < 7 || data[0] != 0x02 || data[len - 1] != 0x03) {
         return false;
+    }
+
+    // Verify checksum if message is long enough
+    if (len >= 13) {
+        if (!verify_message_checksum(data, len)) {
+            // Format full message as hex string
+            char hexMsg[3 * len + 1];
+            int pos = 0;
+            for (int i = 0; i < len; i++) {
+                pos += snprintf(&hexMsg[pos], sizeof(hexMsg) - pos, "%02X ", data[i]);
+            }
+            hexMsg[pos] = '\0';
+
+            // Calculate what we expected (sum from index 10 to len-3)
+            uint32_t sum = 0;
+            for (int i = 10; i < len - 2; i++) {
+                sum += data[i];
+            }
+            uint8_t calculated = sum & 0xFF;
+            uint8_t received = data[len - 2];
+
+            ESP_LOGW(TAG, "Checksum FAILED: %s", hexMsg);
+            ESP_LOGW(TAG, "  Calculated: 0x%02X, Received: 0x%02X", calculated, received);
+        } else {
+            ESP_LOGD(TAG, "Checksum verification OK");
+        }
     }
 
     // Extract source and destination addresses
@@ -486,7 +513,8 @@ static bool decode_message(const uint8_t *data, int len)
         return true;
     }
 
-    if (len >= sizeof(MSG_TYPE_38) && memcmp(data, MSG_TYPE_38, sizeof(MSG_TYPE_38)) == 0) {
+    if (len >= sizeof(MSG_TYPE_REGISTER_STATUS) && memcmp(data, MSG_TYPE_REGISTER_STATUS, sizeof(MSG_TYPE_REGISTER_STATUS)) == 0) {
+        
         uint8_t channel = data[10];
         uint8_t value1 = data[11];
         uint8_t value2 = data[12];
@@ -707,7 +735,7 @@ static bool decode_message(const uint8_t *data, int len)
         return true;
     }
     else if (len >= sizeof(MSG_TYPE_HEATER) && memcmp(data, MSG_TYPE_HEATER, sizeof(MSG_TYPE_HEATER)) == 0) {
-        uint8_t heater_state = data[MSG_HEATER_STATE_IDX];
+        uint8_t heater_state = data[11];
         ESP_LOGI(TAG, "%s Heater - %s", addr_info, heater_state ? "On" : "Off");
 
         // Update pool state
@@ -787,6 +815,137 @@ static bool decode_message(const uint8_t *data, int len)
 }
 
 
+// ======================================================
+// Message verification and diagnostics
+// ======================================================
+
+/**
+ * Verify checksum for Astral protocol messages.
+ * Checksum = sum of all data bytes from index 10 to (len-3), low byte only.
+ * The checksum byte is at (len-2).
+ *
+ * Returns true if checksum is valid, false otherwise.
+ */
+bool verify_message_checksum(const uint8_t *data, int len)
+{
+    // Must have at least: 02 [10 bytes] [data] [checksum] 03
+    if (len < 13 || data[0] != 0x02 || data[len - 1] != 0x03) {
+        return false;
+    }
+
+    // Calculate checksum: sum bytes from index 10 to (len-3) inclusive
+    uint32_t sum = 0;
+    for (int i = 10; i < len - 2; i++) {
+        sum += data[i];
+    }
+
+    uint8_t calculated_checksum = sum & 0xFF;
+    uint8_t received_checksum = data[len - 2];
+
+    return (calculated_checksum == received_checksum);
+}
+
+// Track last sent message for loopback verification
+static uint8_t s_last_tx_msg[256];
+static int s_last_tx_len = 0;
+static TickType_t s_last_tx_time = 0;
+
+// ======================================================
+// Send message to bus
+// ======================================================
+
+/**
+ * Parse a hex string and send the bytes to the bus UART.
+ *
+ * Accepts hex strings in formats like:
+ *   "02 00 50 FF FF 80 00 12 0D 03"
+ *   "02005FFFFF8000120D03"
+ *   "02 00 50 ff ff 80 00 12 0d 03"
+ *
+ * Returns the number of bytes sent, or -1 on parse error.
+ */
+static int bus_send_message(const char *hex_string)
+{
+    if (hex_string == NULL || hex_string[0] == '\0') {
+        ESP_LOGE(TAG, "bus_send_message: empty hex string");
+        return -1;
+    }
+
+    uint8_t msg_buf[256];
+    int msg_len = 0;
+    const char *p = hex_string;
+
+    // Parse hex string into bytes
+    while (*p != '\0' && msg_len < (int)sizeof(msg_buf)) {
+        // Skip whitespace
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
+            p++;
+        }
+        if (*p == '\0') break;
+
+        // Parse two hex digits
+        char hex_byte[3] = {0};
+        if (*p != '\0') {
+            hex_byte[0] = *p++;
+        } else {
+            ESP_LOGE(TAG, "bus_send_message: incomplete hex byte at position %d", msg_len);
+            return -1;
+        }
+        if (*p != '\0' && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
+            hex_byte[1] = *p++;
+        } else {
+            ESP_LOGE(TAG, "bus_send_message: incomplete hex byte at position %d", msg_len);
+            return -1;
+        }
+
+        // Convert to byte
+        char *endptr;
+        unsigned long val = strtoul(hex_byte, &endptr, 16);
+        if (endptr != hex_byte + 2) {
+            ESP_LOGE(TAG, "bus_send_message: invalid hex at position %d ('%c%c')",
+                     msg_len, hex_byte[0], hex_byte[1]);
+            return -1;
+        }
+
+        msg_buf[msg_len++] = (uint8_t)val;
+    }
+
+    if (msg_len == 0) {
+        ESP_LOGE(TAG, "bus_send_message: no bytes parsed");
+        return -1;
+    }
+
+    // Format message for logging
+    char hex_log[3 * sizeof(msg_buf) + 4];
+    int pos = 0;
+    for (int i = 0; i < msg_len; i++) {
+        pos += snprintf(&hex_log[pos], sizeof(hex_log) - pos, "%02X ", msg_buf[i]);
+    }
+    hex_log[pos] = '\0';
+
+    ESP_LOGI(TAG, "TX: %s(%d bytes)", hex_log, msg_len);
+
+    // Store for loopback verification
+    memcpy(s_last_tx_msg, msg_buf, msg_len);
+    s_last_tx_len = msg_len;
+    s_last_tx_time = xTaskGetTickCount();
+
+    // Send to UART
+    int written = uart_write_bytes(BUS_UART_NUM, (const char *)msg_buf, msg_len);
+    if (written < 0) {
+        ESP_LOGE(TAG, "bus_send_message: uart_write_bytes failed");
+        return -1;
+    }
+
+    // Wait for TX to complete
+    ESP_ERROR_CHECK(uart_wait_tx_done(BUS_UART_NUM, pdMS_TO_TICKS(100)));
+
+    ESP_LOGI(TAG, "TX complete: %d bytes written and transmitted", written);
+
+    led_flash_tx();
+
+    return written;
+}
 
 
 // ======================================================
@@ -915,6 +1074,19 @@ static esp_err_t start_provisioning(void)
 
 static void uart_bus_init(void)
 {
+    // Initialize GPIO2 (TX) to low before UART takes over
+    // This ensures the NPN transistor is OFF during initialization
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << BUS_TX_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&io_conf));
+    ESP_ERROR_CHECK(gpio_set_level(BUS_TX_GPIO, 0));  // Set low
+    ESP_LOGI(TAG, "GPIO%d initialized to LOW", BUS_TX_GPIO);
+
     uart_config_t uart_config = {
         .baud_rate = BUS_BAUD_RATE,
         .data_bits = UART_DATA_8_BITS,
@@ -960,6 +1132,8 @@ static void tcp_server_task(void *pvParameters)
     int client_sock = -1;
     uint8_t uart_buf[256];
     uint8_t tcp_buf[256];
+    char line_buf[512];  // Buffer for accumulating incoming lines
+    int line_pos = 0;
 
     // Create listening socket
     while (listen_sock < 0) {
@@ -1018,8 +1192,11 @@ static void tcp_server_task(void *pvParameters)
                 const char *hello =
                     "Connected to ESP32-C6 pool bus bridge.\r\n"
                     "UART bytes will be shown here in hex.\r\n"
-                    "Bytes you send will be forwarded to the bus.\r\n\r\n";
+                    "Send hex strings (e.g., '02 00 50 FF FF 03') to transmit to the bus.\r\n\r\n";
                 send(client_sock, hello, strlen(hello), 0);
+
+                // Reset line buffer for new client
+                line_pos = 0;
             }
         }
 
@@ -1044,8 +1221,21 @@ static void tcp_server_task(void *pvParameters)
             }
             hexLine[pos] = '\0';
 
-            // Decode the message, log hex only if not decoded
-            if (!decode_message(uart_buf, len)) {
+            // Check if this is our own transmitted message (loopback verification)
+            bool is_loopback = false;
+            if (s_last_tx_len > 0 && len == s_last_tx_len) {
+                TickType_t time_since_tx = xTaskGetTickCount() - s_last_tx_time;
+                if (time_since_tx < pdMS_TO_TICKS(500)) {  // Within 500ms of TX
+                    if (memcmp(uart_buf, s_last_tx_msg, len) == 0) {
+                        is_loopback = true;
+                        ESP_LOGI(TAG, "RX LOOPBACK (our TX echoed): %s", hexLine);
+                        s_last_tx_len = 0;  // Clear so we don't match again
+                    }
+                }
+            }
+
+            // Decode the message, log hex only if not decoded and not loopback
+            if (!is_loopback && !decode_message(uart_buf, len)) {
                 ESP_LOGI(TAG, "RX: %s", hexLine);
             }
 
@@ -1070,22 +1260,60 @@ static void tcp_server_task(void *pvParameters)
                          sizeof(tcp_buf),
                          MSG_DONTWAIT);
             if (r > 0) {
-                int written = uart_write_bytes(BUS_UART_NUM,
-                                               (const char *)tcp_buf,
-                                               r);
-                ESP_LOGD(TAG, "TCP->UART: wrote %d bytes", written);
-                led_flash_tx();
+                // Process received characters
+                for (int i = 0; i < r; i++) {
+                    char c = tcp_buf[i];
+
+                    // Echo the character back to the client
+                    send(client_sock, &c, 1, 0);
+
+                    if (c == '\n' || c == '\r') {
+                        // End of line - process the accumulated command
+                        if (line_pos > 0) {
+                            line_buf[line_pos] = '\0';
+
+                            // Parse and send the hex string
+                            int sent = bus_send_message(line_buf);
+                            if (sent > 0) {
+                                const char *ok_msg = "OK - sent\r\n";
+                                send(client_sock, ok_msg, strlen(ok_msg), 0);
+                            } else {
+                                const char *err_msg = "ERROR - invalid hex string\r\n";
+                                send(client_sock, err_msg, strlen(err_msg), 0);
+                            }
+
+                            line_pos = 0;  // Reset for next line
+                        }
+                    } else if (c == 0x08 || c == 0x7F) {
+                        // Backspace or delete - remove last character
+                        if (line_pos > 0) {
+                            line_pos--;
+                        }
+                    } else {
+                        // Add character to line buffer
+                        if (line_pos < (int)sizeof(line_buf) - 1) {
+                            line_buf[line_pos++] = c;
+                        } else {
+                            // Buffer full - reset
+                            const char *overflow_msg = "\r\nERROR - line too long\r\n";
+                            send(client_sock, overflow_msg, strlen(overflow_msg), 0);
+                            line_pos = 0;
+                        }
+                    }
+                }
             } else if (r == 0) {
                 ESP_LOGI(TAG, "Client disconnected");
                 shutdown(client_sock, SHUT_RDWR);
                 close(client_sock);
                 client_sock = -1;
+                line_pos = 0;  // Reset line buffer
             } else {
                 if (errno != EAGAIN && errno != EWOULDBLOCK) {
                     ESP_LOGW(TAG, "Client recv error: errno %d", errno);
                     shutdown(client_sock, SHUT_RDWR);
                     close(client_sock);
                     client_sock = -1;
+                    line_pos = 0;  // Reset line buffer
                 }
             }
         }

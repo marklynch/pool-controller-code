@@ -3,3 +3,4 @@ managed_components/
 sdkconfig
 sdkconfig.old
 main/secrets.h
+.cache/
