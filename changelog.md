@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comms status for internet gateway
 - Added tests for the protocol decoder
 - Added PROTOCOL.md file which describes the wire protocol
+- Added reading of the fahrenheit temperatures and display in status page
 
 ### Removed
 ### Changed

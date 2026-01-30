@@ -334,6 +334,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         }
         len += snprintf(json_resp + len, 8192 - len, "\"pool_setpoint\":%d,", s_pool_state.pool_setpoint);
         len += snprintf(json_resp + len, 8192 - len, "\"spa_setpoint\":%d,", s_pool_state.spa_setpoint);
+        len += snprintf(json_resp + len, 8192 - len, "\"pool_setpoint_f\":%d,", s_pool_state.pool_setpoint_f);
+        len += snprintf(json_resp + len, 8192 - len, "\"spa_setpoint_f\":%d,", s_pool_state.spa_setpoint_f);
         len += snprintf(json_resp + len, 8192 - len, "\"scale\":\"%s\"",
                        s_pool_state.temp_scale_fahrenheit ? "Fahrenheit" : "Celsius");
         len += snprintf(json_resp + len, 8192 - len, "},");

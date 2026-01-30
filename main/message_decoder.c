@@ -612,16 +612,21 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Temperature setting messages
     if (len >= sizeof(MSG_TYPE_TEMP_SETTING) && memcmp(data, MSG_TYPE_TEMP_SETTING, sizeof(MSG_TYPE_TEMP_SETTING)) == 0) {
-        if (payload_len < 2) return false;
-        uint8_t spa_set_temp = payload[0];
-        uint8_t pool_set_temp = payload[1];
-        ESP_LOGI(TAG, "%s Temperature settings - spa_set_temp=%d, pool_set_temp=%d", addr_info, spa_set_temp, pool_set_temp);
+        if (payload_len < 4) return false;
+        uint8_t spa_set_temp_c = payload[0];
+        uint8_t pool_set_temp_c = payload[1];
+        uint8_t spa_set_temp_f = payload[2];
+        uint8_t pool_set_temp_f = payload[3];
+        ESP_LOGI(TAG, "%s Temperature settings - spa=%d°C/%d°F, pool=%d°C/%d°F",
+                 addr_info, spa_set_temp_c, spa_set_temp_f, pool_set_temp_c, pool_set_temp_f);
 
         // Update pool state and create snapshot for publishing
         pool_state_t state_snapshot;
         if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            ctx->pool_state->spa_setpoint = spa_set_temp;
-            ctx->pool_state->pool_setpoint = pool_set_temp;
+            ctx->pool_state->spa_setpoint = spa_set_temp_c;
+            ctx->pool_state->pool_setpoint = pool_set_temp_c;
+            ctx->pool_state->spa_setpoint_f = spa_set_temp_f;
+            ctx->pool_state->pool_setpoint_f = pool_set_temp_f;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
             // Take snapshot while holding mutex

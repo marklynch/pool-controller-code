@@ -52,6 +52,8 @@ typedef struct {
     uint8_t current_temp;
     uint8_t pool_setpoint;
     uint8_t spa_setpoint;
+    uint8_t pool_setpoint_f;  // Fahrenheit setpoint
+    uint8_t spa_setpoint_f;   // Fahrenheit setpoint
     bool temp_scale_fahrenheit;
     bool temp_valid;
 
