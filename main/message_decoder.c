@@ -239,6 +239,11 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         }
     }
 
+    // Extract data payload section (bytes 10 to len-3)
+    // Message format: [START=0][SRC=1-2][DST=3-4][CTRL=5-6][CMD=7-9][DATA=10...][CHECKSUM=len-2][END=len-1]
+    const uint8_t *payload = &data[10];
+    int payload_len = (len >= 13) ? (len - 12) : 0;  // len - 12 = len - (10 header + 2 trailer)
+
     // Extract source and destination addresses
     uint8_t src_hi = data[1], src_lo = data[2];
     uint8_t dst_hi = data[3], dst_lo = data[4];
@@ -257,10 +262,11 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         snprintf(addr_info, sizeof(addr_info), "[%02X%02X -> %02X%02X]", src_hi, src_lo, dst_hi, dst_lo);
     }
 
-    // Register label messages (byte 10 = register ID, byte 12+ = label string)
+    // Register label messages (payload[0] = register ID, payload[2+] = label string)
     if (len >= sizeof(MSG_TYPE_REGISTER_LABEL) + 3 && memcmp(data, MSG_TYPE_REGISTER_LABEL, sizeof(MSG_TYPE_REGISTER_LABEL)) == 0) {
-        uint8_t reg_id = data[10];
-        const char *label = (const char *)&data[12];
+        if (payload_len < 3) return false;
+        uint8_t reg_id = payload[0];
+        const char *label = (const char *)&payload[2];
 
         ESP_LOGI(TAG, "%s Register 0x%02X label - \"%s\"", addr_info, reg_id, label);
 
@@ -290,15 +296,16 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         return true;
     }
 
-    // Channel name messages (byte 10 = 0x7C-0x83 for channels 1-8)
+    // Channel name messages (payload[0] = 0x7C-0x83 for channels 1-8)
     if (len >= sizeof(MSG_TYPE_38_BASE) + 5 && memcmp(data, MSG_TYPE_38_BASE, sizeof(MSG_TYPE_38_BASE)) == 0) {
-        uint8_t ch_id = data[10];
+        if (payload_len < 5) return false;
+        uint8_t ch_id = payload[0];
         if (ch_id >= 0x7C && ch_id <= 0x83) {
             uint8_t ch_num = ch_id - 0x7C + 1;
-            const char *name = (const char *)&data[12];
+            const char *name = (const char *)&payload[2];
 
             // Check if it's an empty/unused channel (first byte is 0x00)
-            if (data[12] == 0x00) {
+            if (payload[2] == 0x00) {
                 ESP_LOGI(TAG, "%s Channel %d name - (empty)", addr_info, ch_num);
             } else {
                 ESP_LOGI(TAG, "%s Channel %d name - \"%s\"", addr_info, ch_num, name);
@@ -319,7 +326,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Lighting zone configuration messages - tells us which zones are actually installed
     if (len >= sizeof(MSG_TYPE_LIGHT_CONFIG) + 4 && memcmp(data, MSG_TYPE_LIGHT_CONFIG, sizeof(MSG_TYPE_LIGHT_CONFIG)) == 0) {
-        uint8_t zone_idx = data[10];
+        if (payload_len < 1) return false;
+        uint8_t zone_idx = payload[0];
         if (zone_idx <= 3) {
             // Mark this zone as configured (only publish if this is the first time)
             bool should_publish = false;
@@ -352,9 +360,10 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Register status messages (lighting, channel types, etc.)
     if (len >= sizeof(MSG_TYPE_REGISTER_STATUS) && memcmp(data, MSG_TYPE_REGISTER_STATUS, sizeof(MSG_TYPE_REGISTER_STATUS)) == 0) {
-        uint8_t channel = data[10];
-        uint8_t value1 = data[11];
-        uint8_t value2 = data[12];
+        if (payload_len < 3) return false;
+        uint8_t channel = payload[0];
+        uint8_t value1 = payload[1];
+        uint8_t value2 = payload[2];
 
         if (channel >= 0xC0 && channel <= 0xC3) {
             // Lighting zone state
@@ -475,7 +484,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Configuration messages
     if (len >= sizeof(MSG_TYPE_CONFIG) && memcmp(data, MSG_TYPE_CONFIG, sizeof(MSG_TYPE_CONFIG)) == 0) {
-        uint8_t config_byte = data[10];
+        if (payload_len < 1) return false;
+        uint8_t config_byte = payload[0];
         const char *scale_str = (config_byte & 0x10) ? "Fahrenheit" : "Celsius";
         ESP_LOGI(TAG, "%s Config - temperature scale=%s", addr_info, scale_str);
 
@@ -490,7 +500,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Mode messages (Spa/Pool)
     if (len >= sizeof(MSG_TYPE_MODE) && memcmp(data, MSG_TYPE_MODE, sizeof(MSG_TYPE_MODE)) == 0) {
-        uint8_t mode = data[10];
+        if (payload_len < 1) return false;
+        uint8_t mode = payload[0];
         const char *mode_str = (mode == 0x00) ? "Spa" : (mode == 0x01) ? "Pool" : "Unknown";
         ESP_LOGI(TAG, "%s Mode - %s", addr_info, mode_str);
 
@@ -516,7 +527,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Active channels bitmask
     if (len >= sizeof(MSG_TYPE_CHANNELS) + 2 && memcmp(data, MSG_TYPE_CHANNELS, sizeof(MSG_TYPE_CHANNELS)) == 0) {
-        uint8_t bitmask = data[10];
+        if (payload_len < 1) return false;
+        uint8_t bitmask = payload[0];
         ESP_LOGI(TAG, "%s Active channels - 0x%02X [%c%c%c%c%c%c%c%c]",
                  addr_info, bitmask,
                  (bitmask & 0x80) ? '8' : '-',
@@ -532,9 +544,10 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Channel status messages
     if (len >= sizeof(MSG_TYPE_CHANNEL_STATUS) + 1 && memcmp(data, MSG_TYPE_CHANNEL_STATUS, sizeof(MSG_TYPE_CHANNEL_STATUS)) == 0) {
-        uint8_t num_channels = data[10];
+        if (payload_len < 1) return false;
+        uint8_t num_channels = payload[0];
         ESP_LOGI(TAG, "%s Channel status (%d channels):", addr_info, num_channels);
-        int idx = 11;  // Channel data starts after header
+        int payload_idx = 1;  // Channel data starts at payload[1]
         int ch_num = 1;
         bool past_end = false;
         uint8_t channels_to_publish[8] = {0};  // Track which channels to publish
@@ -546,19 +559,19 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
             ctx->pool_state->num_channels = num_channels;
 
             while (ch_num <= num_channels) {
-                if (past_end || idx + 2 >= len - 1) {
+                if (past_end || payload_idx + 2 >= payload_len) {
                     ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
                     ch_num++;
                     continue;
                 }
-                uint8_t ch_type = data[idx];
+                uint8_t ch_type = payload[payload_idx];
                 if (ch_type == CHANNEL_END) {
                     past_end = true;
                     ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
                     ch_num++;
                     continue;
                 }
-                uint8_t state = data[idx + 1];
+                uint8_t state = payload[payload_idx + 1];
                 const char *state_name = (state < CHANNEL_STATE_COUNT) ? CHANNEL_STATE_NAMES[state] : "Unknown";
 
                 if (ch_type == CHANNEL_UNUSED) {
@@ -577,7 +590,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
                     // Mark this channel for publishing
                     channels_to_publish[num_to_publish++] = ch_num;
                 }
-                idx += 3;
+                payload_idx += 3;
                 ch_num++;
             }
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -599,8 +612,9 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Temperature setting messages
     if (len >= sizeof(MSG_TYPE_TEMP_SETTING) && memcmp(data, MSG_TYPE_TEMP_SETTING, sizeof(MSG_TYPE_TEMP_SETTING)) == 0) {
-        uint8_t spa_set_temp = data[10];
-        uint8_t pool_set_temp = data[11];
+        if (payload_len < 2) return false;
+        uint8_t spa_set_temp = payload[0];
+        uint8_t pool_set_temp = payload[1];
         ESP_LOGI(TAG, "%s Temperature settings - spa_set_temp=%d, pool_set_temp=%d", addr_info, spa_set_temp, pool_set_temp);
 
         // Update pool state and create snapshot for publishing
@@ -625,7 +639,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Temperature reading messages
     if (len >= sizeof(MSG_TYPE_TEMP_READING) && memcmp(data, MSG_TYPE_TEMP_READING, sizeof(MSG_TYPE_TEMP_READING)) == 0) {
-        uint8_t current_temp = data[10];
+        if (payload_len < 1) return false;
+        uint8_t current_temp = payload[0];
         ESP_LOGI(TAG, "%s Current temperature - %d", addr_info, current_temp);
 
         // Update pool state and create snapshot for publishing
@@ -650,7 +665,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Heater status messages
     if (len >= sizeof(MSG_TYPE_HEATER) && memcmp(data, MSG_TYPE_HEATER, sizeof(MSG_TYPE_HEATER)) == 0) {
-        uint8_t heater_state = data[11];
+        if (payload_len < 2) return false;
+        uint8_t heater_state = payload[1];
         ESP_LOGI(TAG, "%s Heater - %s", addr_info, heater_state ? "On" : "Off");
 
         // Update pool state and create snapshot for publishing
@@ -675,8 +691,9 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Chlorinator messages (pH and ORP)
     if (len >= sizeof(MSG_TYPE_CHLOR) + 6 && memcmp(data, MSG_TYPE_CHLOR, sizeof(MSG_TYPE_CHLOR)) == 0) {
-        const uint8_t *sub = &data[7];
-        uint16_t value = data[11] | (data[12] << 8);  // little endian
+        if (payload_len < 3) return false;
+        const uint8_t *sub = &data[7];  // Subcommand is in header (bytes 7-9)
+        uint16_t value = payload[1] | (payload[2] << 8);  // little endian value at payload[1-2]
 
         if (memcmp(sub, CHLOR_PH_SETPOINT, sizeof(CHLOR_PH_SETPOINT)) == 0) {
             ESP_LOGI(TAG, "%s Chlorinator pH setpoint - %.1f", addr_info, value / 10.0);
@@ -768,8 +785,9 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Internet Gateway serial number
     if (len >= sizeof(MSG_TYPE_SERIAL_NUMBER) + 6 && memcmp(data, MSG_TYPE_SERIAL_NUMBER, sizeof(MSG_TYPE_SERIAL_NUMBER)) == 0) {
-        // Serial number is in bytes 11-14 (little endian)
-        uint32_t serial = data[11] | (data[12] << 8) | (data[13] << 16) | (data[14] << 24);
+        if (payload_len < 5) return false;
+        // Serial number is in payload[1-4] (little endian)
+        uint32_t serial = payload[1] | (payload[2] << 8) | (payload[3] << 16) | (payload[4] << 24);
         ESP_LOGI(TAG, "%s Serial number - %lu (0x%08lX)", addr_info, (unsigned long)serial, (unsigned long)serial);
 
         // Update pool state
@@ -784,13 +802,14 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Internet Gateway IP address
     if (len >= sizeof(MSG_TYPE_GATEWAY_IP) + 10 && memcmp(data, MSG_TYPE_GATEWAY_IP, sizeof(MSG_TYPE_GATEWAY_IP)) == 0) {
-        // IP address is in bytes 14-17, signal level at byte 18
+        if (payload_len < 9) return false;
+        // IP address is in payload[4-7], signal level at payload[8]
         uint8_t ip[4];
-        ip[0] = data[14];
-        ip[1] = data[15];
-        ip[2] = data[16];
-        ip[3] = data[17];
-        uint8_t signal_level = data[18];
+        ip[0] = payload[4];
+        ip[1] = payload[5];
+        ip[2] = payload[6];
+        ip[3] = payload[7];
+        uint8_t signal_level = payload[8];
 
         ESP_LOGI(TAG, "%s Internet Gateway IP - %d.%d.%d.%d, signal level: %d",
                  addr_info, ip[0], ip[1], ip[2], ip[3], signal_level);
@@ -808,8 +827,9 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Internet Gateway communications status
     if (len >= sizeof(MSG_TYPE_GATEWAY_COMMS) + 5 && memcmp(data, MSG_TYPE_GATEWAY_COMMS, sizeof(MSG_TYPE_GATEWAY_COMMS)) == 0) {
-        // Comms status is in bytes 11-12 (big endian)
-        uint16_t comms_status = (data[11] << 8) | data[12];
+        if (payload_len < 3) return false;
+        // Comms status is in payload[1-2] (little endian)
+        uint16_t comms_status = (payload[1] << 8) | payload[2];
         const char *status_text = get_gateway_comms_status_text(comms_status);
 
         ESP_LOGI(TAG, "%s Internet Gateway comms status - %u (%s)", addr_info, comms_status, status_text);

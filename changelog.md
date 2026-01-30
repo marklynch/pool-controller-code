@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved the internal locking/mutex for MQTT publishing
 - Pulled the TCP server out of main.c to own tcp_bridge.c
 - Pulled the message decoder out of main.c to message_decoder.c
+- Refactored handling of data blocks to be simpler
 
 ### Fixed
 - Publish ORP and PH setpoint to MQTT
