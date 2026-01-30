@@ -50,7 +50,7 @@ uint8_t checksum = sum & 0xFF;
 
 ### 1. Mode Message (Spa/Pool)
 
-Sets or reports the current operating mode.
+Reports the current operating mode - pool or spa.
 
 **Pattern:** `02 00 50 FF FF 80 00 14 0D F1`
 
@@ -127,6 +127,7 @@ Current water temperature from the sensor.
 Reports whether the heater is on or off.
 
 **Pattern:** `02 00 62 FF FF 80 00 12 0F`
+
 **Example - Heater On:**
 
 ```
@@ -169,12 +170,19 @@ System configuration including temperature scale.
 02 00 50 FF FF 80 00 26 0E 04 11 06 17 03
                               ^^ 0x11 - Fahrenheit
                                  ^^ Unknown
-
 ```
 
 **Data Fields:**
 
-- Byte 10: Temperature configuration - 01 Celcius, 11, Fahrenheit
+- Byte 10: Temperature configuration - 01 Celcius, 11, Fahrenheit - possible bitmask as defined below.
+  - Bit 7: 
+  - Bit 6: 
+  - Bit 5: 
+  - Bit 4:  0: celsius, 1:fahrenheit
+  - Bit 3:  
+  - Bit 2: 
+  - Bit 1: 
+  - Bit 0:  1:heat 0: cool
 - Byte 11: Unknown
 ---
 
@@ -270,6 +278,7 @@ Configures the registers for each channel.  Handles lights and channels
 
 **Pattern:** `02 00 50 FF FF 80 00 38 0F 17`
 
+
 **Example - Light zone:**
 
 ```
@@ -339,7 +348,7 @@ Configures the registers for each channel.  Handles lights and channels
 
 Generic register label assignments.
 
-**Pattern:** `02 00 50 FF FF 80 00 38 1A 22`
+**Pattern: Cahnnels?** `02 00 50 FF FF 80 00 38 1A 22`
 
 **Example:**
 
@@ -355,6 +364,22 @@ Generic register label assignments.
 - Byte 10: Register ID
 - Byte 11: Unknown
 - Byte 12+: ASCII label string (null terminated)
+
+
+**Pattern Variant: Valves?** `02 00 50 FF FF 80 00 38 16 1E`
+**Example: 38 16 1E**
+```
+02 00 50 FF FF 80 00 38 16 1E D0 02 56 61 6C 76 65 20 31 00 21 03
+                              ^^ Register ID (0xD0)
+                                 ^^  Unknown
+                                    V  a  l  v  e     1  (null terminated)
+
+02 00 50 FF FF 80 00 38 16 1E D1 02 56 61 6C 76 65 20 32 00 23 03
+                              ^^ Register ID (0xD1)
+                                 ^^  Unknown
+                                    V  a  l  v  e     2  (null terminated)
+```
+
 
 ---
 
