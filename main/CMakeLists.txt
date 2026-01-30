@@ -7,6 +7,7 @@ idf_component_register(
         "mqtt_discovery.c"
         "mqtt_commands.c"
         "web_handlers.c"
+        "tcp_bridge.c"
     INCLUDE_DIRS
          "."
 )

@@ -30,6 +30,7 @@
 #include "mqtt_publish.h"
 #include "pool_state.h"
 #include "web_handlers.h"
+#include "tcp_bridge.h"
 
 // ==================== USER CONFIG =====================
 
@@ -1051,11 +1052,6 @@ bool verify_message_checksum(const uint8_t *data, int len)
     return (calculated_checksum == received_checksum);
 }
 
-// Track last sent message for loopback verification
-static uint8_t s_last_tx_msg[256];
-static int s_last_tx_len = 0;
-static TickType_t s_last_tx_time = 0;
-
 // ======================================================
 // Send message to bus
 // ======================================================
@@ -1130,11 +1126,6 @@ static int bus_send_message(const char *hex_string)
     hex_log[pos] = '\0';
 
     ESP_LOGI(TAG, "TX: %s(%d bytes)", hex_log, msg_len);
-
-    // Store for loopback verification
-    memcpy(s_last_tx_msg, msg_buf, msg_len);
-    s_last_tx_len = msg_len;
-    s_last_tx_time = xTaskGetTickCount();
 
     // Send to UART
     int written = uart_write_bytes(BUS_UART_NUM, (const char *)msg_buf, msg_len);
@@ -1328,204 +1319,31 @@ static void uart_bus_init(void)
 }
 
 // ======================================================
-// TCP server task: bridge UART <-> TCP client
+// TCP bridge callback wrappers
 // ======================================================
 
-static void tcp_server_task(void *pvParameters)
+/**
+ * Wrapper for UART read callback used by TCP bridge
+ */
+static int uart_read_wrapper(uint8_t *buffer, size_t max_len, uint32_t timeout_ms)
 {
-    char addr_str[128];
-    int listen_sock = -1;
-    int client_sock = -1;
-    uint8_t uart_buf[256];
-    uint8_t tcp_buf[256];
-    char line_buf[512];  // Buffer for accumulating incoming lines
-    int line_pos = 0;
+    return uart_read_bytes(BUS_UART_NUM, buffer, max_len, timeout_ms / portTICK_PERIOD_MS);
+}
 
-    // Create listening socket
-    while (listen_sock < 0) {
-        struct sockaddr_in listen_addr = {0};
-        listen_addr.sin_family = AF_INET;
-        listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        listen_addr.sin_port = htons(TCP_PORT);
+/**
+ * Wrapper for UART write callback used by TCP bridge
+ */
+static int uart_write_wrapper(const char *hex_string)
+{
+    return bus_send_message(hex_string);
+}
 
-        listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-        if (listen_sock < 0) {
-            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            continue;
-        }
-
-        int opt = 1;
-        setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-        if (bind(listen_sock, (struct sockaddr *)&listen_addr,
-                 sizeof(listen_addr)) < 0) {
-            ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
-            close(listen_sock);
-            listen_sock = -1;
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            continue;
-        }
-
-        if (listen(listen_sock, 1) < 0) {
-            ESP_LOGE(TAG, "Error during listen: errno %d", errno);
-            close(listen_sock);
-            listen_sock = -1;
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            continue;
-        }
-
-        // Make listening socket non-blocking
-        int flags = fcntl(listen_sock, F_GETFL, 0);
-        fcntl(listen_sock, F_SETFL, flags | O_NONBLOCK);
-
-        ESP_LOGI(TAG, "TCP server listening on port %d", TCP_PORT);
-    }
-
-    // Main loop - always reads UART, optionally bridges to TCP client
-    while (1) {
-        // Check for new client connection (non-blocking)
-        if (client_sock < 0) {
-            struct sockaddr_in client_addr;
-            socklen_t addr_len = sizeof(client_addr);
-            client_sock = accept(listen_sock,
-                                 (struct sockaddr *)&client_addr,
-                                 &addr_len);
-            if (client_sock >= 0) {
-                inet_ntoa_r(client_addr.sin_addr, addr_str, sizeof(addr_str) - 1);
-                ESP_LOGI(TAG, "Client connected from %s", addr_str);
-
-                const char *hello =
-                    "Connected to ESP32-C6 pool bus bridge.\r\n"
-                    "UART bytes will be shown here in hex.\r\n"
-                    "Send hex strings (e.g., '02 00 50 FF FF 03') to transmit to the bus.\r\n\r\n";
-                send(client_sock, hello, strlen(hello), 0);
-
-                // Reset line buffer for new client
-                line_pos = 0;
-            }
-        }
-
-        // 1. UART RX - always read and log
-        int len = uart_read_bytes(BUS_UART_NUM,
-                                  uart_buf,
-                                  sizeof(uart_buf),
-                                  10 / portTICK_PERIOD_MS); // 10 ms
-        if (len > 0) {
-            led_flash_rx();
-
-            // Format as hex string
-            char hexLine[3 * sizeof(uart_buf) + 4];
-            int pos = 0;
-            for (int i = 0; i < len; ++i) {
-                if (pos < (int)(sizeof(hexLine) - 4)) {
-                    pos += snprintf(&hexLine[pos],
-                                    sizeof(hexLine) - pos,
-                                    "%02X ",
-                                    uart_buf[i]);
-                }
-            }
-            hexLine[pos] = '\0';
-
-            // Check if this is our own transmitted message (loopback verification)
-            bool is_loopback = false;
-            if (s_last_tx_len > 0 && len == s_last_tx_len) {
-                TickType_t time_since_tx = xTaskGetTickCount() - s_last_tx_time;
-                if (time_since_tx < pdMS_TO_TICKS(500)) {  // Within 500ms of TX
-                    if (memcmp(uart_buf, s_last_tx_msg, len) == 0) {
-                        is_loopback = true;
-                        ESP_LOGI(TAG, "RX LOOPBACK (our TX echoed): %s", hexLine);
-                        s_last_tx_len = 0;  // Clear so we don't match again
-                    }
-                }
-            }
-
-            // Decode the message, log hex only if not decoded and not loopback
-            if (!is_loopback && !decode_message(uart_buf, len)) {
-                ESP_LOGI(TAG, "RX: %s", hexLine);
-            }
-
-            // Send to client if connected
-            if (client_sock >= 0) {
-                hexLine[pos++] = '\r';
-                hexLine[pos++] = '\n';
-                int sent = send(client_sock, hexLine, pos, 0);
-                if (sent < 0) {
-                    ESP_LOGW(TAG, "Client send error: errno %d", errno);
-                    shutdown(client_sock, SHUT_RDWR);
-                    close(client_sock);
-                    client_sock = -1;
-                }
-            }
-        }
-
-        // 2. TCP -> UART (only if client connected)
-        if (client_sock >= 0) {
-            int r = recv(client_sock,
-                         tcp_buf,
-                         sizeof(tcp_buf),
-                         MSG_DONTWAIT);
-            if (r > 0) {
-                // Process received characters
-                for (int i = 0; i < r; i++) {
-                    char c = tcp_buf[i];
-
-                    // Echo the character back to the client
-                    send(client_sock, &c, 1, 0);
-
-                    if (c == '\n' || c == '\r') {
-                        // End of line - process the accumulated command
-                        if (line_pos > 0) {
-                            line_buf[line_pos] = '\0';
-
-                            // Parse and send the hex string
-                            int sent = bus_send_message(line_buf);
-                            if (sent > 0) {
-                                const char *ok_msg = "OK - sent\r\n";
-                                send(client_sock, ok_msg, strlen(ok_msg), 0);
-                            } else {
-                                const char *err_msg = "ERROR - invalid hex string\r\n";
-                                send(client_sock, err_msg, strlen(err_msg), 0);
-                            }
-
-                            line_pos = 0;  // Reset for next line
-                        }
-                    } else if (c == 0x08 || c == 0x7F) {
-                        // Backspace or delete - remove last character
-                        if (line_pos > 0) {
-                            line_pos--;
-                        }
-                    } else {
-                        // Add character to line buffer
-                        if (line_pos < (int)sizeof(line_buf) - 1) {
-                            line_buf[line_pos++] = c;
-                        } else {
-                            // Buffer full - reset
-                            const char *overflow_msg = "\r\nERROR - line too long\r\n";
-                            send(client_sock, overflow_msg, strlen(overflow_msg), 0);
-                            line_pos = 0;
-                        }
-                    }
-                }
-            } else if (r == 0) {
-                ESP_LOGI(TAG, "Client disconnected");
-                shutdown(client_sock, SHUT_RDWR);
-                close(client_sock);
-                client_sock = -1;
-                line_pos = 0;  // Reset line buffer
-            } else {
-                if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                    ESP_LOGW(TAG, "Client recv error: errno %d", errno);
-                    shutdown(client_sock, SHUT_RDWR);
-                    close(client_sock);
-                    client_sock = -1;
-                    line_pos = 0;  // Reset line buffer
-                }
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
+/**
+ * Wrapper for message decoder callback used by TCP bridge
+ */
+static bool decode_wrapper(const uint8_t *data, int len)
+{
+    return decode_message(data, len);
 }
 
 // ======================================================
@@ -1606,12 +1424,20 @@ void app_main(void)
             ESP_LOGW(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
         }
 
-        // Start TCP server for UART bridge
-        xTaskCreate(tcp_server_task,
-                    "tcp_server_task",
-                    8192,  // Increased from 4096 to handle MQTT discovery publishing
-                    NULL,
-                    5,
-                    NULL);
+        // Start TCP bridge server
+        tcp_bridge_config_t bridge_config = {
+            .port = TCP_PORT,
+            .uart_read = uart_read_wrapper,
+            .uart_write = uart_write_wrapper,
+            .decode_message = decode_wrapper,
+            .led_flash_rx = led_flash_rx,
+            .led_flash_tx = led_flash_tx,
+        };
+        esp_err_t bridge_err = tcp_bridge_start(&bridge_config);
+        if (bridge_err == ESP_OK) {
+            ESP_LOGI(TAG, "TCP bridge started on port %d", TCP_PORT);
+        } else {
+            ESP_LOGE(TAG, "Failed to start TCP bridge: %s", esp_err_to_name(bridge_err));
+        }
     }
 }
