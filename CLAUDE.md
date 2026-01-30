@@ -27,15 +27,6 @@ Requires ESP-IDF v5.5+ with environment sourced (`. $IDF_PATH/export.sh`).
 - **Protocol Decoder**: Pattern-matching decoder for Astral bus messages
 - **RGB LED**: WS2812 on GPIO8 for status indication (blue=startup, red=RX, green=TX)
 
-**Message Protocol Structure**:
-```
-02 [src_hi src_lo] [dst_hi dst_lo] 80 00 [cmd] [subcmd/len] [data...] 03
-```
-- Start byte: 0x02, End byte: 0x03
-- Known device addresses: Controller (0x0050), Temp Sensor (0x0062), Chemistry (0x0090), Touch Screen (0x006F), Internet GW (0x00F0), Broadcast (0xFFFF)
-
-**Decoded message types**: Temperature settings/readings, pool/spa mode, channel status, heater state, chlorinator pH/ORP, lighting zones/colors, channel names and types.
-
 ## Configuration
 
 Hardware pin configuration at top of `main/main.c`:
@@ -44,6 +35,8 @@ Hardware pin configuration at top of `main/main.c`:
 - `TCP_PORT` - Server port (default 7373)
 
 ## Protocol Decoding
+
+The full protocol desciption is in the `PROTOCOL.md` file.
 
 Message patterns are defined as byte arrays (e.g., `MSG_TYPE_TEMP_SETTING[]`). The `decode_message()` function uses `memcmp()` to match incoming data against known patterns and logs decoded values.
 

@@ -98,7 +98,7 @@ CMD_SUB_LABELS: Dict[Tuple[int, int, int], str] = {
 
     # Temperature sensor commands
     (0x12, 0x0F, 0x03): "Heater State",
-    (0x16, 0x0E, 0x06): "Temp Reading",
+    (0x16, 0x0E, 0x06): "Temp Reading",  # 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03
 
     # Chemistry
     (0x1D, 0x0F, 0x3C): "Chlorinator Setpoints", # 01 pH setpoint, 02 ORP setpoint
