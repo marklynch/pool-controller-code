@@ -325,7 +325,27 @@ static int bus_send_message(const char *hex_string)
     char hex_log[3 * sizeof(msg_buf) + 4];
     int pos = 0;
     for (int i = 0; i < msg_len; i++) {
-        pos += snprintf(&hex_log[pos], sizeof(hex_log) - pos, "%02X ", msg_buf[i]);
+        int remaining = sizeof(hex_log) - pos;
+        if (remaining < 4) {
+            // Not enough space for "XX " + null terminator, truncate
+            break;
+        }
+        int written = snprintf(&hex_log[pos], remaining, "%02X ", msg_buf[i]);
+        if (written < 0) {
+            // Encoding error (unlikely)
+            ESP_LOGE(TAG, "bus_send_message: snprintf encoding error");
+            break;
+        }
+        pos += written;
+        // Sanity check: ensure pos doesn't exceed buffer bounds
+        if (pos >= (int)sizeof(hex_log)) {
+            pos = sizeof(hex_log) - 1;
+            break;
+        }
+    }
+    // Ensure null termination within bounds
+    if (pos >= (int)sizeof(hex_log)) {
+        pos = sizeof(hex_log) - 1;
     }
     hex_log[pos] = '\0';
 
