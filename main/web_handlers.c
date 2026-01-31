@@ -5,6 +5,8 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_app_desc.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
 #include "nvs_flash.h"
 #include <string.h>
 #include <stdlib.h>
@@ -50,7 +52,8 @@ char *get_page_nav(const char page) {
     // TODO - Make 'page' indicate current page for highlighting
     const char *fmt = "<div class='nav'><a href='/'>WiFi Scan</a> | "
         "<a href='/mqtt_config'>MQTT Config</a> | "
-        "<a href='/status'>Status</a>"
+        "<a href='/status'>Status</a> | "
+        "<a href='/update'>Update</a>"
         "</div><hr>";
     // calculate the required size
     int n = snprintf(NULL, 0, fmt, page);
@@ -100,7 +103,7 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     char page_title[] = "Pool Controller WiFi Setup";
     char *header = get_page_header(page_title);
     char *nav = get_page_nav('/');
-    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN); 
     httpd_resp_send_chunk(req, WIFI_PAGE, HTTPD_RESP_USE_STRLEN);
@@ -216,7 +219,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     }
     len += snprintf(json_resp + len, 4096 - len, "]");
 
-    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     httpd_resp_send(req, json_resp, len);
 
     free(ap_list);
@@ -275,7 +278,7 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
 
     if (strlen(ssid) == 0) {
         const char *resp = "{\"success\":false,\"message\":\"Invalid SSID\"}";
-        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
         httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
@@ -287,7 +290,7 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to save credentials to NVS: %s", esp_err_to_name(err));
         const char *resp = "{\"success\":false,\"message\":\"Failed to save credentials\"}";
-        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
         httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
@@ -296,7 +299,7 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
 
     // Send success response
     const char *resp = "{\"success\":true,\"message\":\"Connected! Device will restart...\"}";
-    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 
     // Restart device to apply new credentials
@@ -510,7 +513,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     }
 
     // Send JSON response
-    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     httpd_resp_send(req, json_resp, len);
 
     free(json_resp);
@@ -576,7 +579,7 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
     char page_title[] = "MQTT Configuration";
     char *header = get_page_header(page_title);
     char *nav = get_page_nav('/');
-    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
@@ -662,18 +665,238 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
     esp_err_t err = mqtt_save_config(&config);
     if (err != ESP_OK) {
         const char *resp = "{\"success\":false,\"message\":\"Failed to save config\"}";
-        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
         httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
     // Send success response
     const char *resp = "{\"success\":true,\"message\":\"MQTT config saved! Device will restart...\"}";
-    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 
     // Restart device to apply new MQTT config
     vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+
+    return ESP_OK;
+}
+
+// ======================================================
+// OTA Update Handlers
+// ======================================================
+
+static esp_err_t update_get_handler(httpd_req_t *req)
+{
+    // Get current firmware info
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
+
+    char partition_info[256];
+    snprintf(partition_info, sizeof(partition_info),
+             "Current: %s (%s)<br>Update will write to: %s",
+             running->label, app_desc->version,
+             update_partition ? update_partition->label : "unknown");
+
+    const char *html_start =
+        "<div class='container'>"
+        "<h1>Firmware Update</h1>"
+        "<div style='background:#e7f3ff;padding:15px;border-radius:4px;margin-bottom:20px'>"
+        "<strong>Current Version:</strong> ";
+
+    const char *html_mid =
+        "</div>"
+        "<div style='background:#fff3cd;padding:15px;border-radius:4px;margin-bottom:20px'>"
+        "<strong>⚠️ Warning:</strong> Do not power off the device during update!"
+        "</div>"
+        "<form id='updateForm' enctype='multipart/form-data'>"
+        "<label>Select Firmware File (.bin):</label>"
+        "<input type='file' id='firmware' name='firmware' accept='.bin' required>"
+        "<button type='submit'>Upload and Update</button>"
+        "<div id='status' class='status'></div>"
+        "<div id='progress' style='display:none;margin-top:20px'>"
+        "<div style='background:#e0e0e0;border-radius:4px;overflow:hidden'>"
+        "<div id='progressBar' style='background:#4CAF50;height:30px;width:0%;transition:width 0.3s'></div>"
+        "</div>"
+        "<div id='progressText' style='text-align:center;margin-top:10px'></div>"
+        "</div>"
+        "</form></div>"
+        "<script>"
+        "document.getElementById('updateForm').addEventListener('submit',function(e){"
+        "e.preventDefault();"
+        "const file=document.getElementById('firmware').files[0];"
+        "if(!file){alert('Please select a file');return;}"
+        "const formData=new FormData();formData.append('firmware',file);"
+        "const status=document.getElementById('status');"
+        "const progress=document.getElementById('progress');"
+        "const progressBar=document.getElementById('progressBar');"
+        "const progressText=document.getElementById('progressText');"
+        "status.textContent='Uploading firmware...';status.className='status';status.style.display='block';"
+        "progress.style.display='block';"
+        "const xhr=new XMLHttpRequest();"
+        "xhr.upload.addEventListener('progress',function(e){"
+        "if(e.lengthComputable){"
+        "const percent=Math.round((e.loaded/e.total)*100);"
+        "progressBar.style.width=percent+'%';"
+        "progressText.textContent=percent+'% ('+Math.round(e.loaded/1024)+'KB / '+Math.round(e.total/1024)+'KB)';"
+        "}});"
+        "xhr.addEventListener('load',function(){"
+        "if(xhr.status===200){"
+        "const resp=JSON.parse(xhr.responseText);"
+        "if(resp.success){"
+        "status.textContent=resp.message;status.className='status success';"
+        "progressText.textContent='Update complete! Device will restart...';"
+        "}else{"
+        "status.textContent='Error: '+resp.message;status.className='status error';"
+        "}}else{"
+        "status.textContent='Upload failed (HTTP '+xhr.status+')';status.className='status error';"
+        "}});"
+        "xhr.addEventListener('error',function(){"
+        "status.textContent='Network error during upload';status.className='status error';});"
+        "xhr.open('POST','/update',true);"
+        "xhr.send(formData);"
+        "});"
+        "</script>";
+
+    char page_title[] = "Firmware Update";
+    char *header = get_page_header(page_title);
+    char *nav = get_page_nav('/');
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, partition_info, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, html_mid, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, PAGE_FOOTER, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+    free(nav);
+    free(header);
+    return ESP_OK;
+}
+
+static esp_err_t update_post_handler(httpd_req_t *req)
+{
+    esp_ota_handle_t ota_handle = 0;
+    const esp_partition_t *update_partition = NULL;
+    const esp_partition_t *configured = esp_ota_get_boot_partition();
+    const esp_partition_t *running = esp_ota_get_running_partition();
+
+    ESP_LOGI(TAG, "OTA Update started");
+    ESP_LOGI(TAG, "Running partition: %s at offset 0x%lx", running->label, running->address);
+
+    if (configured != running) {
+        ESP_LOGW(TAG, "Configured boot partition != running partition");
+    }
+
+    update_partition = esp_ota_get_next_update_partition(NULL);
+    if (update_partition == NULL) {
+        ESP_LOGE(TAG, "No OTA partition found");
+        const char *resp = "{\"success\":false,\"message\":\"No OTA partition configured\"}";
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Writing to partition: %s at offset 0x%lx", update_partition->label, update_partition->address);
+
+    // Start OTA update
+    esp_err_t err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &ota_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
+        const char *resp = "{\"success\":false,\"message\":\"OTA begin failed\"}";
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    // Read and write firmware data
+    char *buf = malloc(1024);
+    if (buf == NULL) {
+        esp_ota_abort(ota_handle);
+        const char *resp = "{\"success\":false,\"message\":\"Memory allocation failed\"}";
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    int remaining = req->content_len;
+    int received = 0;
+    ESP_LOGI(TAG, "Firmware size: %d bytes", remaining);
+
+    while (remaining > 0) {
+        int recv_len = httpd_req_recv(req, buf, remaining < 1024 ? remaining : 1024);
+        if (recv_len < 0) {
+            if (recv_len == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            ESP_LOGE(TAG, "Firmware receive failed");
+            free(buf);
+            esp_ota_abort(ota_handle);
+            const char *resp = "{\"success\":false,\"message\":\"Receive failed\"}";
+            httpd_resp_set_type(req, "application/json; charset=UTF-8");
+            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+            return ESP_FAIL;
+        }
+
+        if (recv_len > 0) {
+            err = esp_ota_write(ota_handle, (const void *)buf, recv_len);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
+                free(buf);
+                esp_ota_abort(ota_handle);
+                const char *resp = "{\"success\":false,\"message\":\"OTA write failed\"}";
+                httpd_resp_set_type(req, "application/json; charset=UTF-8");
+                httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+                return ESP_FAIL;
+            }
+            received += recv_len;
+            remaining -= recv_len;
+
+            // Log progress
+            if (received % (100 * 1024) == 0 || remaining == 0) {
+                ESP_LOGI(TAG, "Written %d/%d bytes (%.1f%%)", received, req->content_len,
+                         100.0 * received / req->content_len);
+            }
+        }
+    }
+
+    free(buf);
+
+    // Finish OTA update
+    err = esp_ota_end(ota_handle);
+    if (err != ESP_OK) {
+        if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
+            ESP_LOGE(TAG, "Image validation failed, image is corrupted");
+            const char *resp = "{\"success\":false,\"message\":\"Image validation failed\"}";
+            httpd_resp_set_type(req, "application/json; charset=UTF-8");
+            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        } else {
+            ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
+            const char *resp = "{\"success\":false,\"message\":\"OTA end failed\"}";
+            httpd_resp_set_type(req, "application/json; charset=UTF-8");
+            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        }
+        return ESP_FAIL;
+    }
+
+    // Set boot partition
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
+        const char *resp = "{\"success\":false,\"message\":\"Failed to set boot partition\"}";
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "OTA update successful!");
+
+    const char *resp = "{\"success\":true,\"message\":\"Update successful! Rebooting...\"}";
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+
+    // Restart after a delay
+    vTaskDelay(pdMS_TO_TICKS(2000));
     esp_restart();
 
     return ESP_OK;
@@ -719,6 +942,18 @@ static const httpd_uri_t mqtt_config_post_uri = {
     .handler = mqtt_config_post_handler
 };
 
+static const httpd_uri_t update_get_uri = {
+    .uri = "/update",
+    .method = HTTP_GET,
+    .handler = update_get_handler
+};
+
+static const httpd_uri_t update_post_uri = {
+    .uri = "/update",
+    .method = HTTP_POST,
+    .handler = update_post_handler
+};
+
 // ======================================================
 // Public Functions
 // ======================================================
@@ -731,6 +966,8 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &status_uri);
     httpd_register_uri_handler(server, &mqtt_config_get_uri);
     httpd_register_uri_handler(server, &mqtt_config_post_uri);
+    httpd_register_uri_handler(server, &update_get_uri);
+    httpd_register_uri_handler(server, &update_post_uri);
     ESP_LOGI(TAG, "Web/HTTP handlers registered");
     return ESP_OK;
 }

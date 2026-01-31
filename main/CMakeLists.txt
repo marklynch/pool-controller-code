@@ -13,6 +13,7 @@ idf_component_register(
          "."
     REQUIRES
         esp_app_format
+        app_update
         esp_wifi
         esp_event
         esp_netif
