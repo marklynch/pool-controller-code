@@ -95,6 +95,7 @@ CMD_SUB_LABELS: Dict[Tuple[int, int, int], str] = {
     (0x38, 0x17, 0x1F): "Channel 2 Label", # Cleaning
     
     (0x38, 0x1A, 0x22): "Channel 1 Label", # Filter Pump
+    (0xFD, 0x0F, 0xDC): "Controller Time",
 
     # Temperature sensor commands
     (0x12, 0x0F, 0x03): "Heater State",

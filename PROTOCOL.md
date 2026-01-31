@@ -585,6 +585,43 @@ Status of the gateway's internet connection.
 
 ---
 
+### 18. Controller Time/Clock
+
+Current time from the controller's internal clock. Broadcast periodically for synchronization.
+
+**Pattern:** `02 00 50 FF FF 80 00 FD 0F DC`
+
+**Example:**
+
+```
+02 00 50 FF FF 80 00 FD 0F DC 39 08 05 46 03
+                              ^^ Seconds (57)
+                                 ^^ Minutes (8)
+                                    ^^ Hours (5)
+                                       → 05:08:57
+```
+
+**Example - Minute rollover:**
+
+```
+02 00 50 FF FF 80 00 FD 0F DC 3B 08 05 48 03  → 05:08:59
+02 00 50 FF FF 80 00 FD 0F DC 00 09 05 0E 03  → 05:09:00
+```
+
+**Data Fields:**
+
+- Byte 10: Seconds (0-59)
+- Byte 11: Minutes (0-59)
+- Byte 12: Hours (0-23, 24-hour format)
+
+**Notes:**
+
+- This message is broadcast by the controller for device time synchronization
+- Used by connected devices (touchscreen, internet gateway) to maintain consistent time
+- Appears to be sent approximately every 30 seconds or so
+
+---
+
 ## Implementation Notes
 
 ### Message Validation

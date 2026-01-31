@@ -20,6 +20,7 @@ static const uint8_t MSG_TYPE_MODE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00
 static const uint8_t MSG_TYPE_CHANNELS[] = {0x02, 0x00, 0x50, 0x00, 0x6F, 0x80, 0x00, 0x0D, 0x0D, 0x5B};
 static const uint8_t MSG_TYPE_CHANNEL_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0B, 0x25, 0x00};
 static const uint8_t MSG_TYPE_LIGHT_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x06, 0x0E, 0xE4};
+static const uint8_t MSG_TYPE_CONTROLLER_TIME[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0xFD, 0x0F, 0xDC};
 
 // 62 Temperature sensor / Unknown subsystem
 static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
@@ -855,6 +856,27 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             ctx->pool_state->gateway_comms_status = comms_status;
             ctx->pool_state->gateway_comms_status_valid = true;
+            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(ctx->state_mutex);
+        }
+        return true;
+    }
+
+    // Controller time/clock
+    if (len >= sizeof(MSG_TYPE_CONTROLLER_TIME) + 3 && memcmp(data, MSG_TYPE_CONTROLLER_TIME, sizeof(MSG_TYPE_CONTROLLER_TIME)) == 0) {
+        if (payload_len < 3) return false;
+        uint8_t seconds = payload[0];
+        uint8_t minutes = payload[1];
+        uint8_t hours = payload[2];
+
+        ESP_LOGI(TAG, "%s Controller time - %02d:%02d:%02d", addr_info, hours, minutes, seconds);
+
+        // Update pool state
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            ctx->pool_state->controller_seconds = seconds;
+            ctx->pool_state->controller_minutes = minutes;
+            ctx->pool_state->controller_hours = hours;
+            ctx->pool_state->controller_time_valid = true;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             xSemaphoreGive(ctx->state_mutex);
         }

@@ -96,6 +96,12 @@ typedef struct {
     bool ph_valid;
     bool orp_valid;
 
+    // Controller time/clock
+    uint8_t controller_seconds;
+    uint8_t controller_minutes;
+    uint8_t controller_hours;
+    bool controller_time_valid;
+
     // Last update timestamp (milliseconds since boot)
     uint32_t last_update_ms;
 } pool_state_t;
