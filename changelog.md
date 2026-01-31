@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pulled the TCP server out of main.c to own tcp_bridge.c
 - Pulled the message decoder out of main.c to message_decoder.c
 - Refactored handling of data blocks to be simpler
+- Updated `CLAUDE.md` and `README.md` to reflect current state
 
 ### Fixed
 - Publish ORP and PH setpoint to MQTT
