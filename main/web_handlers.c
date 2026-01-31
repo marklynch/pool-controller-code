@@ -514,6 +514,18 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
         len += snprintf(json_resp + len, 8192 - len, "},");
 
+        // Touchscreen section
+        len += snprintf(json_resp + len, 8192 - len, "\"touchscreen\":{");
+        len += snprintf(json_resp + len, 8192 - len, "\"version\":");
+        if (s_pool_state.touchscreen_version_valid) {
+            len += snprintf(json_resp + len, 8192 - len, "\"%d.%d\"",
+                           s_pool_state.touchscreen_version_major,
+                           s_pool_state.touchscreen_version_minor);
+        } else {
+            len += snprintf(json_resp + len, 8192 - len, "null");
+        }
+        len += snprintf(json_resp + len, 8192 - len, "},");
+
         // Last update timestamp
         len += snprintf(json_resp + len, 8192 - len, "\"last_update_ms\":%lu",
                        (unsigned long)s_pool_state.last_update_ms);

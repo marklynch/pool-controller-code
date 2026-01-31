@@ -102,6 +102,11 @@ typedef struct {
     uint8_t controller_hours;
     bool controller_time_valid;
 
+    // Touchscreen firmware version
+    uint8_t touchscreen_version_major;
+    uint8_t touchscreen_version_minor;
+    bool touchscreen_version_valid;
+
     // Last update timestamp (milliseconds since boot)
     uint32_t last_update_ms;
 } pool_state_t;

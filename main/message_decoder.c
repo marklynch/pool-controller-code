@@ -891,6 +891,15 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         uint8_t minor = payload[1];
 
         ESP_LOGI(TAG, "%s Touchscreen firmware version - %d.%d", addr_info, major, minor);
+
+        // Update pool state
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            ctx->pool_state->touchscreen_version_major = major;
+            ctx->pool_state->touchscreen_version_minor = minor;
+            ctx->pool_state->touchscreen_version_valid = true;
+            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(ctx->state_mutex);
+        }
         return true;
     }
 
