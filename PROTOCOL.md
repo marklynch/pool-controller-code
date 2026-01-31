@@ -380,7 +380,6 @@ Generic register label assignments.
                                     V  a  l  v  e     2  (null terminated)
 ```
 
-
 ---
 
 ### 10. Lighting Zone Configuration
@@ -570,13 +569,19 @@ Status of the gateway's internet connection.
 
 **Status Codes:**
 
-- `0x0000`:`0` Unknown
+- `0x0000`:`0` Idle
+- `0x0100`:`256` No suitable interfaces ready
+- `0x0201`:`513` DNS resolve error
+- `0x0301`:`769` Internal error creating local socket
 - `0x0400`:`1024` Connecting to server
-- `0x0401`:`1025` Unknown
+- `0x0401`:`1025` Failed to connect
 - `0x8000`:`32768` Connection open
 - `0x8001`:`32769` Communicating with server
+- `0xF000`:`61440` Connection closed
 - `0xF001`:`61441` Communication error with server
-- `0xF002`:`61442` Unknown
+- `0xF002`:`61442` Communication error with server
+- `0xF003`:`61443` Communication error with server
+- `0xF004`:`61444` Communication error with server
 
 ---
 
