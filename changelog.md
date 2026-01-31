@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed potential buffer overflow error in `bus_send_message()`
 - Always set the `charset=UTF-8` on web responses.
 - Fixed upload of the firmware and partitioning
+- Fixed mark the new volume as valid on successful boot
 
 ## [0.0.4] - 2026-01-31
 
