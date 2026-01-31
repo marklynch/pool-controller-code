@@ -84,6 +84,8 @@ CMD_SUB_LABELS: Dict[Tuple[int, int, int], str] = {
     # 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03
     (0x38, 0x0F, 0x17): "Register State Data", 
 
+    (0x0A, 0x0E, 0xE8): "Controller version",  # 02 00 50 FF FF 80 00 0A 0E E8 02 08 0A 03. (v2.8)
+
     # These labels are strange as the data holds the channel reference - but I can't figure out the CMD/SUB/REG that identifies the channel label itself
     (0x38, 0x12, 0x1A): "Spa Label",
     (0x38, 0x13, 0x1B): "Multi Label", # 80: Jets

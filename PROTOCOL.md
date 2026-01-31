@@ -622,6 +622,35 @@ Current time from the controller's internal clock. Broadcast periodically for sy
 
 ---
 
+### 19. Touchscreen Firmware Version
+
+Touchscreen firmware version announcement. Broadcast periodically by the controller.
+
+**Pattern:** `02 00 50 FF FF 80 00 0A 0E E8`
+
+**Example:**
+
+```
+02 00 50 FF FF 80 00 0A 0E E8 02 08 0A 03
+                              ^^ Major version (2)
+                                 ^^ Minor version (8)
+                                    → Version 2.8
+```
+
+**Data Fields:**
+
+- Byte 10: Major version number
+- Byte 11: Minor version number
+
+**Notes:**
+
+- This message is broadcast by the controller as part of the regular system status sequence
+- Appears alongside other system announcements (firmware version, system status, time)
+- The version reflects the touchscreen/display interface firmware version
+- Value remains constant unless the touchscreen firmware is updated
+
+---
+
 ## Implementation Notes
 
 ### Message Validation

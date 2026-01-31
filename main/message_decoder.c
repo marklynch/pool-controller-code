@@ -21,6 +21,7 @@ static const uint8_t MSG_TYPE_CHANNELS[] = {0x02, 0x00, 0x50, 0x00, 0x6F, 0x80, 
 static const uint8_t MSG_TYPE_CHANNEL_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0B, 0x25, 0x00};
 static const uint8_t MSG_TYPE_LIGHT_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x06, 0x0E, 0xE4};
 static const uint8_t MSG_TYPE_CONTROLLER_TIME[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0xFD, 0x0F, 0xDC};
+static const uint8_t MSG_TYPE_TOUCHSCREEN_VERSION[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0A, 0x0E, 0xE8};
 
 // 62 Temperature sensor / Unknown subsystem
 static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
@@ -880,6 +881,16 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             xSemaphoreGive(ctx->state_mutex);
         }
+        return true;
+    }
+
+    // Touchscreen firmware version
+    if (len >= sizeof(MSG_TYPE_TOUCHSCREEN_VERSION) + 2 && memcmp(data, MSG_TYPE_TOUCHSCREEN_VERSION, sizeof(MSG_TYPE_TOUCHSCREEN_VERSION)) == 0) {
+        if (payload_len < 2) return false;
+        uint8_t major = payload[0];
+        uint8_t minor = payload[1];
+
+        ESP_LOGI(TAG, "%s Touchscreen firmware version - %d.%d", addr_info, major, minor);
         return true;
     }
 

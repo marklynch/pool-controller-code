@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added the version number to the footer of web pages
 - Added support for the controller clock time
+- Added support for touchscreen firmware version
 
 ### Removed
 ### Changed
