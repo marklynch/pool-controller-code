@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Removed
+### Changed
+### Fixed
+
+## [0.0.4] - 2026-01-31
+
+### Added
 - Functions for sending messages
 - Support for telnet sending messages.
 - Do checksums on all messages
@@ -27,7 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added reading of the fahrenheit temperatures and display in status page
 - Add versioning to build and status page
 
-### Removed
 ### Changed
 - Changed MSG_TYPE_38 to MSG_TYPE_REGISTER_STATUS
 - Change heater on/off to On/Off to match other values in /status page
@@ -39,7 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Publish ORP and PH setpoint to MQTT
-
 
 ## [0.0.3] - 2026-01-19
 
