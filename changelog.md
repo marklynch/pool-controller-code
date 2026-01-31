@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- Add support for OTA updates of firmware - see OTA_UPDATE.md
+- Add support for OTA updates of firmware - see `OTA_UPDATE.md`
+- Added some more status message states to code and `PROTOCOL.md`
 ### Removed
 ### Changed
 ### Fixed

@@ -145,7 +145,10 @@ typedef struct {
 } gateway_comms_status_t;
 
 static const gateway_comms_status_t GATEWAY_COMMS_STATUS[] = {
+    {1024, "Connecting to server"},
+    {32768, "Connection open"},
     {32769, "Communicating with server"},
+    {61441, "Communication error with server"},
     // Add more status codes here as they are discovered
 };
 #define GATEWAY_COMMS_STATUS_COUNT (sizeof(GATEWAY_COMMS_STATUS) / sizeof(GATEWAY_COMMS_STATUS[0]))

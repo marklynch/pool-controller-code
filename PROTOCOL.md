@@ -571,10 +571,11 @@ Status of the gateway's internet connection.
 **Status Codes:**
 
 - `0x0000`:`0` Unknown
-- `0x0400`:`1024` Unknown
+- `0x0400`:`1024` Connecting to server
 - `0x0401`:`1025` Unknown
-- `0x8000`:`32768` Unknown
+- `0x8000`:`32768` Connection open
 - `0x8001`:`32769` Communicating with server
+- `0xF001`:`61441` Communication error with server
 - `0xF002`:`61442` Unknown
 
 ---
