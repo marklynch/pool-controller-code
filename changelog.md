@@ -11,13 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Don't publish to MQTT after every change - add small debounce to it (verify frequency)
 - add mDNS config
 - 
-
 ## [Unreleased]
+### Added
+### Removed
+### Changed
+### Fixed
+
+## [0.0.5] - 2026-01-31
+
 ### Added
 - Add support for OTA updates of firmware - see `OTA_UPDATE.md`
 - Added some more status message states to code and `PROTOCOL.md`
-### Removed
-### Changed
 ### Fixed
 - Fixed potential buffer overflow error in `bus_send_message()`
 - Always set the `charset=UTF-8` on web responses.
