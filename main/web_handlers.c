@@ -4,6 +4,7 @@
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_app_desc.h"
 #include "nvs_flash.h"
 #include <string.h>
 #include <stdlib.h>
@@ -320,10 +321,21 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     int len = 0;
 
+    // Get firmware version
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+
     // Lock the pool state and build JSON response
     if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         // Start JSON object
         len += snprintf(json_resp + len, 8192 - len, "{");
+
+        // Firmware version section
+        len += snprintf(json_resp + len, 8192 - len, "\"firmware\":{");
+        len += snprintf(json_resp + len, 8192 - len, "\"version\":\"%s\",", app_desc->version);
+        len += snprintf(json_resp + len, 8192 - len, "\"project\":\"%s\",", app_desc->project_name);
+        len += snprintf(json_resp + len, 8192 - len, "\"compile_time\":\"%s %s\",", app_desc->date, app_desc->time);
+        len += snprintf(json_resp + len, 8192 - len, "\"idf_version\":\"%s\"", app_desc->idf_ver);
+        len += snprintf(json_resp + len, 8192 - len, "},");
 
         // Temperature section
         len += snprintf(json_resp + len, 8192 - len, "\"temperature\":{");

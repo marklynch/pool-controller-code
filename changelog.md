@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added tests for the protocol decoder
 - Added PROTOCOL.md file which describes the wire protocol
 - Added reading of the fahrenheit temperatures and display in status page
+- Add versioning to build and status page
 
 ### Removed
 ### Changed

@@ -11,4 +11,13 @@ idf_component_register(
         "message_decoder.c"
     INCLUDE_DIRS
          "."
+    REQUIRES
+        esp_app_format
+        esp_wifi
+        esp_event
+        esp_netif
+        esp_http_server
+        nvs_flash
+        driver
+        mqtt
 )
