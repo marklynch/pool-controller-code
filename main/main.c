@@ -473,6 +473,9 @@ static esp_err_t start_provisioning(void)
     // Start HTTP server for web provisioning
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
     httpd_config.server_port = 80;
+    httpd_config.recv_wait_timeout = 60;  // 60 seconds for large file uploads
+    httpd_config.send_wait_timeout = 60;  // 60 seconds for responses
+    httpd_config.stack_size = 8192;       // Larger stack for OTA operations
 
     esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
     if (err == ESP_OK) {
@@ -640,6 +643,9 @@ void app_main(void)
         // Start HTTP server for status API
         httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
         httpd_config.server_port = 80;
+        httpd_config.recv_wait_timeout = 60;  // 60 seconds for large file uploads
+        httpd_config.send_wait_timeout = 60;  // 60 seconds for responses
+        httpd_config.stack_size = 8192;       // Larger stack for OTA operations
 
         esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
         if (err == ESP_OK) {

@@ -727,12 +727,11 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "e.preventDefault();"
         "const file=document.getElementById('firmware').files[0];"
         "if(!file){alert('Please select a file');return;}"
-        "const formData=new FormData();formData.append('firmware',file);"
         "const status=document.getElementById('status');"
         "const progress=document.getElementById('progress');"
         "const progressBar=document.getElementById('progressBar');"
         "const progressText=document.getElementById('progressText');"
-        "status.textContent='Uploading firmware...';status.className='status';status.style.display='block';"
+        "status.textContent='Uploading firmware ('+Math.round(file.size/1024)+'KB)...';status.className='status';status.style.display='block';"
         "progress.style.display='block';"
         "const xhr=new XMLHttpRequest();"
         "xhr.upload.addEventListener('progress',function(e){"
@@ -754,8 +753,12 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "}});"
         "xhr.addEventListener('error',function(){"
         "status.textContent='Network error during upload';status.className='status error';});"
+        "xhr.addEventListener('timeout',function(){"
+        "status.textContent='Upload timeout - try again';status.className='status error';});"
         "xhr.open('POST','/update',true);"
-        "xhr.send(formData);"
+        "xhr.timeout=120000;"
+        "xhr.setRequestHeader('Content-Type','application/octet-stream');"
+        "xhr.send(file);"
         "});"
         "</script>";
 
@@ -782,8 +785,14 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     const esp_partition_t *configured = esp_ota_get_boot_partition();
     const esp_partition_t *running = esp_ota_get_running_partition();
 
-    ESP_LOGI(TAG, "OTA Update started");
+    ESP_LOGI(TAG, "OTA Update started - Content-Length: %d bytes", req->content_len);
     ESP_LOGI(TAG, "Running partition: %s at offset 0x%lx", running->label, running->address);
+
+    // Log content type for debugging
+    char content_type[64] = {0};
+    if (httpd_req_get_hdr_value_str(req, "Content-Type", content_type, sizeof(content_type)) == ESP_OK) {
+        ESP_LOGI(TAG, "Content-Type: %s", content_type);
+    }
 
     if (configured != running) {
         ESP_LOGW(TAG, "Configured boot partition != running partition");
@@ -810,7 +819,8 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     }
 
     // Read and write firmware data
-    char *buf = malloc(1024);
+    const size_t buf_size = 4096;  // 4KB buffer for better performance
+    char *buf = malloc(buf_size);
     if (buf == NULL) {
         esp_ota_abort(ota_handle);
         const char *resp = "{\"success\":false,\"message\":\"Memory allocation failed\"}";
@@ -824,7 +834,8 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Firmware size: %d bytes", remaining);
 
     while (remaining > 0) {
-        int recv_len = httpd_req_recv(req, buf, remaining < 1024 ? remaining : 1024);
+        size_t recv_size = (remaining < buf_size) ? remaining : buf_size;
+        int recv_len = httpd_req_recv(req, buf, recv_size);
         if (recv_len < 0) {
             if (recv_len == HTTPD_SOCK_ERR_TIMEOUT) {
                 continue;
