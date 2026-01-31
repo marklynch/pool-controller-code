@@ -13,9 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 
 ## [Unreleased]
 ### Added
+- Added the version number to the footer of web pages
+
 ### Removed
 ### Changed
 ### Fixed
+- Made the title for Wifi Config page consistent
+- Improved the make process to consistently update the version number for build
 
 ## [0.0.5] - 2026-01-31
 

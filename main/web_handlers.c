@@ -19,9 +19,8 @@ const char* get_gateway_comms_status_text(uint16_t code);
 // ======================================================
 // Common HTML Page Parts (Header and footer)
 // ======================================================
-static const char PAGE_FOOTER[] = "</body></html>";
 
-// Dynamic functions for page header and navigation
+// Dynamic functions for page header, navigation, and footer
 char *get_page_header(const char *title) {
     const char *fmt = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<style>body{font-family:Arial;margin:40px;background:#f0f0f0}"
@@ -67,12 +66,32 @@ char *get_page_nav(const char page) {
     return header;
 }
 
+char *get_page_footer(void) {
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    const char *fmt = "<hr><div style='text-align:center;color:#666;font-size:12px;margin-top:30px'>"
+        "Firmware: %s | Project: %s | Built: %s %s"
+        "</div></body></html>";
+
+    // Calculate required size
+    int n = snprintf(NULL, 0, fmt, app_desc->version, app_desc->project_name,
+                     app_desc->date, app_desc->time);
+    if (n < 0) return NULL;
+
+    // Allocate memory
+    char *footer = malloc((size_t)n + 1);
+    if (!footer) return NULL;
+
+    snprintf(footer, (size_t)n + 1, fmt, app_desc->version, app_desc->project_name,
+             app_desc->date, app_desc->time);
+    return footer;
+}
+
 // ======================================================
 // Root Page Handler
 // ======================================================
 
 // HTML page for WiFi provisioning
-const char WIFI_PAGE[] = "<div class='container'><h2>Pool Controller WiFi Setup</h2>"
+const char WIFI_PAGE[] = "<div class='container'><h1>WiFi Configuration</h1>"
 "<div id='status'></div>"
 "<form id='wifiForm'><label>WiFi Network:</label>"
 "<select id='ssid' name='ssid' required><option value=''>Scanning...</option></select>"
@@ -100,15 +119,17 @@ const char WIFI_PAGE[] = "<div class='container'><h2>Pool Controller WiFi Setup<
 
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
-    char page_title[] = "Pool Controller WiFi Setup";
+    char page_title[] = "WiFi Configuration";
     char *header = get_page_header(page_title);
     char *nav = get_page_nav('/');
+    char *footer = get_page_footer();
     httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN); 
+    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, WIFI_PAGE, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, PAGE_FOOTER, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
+    free(footer);
     free(nav);
     free(header);
     return ESP_OK;
@@ -579,14 +600,16 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
     char page_title[] = "MQTT Configuration";
     char *header = get_page_header(page_title);
     char *nav = get_page_nav('/');
+    char *footer = get_page_footer();
     httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_mid, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_end, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, PAGE_FOOTER, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
+    free(footer);
     free(nav);
     free(header);
 
@@ -775,14 +798,16 @@ static esp_err_t update_get_handler(httpd_req_t *req)
     char page_title[] = "Firmware Update";
     char *header = get_page_header(page_title);
     char *nav = get_page_nav('/');
+    char *footer = get_page_footer();
     httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, partition_info, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_mid, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, PAGE_FOOTER, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
+    free(footer);
     free(nav);
     free(header);
     return ESP_OK;
