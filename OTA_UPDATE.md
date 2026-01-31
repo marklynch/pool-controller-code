@@ -10,11 +10,14 @@ The device supports updating firmware over WiFi without needing a USB connection
 
 The device uses the following partition table (defined in `partitions.csv`):
 
+- **nvs** (0x6000 / 24KB) - Non-volatile storage for WiFi credentials, settings
+- **phy_init** (0x1000 / 4KB) - PHY initialization data
+- **otadata** (0x2000 / 8KB) - OTA data partition (tracks which OTA partition to boot)
 - **factory** (0x180000 / 1.5MB) - Initial firmware partition
 - **ota_0** (0x180000 / 1.5MB) - First OTA update partition
 - **ota_1** (0x180000 / 1.5MB) - Second OTA update partition
 
-Updates alternate between ota_0 and ota_1, providing automatic rollback protection.
+Updates alternate between ota_0 and ota_1, providing automatic rollback protection. The **otadata** partition is critical - it stores which OTA partition should boot next.
 
 ## How to Update Firmware
 
