@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the version number to the footer of web pages
 - Added support for the controller clock time
 - Added support for touchscreen firmware version and display on status
+- Added navigation around the Status page via `/status_view`
 
 ### Removed 
 ### Changed

@@ -51,7 +51,7 @@ char *get_page_nav(const char page) {
     // TODO - Make 'page' indicate current page for highlighting
     const char *fmt = "<div class='nav'><a href='/'>WiFi Scan</a> | "
         "<a href='/mqtt_config'>MQTT Config</a> | "
-        "<a href='/status'>Status</a> | "
+        "<a href='/status_view'>Status</a> | "
         "<a href='/update'>Update</a>"
         "</div><hr>";
     // calculate the required size
@@ -554,6 +554,68 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 }
 
 // ======================================================
+// Status View Handler (HTML formatted view)
+// ======================================================
+
+static esp_err_t status_view_get_handler(httpd_req_t *req)
+{
+    const char *status_view_page =
+        "<div class='container'>"
+        "<h1>Pool Controller Status</h1>"
+        "<p style='text-align:right'><a href='/status' style='font-size:14px'>View raw JSON</a></p>"
+        "<div id='status-content' style='font-family:monospace;white-space:pre-wrap;background:#f8f8f8;padding:15px;border-radius:4px;overflow-x:auto'>"
+        "Loading status..."
+        "</div>"
+        "</div>"
+        "<script>"
+        "fetch('/status').then(r=>r.json()).then(data=>{"
+        "const fmt=(obj,indent=0)=>{"
+        "const pad=' '.repeat(indent);"
+        "let html='';"
+        "for(const[k,v]of Object.entries(obj)){"
+        "if(v===null){html+=pad+k+': null\\n';}"
+        "else if(Array.isArray(v)){"
+        "html+=pad+k+': [\\n';"
+        "v.forEach(item=>{"
+        "if(typeof item==='object'){html+=fmt(item,indent+2)+',\\n';}"
+        "else{html+=pad+'  '+JSON.stringify(item)+',\\n';}"
+        "});"
+        "html+=pad+']\\n';"
+        "}else if(typeof v==='object'){"
+        "html+=pad+k+': {\\n'+fmt(v,indent+2)+pad+'}\\n';"
+        "}else if(typeof v==='string'){"
+        "html+=pad+k+': \"'+v+'\"\\n';"
+        "}else{"
+        "html+=pad+k+': '+v+'\\n';"
+        "}"
+        "}"
+        "return html;"
+        "};"
+        "document.getElementById('status-content').textContent=fmt(data);"
+        "}).catch(e=>{"
+        "document.getElementById('status-content').innerHTML='<span style=\"color:red\">Error loading status: '+e+'</span>';"
+        "});"
+        "</script>";
+
+    char page_title[] = "Pool Controller Status";
+    char *header = get_page_header(page_title);
+    char *nav = get_page_nav('s');
+    char *footer = get_page_footer();
+
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, status_view_page, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+
+    free(footer);
+    free(nav);
+    free(header);
+    return ESP_OK;
+}
+
+// ======================================================
 // MQTT Configuration Handlers
 // ======================================================
 
@@ -988,6 +1050,12 @@ static const httpd_uri_t status_uri = {
     .handler = status_get_handler
 };
 
+static const httpd_uri_t status_view_uri = {
+    .uri = "/status_view",
+    .method = HTTP_GET,
+    .handler = status_view_get_handler
+};
+
 static const httpd_uri_t mqtt_config_get_uri = {
     .uri = "/mqtt_config",
     .method = HTTP_GET,
@@ -1022,6 +1090,7 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &scan_uri);
     httpd_register_uri_handler(server, &provision_uri);
     httpd_register_uri_handler(server, &status_uri);
+    httpd_register_uri_handler(server, &status_view_uri);
     httpd_register_uri_handler(server, &mqtt_config_get_uri);
     httpd_register_uri_handler(server, &mqtt_config_post_uri);
     httpd_register_uri_handler(server, &update_get_uri);
