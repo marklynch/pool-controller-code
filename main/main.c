@@ -412,6 +412,39 @@ static void wifi_init_sta(void)
 }
 
 // ======================================================
+// HTTP Server Start (unified for provisioning and normal mode)
+// ======================================================
+
+static esp_err_t start_http_server(const char *ip_address)
+{
+    if (s_httpd_handle != NULL) {
+        ESP_LOGW(TAG, "HTTP server already running");
+        return ESP_OK;
+    }
+
+    httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
+    httpd_config.server_port = 80;
+    httpd_config.max_uri_handlers = 12;   // Increased from default 8 to handle all endpoints
+    httpd_config.recv_wait_timeout = 60;  // 60 seconds for large file uploads
+    httpd_config.send_wait_timeout = 60;  // 60 seconds for responses
+    httpd_config.stack_size = 8192;       // Larger stack for OTA operations
+
+    esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
+    if (err == ESP_OK) {
+        web_handlers_register(s_httpd_handle);
+        ESP_LOGI(TAG, "HTTP server started at http://%s", ip_address);
+        ESP_LOGI(TAG, "  - WiFi config: http://%s/", ip_address);
+        ESP_LOGI(TAG, "  - Pool status: http://%s/status", ip_address);
+        ESP_LOGI(TAG, "  - MQTT config: http://%s/mqtt_config", ip_address);
+        ESP_LOGI(TAG, "  - Firmware update: http://%s/update", ip_address);
+    } else {
+        ESP_LOGE(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
+    }
+
+    return err;
+}
+
+// ======================================================
 // WiFi Provisioning Start
 // ======================================================
 
@@ -472,25 +505,7 @@ static esp_err_t start_provisioning(void)
     ESP_LOGI(TAG, "SoftAP started - SSID: %s", ap_ssid);
 
     // Start HTTP server for web provisioning
-    httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
-    httpd_config.server_port = 80;
-    httpd_config.recv_wait_timeout = 60;  // 60 seconds for large file uploads
-    httpd_config.send_wait_timeout = 60;  // 60 seconds for responses
-    httpd_config.stack_size = 8192;       // Larger stack for OTA operations
-
-    esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
-    if (err == ESP_OK) {
-        // Register URI handlers
-        web_handlers_register(s_httpd_handle);
-        ESP_LOGI(TAG, "HTTP server started - Navigate to http://192.168.4.1");
-        ESP_LOGI(TAG, "Pool status available at http://192.168.4.1/status");
-        ESP_LOGI(TAG, "MQTT configuration at http://192.168.4.1/mqtt_config");
-    } else {
-        ESP_LOGE(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    return ESP_OK;
+    return start_http_server("192.168.4.1");
 }
 
 // ======================================================
@@ -654,21 +669,7 @@ void app_main(void)
         ESP_LOGI(TAG, "WiFi connected, starting HTTP server and TCP server...");
 
         // Start HTTP server for status API
-        httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
-        httpd_config.server_port = 80;
-        httpd_config.recv_wait_timeout = 60;  // 60 seconds for large file uploads
-        httpd_config.send_wait_timeout = 60;  // 60 seconds for responses
-        httpd_config.stack_size = 8192;       // Larger stack for OTA operations
-
-        esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
-        if (err == ESP_OK) {
-            // Register URI handlers
-            web_handlers_register(s_httpd_handle);
-            ESP_LOGI(TAG, "HTTP server started - Pool status available at http://%s/status", s_device_ip_address);
-            ESP_LOGI(TAG, "MQTT configuration at http://%s/mqtt_config", s_device_ip_address);
-        } else {
-            ESP_LOGW(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
-        }
+        start_http_server(s_device_ip_address);
 
         // Start TCP bridge server
         tcp_bridge_config_t bridge_config = {
