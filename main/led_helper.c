@@ -1,12 +1,9 @@
 #include "led_helper.h"
+#include "config.h"
 #include "led_strip.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-// RGB LED config (WS2812 on GPIO8)
-#define LED_GPIO            8
-#define LED_FLASH_MS        50  // flash duration in milliseconds
 
 static const char *TAG = "LED_HELPER";
 static led_strip_handle_t s_led_strip = NULL;
@@ -57,7 +54,7 @@ void led_flash_rx(void)
 
     led_strip_set_pixel(s_led_strip, 0, 32, 0, 0);  // Red (G=32, R=0, B=0)
     led_strip_refresh(s_led_strip);
-    vTaskDelay(pdMS_TO_TICKS(LED_FLASH_MS));
+    vTaskDelay(pdMS_TO_TICKS(LED_FLASH_DURATION_MS));
     led_strip_clear(s_led_strip);
     led_strip_refresh(s_led_strip);
 }
@@ -69,7 +66,7 @@ void led_flash_tx(void)
 
     led_strip_set_pixel(s_led_strip, 0, 0, 32, 0);  // Green (G=0, R=32, B=0)
     led_strip_refresh(s_led_strip);
-    vTaskDelay(pdMS_TO_TICKS(LED_FLASH_MS));
+    vTaskDelay(pdMS_TO_TICKS(LED_FLASH_DURATION_MS));
     led_strip_clear(s_led_strip);
     led_strip_refresh(s_led_strip);
 }

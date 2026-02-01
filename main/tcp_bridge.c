@@ -1,4 +1,5 @@
 #include "tcp_bridge.h"
+#include "config.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -10,12 +11,6 @@
 #include <stdlib.h>
 
 static const char *TAG = "TCP_BRIDGE";
-
-#define UART_BUFFER_SIZE 256
-#define TCP_BUFFER_SIZE 256
-#define LINE_BUFFER_SIZE 512
-#define TCP_TASK_STACK_SIZE 8192
-#define TCP_TASK_PRIORITY 5
 
 // Loopback tracking for TX echo detection
 static uint8_t s_last_tx_msg[256];
@@ -38,9 +33,9 @@ static void tcp_bridge_task(void *pvParameters)
     char addr_str[128];
     int listen_sock = -1;
     int client_sock = -1;
-    uint8_t uart_buf[UART_BUFFER_SIZE];
+    uint8_t uart_buf[TCP_UART_BUFFER_SIZE];
     uint8_t tcp_buf[TCP_BUFFER_SIZE];
-    char line_buf[LINE_BUFFER_SIZE];
+    char line_buf[TCP_LINE_BUFFER_SIZE];
     int line_pos = 0;
 
     // Create listening socket
@@ -117,7 +112,7 @@ static void tcp_bridge_task(void *pvParameters)
             }
 
             // Format as hex string
-            char hexLine[3 * UART_BUFFER_SIZE + 4];
+            char hexLine[3 * TCP_UART_BUFFER_SIZE + 4];
             int pos = 0;
             for (int i = 0; i < len; ++i) {
                 if (pos < (int)(sizeof(hexLine) - 4)) {

@@ -5,11 +5,7 @@
 #include <stdbool.h>
 #include <esp_http_server.h>
 
-// NVS provisioning keys
-#define PROV_SOFTAP_SSID_PREFIX    "POOL_"
-#define PROV_NVS_NAMESPACE         "wifi_config"
-#define PROV_NVS_KEY_SSID          "ssid"
-#define PROV_NVS_KEY_PASS          "password"
+// All provisioning constants are defined in config.h
 
 /**
  * Initialize WiFi and provisioning system

@@ -1,4 +1,5 @@
 #include "wifi_provisioning.h"
+#include "config.h"
 #include "web_handlers.h"
 #include "mqtt_poolclient.h"
 #include "led_helper.h"
@@ -18,10 +19,6 @@ static const char *TAG = "WIFI_PROV";
 
 // WiFi event bits
 #define WIFI_CONNECTED_BIT  BIT0
-
-// WiFi retry configuration
-#define WIFI_MAX_RETRY 5
-#define WIFI_RETRY_DELAY_MS 5000
 
 // State variables
 static EventGroupHandle_t s_wifi_event_group = NULL;
@@ -46,13 +43,13 @@ static esp_err_t start_provisioning(void);
 static bool wifi_credentials_exist(void)
 {
     nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
     if (err != ESP_OK) {
         return false;
     }
 
     size_t required_size = 0;
-    err = nvs_get_str(nvs_handle, PROV_NVS_KEY_SSID, NULL, &required_size);
+    err = nvs_get_str(nvs_handle, WIFI_PROV_NVS_KEY_SSID, NULL, &required_size);
     nvs_close(nvs_handle);
 
     return (err == ESP_OK && required_size > 0);
@@ -61,7 +58,7 @@ static bool wifi_credentials_exist(void)
 static esp_err_t wifi_credentials_load(char *ssid, size_t ssid_len, char *password, size_t pass_len)
 {
     nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
     if (err != ESP_OK) {
         return err;
     }
@@ -69,9 +66,9 @@ static esp_err_t wifi_credentials_load(char *ssid, size_t ssid_len, char *passwo
     size_t ssid_size = ssid_len;
     size_t pass_size = pass_len;
 
-    err = nvs_get_str(nvs_handle, PROV_NVS_KEY_SSID, ssid, &ssid_size);
+    err = nvs_get_str(nvs_handle, WIFI_PROV_NVS_KEY_SSID, ssid, &ssid_size);
     if (err == ESP_OK) {
-        err = nvs_get_str(nvs_handle, PROV_NVS_KEY_PASS, password, &pass_size);
+        err = nvs_get_str(nvs_handle, WIFI_PROV_NVS_KEY_PASS, password, &pass_size);
     }
 
     nvs_close(nvs_handle);
@@ -81,13 +78,13 @@ static esp_err_t wifi_credentials_load(char *ssid, size_t ssid_len, char *passwo
 static esp_err_t wifi_credentials_clear(void)
 {
     nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(PROV_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
     if (err != ESP_OK) {
         return err;
     }
 
-    nvs_erase_key(nvs_handle, PROV_NVS_KEY_SSID);
-    nvs_erase_key(nvs_handle, PROV_NVS_KEY_PASS);
+    nvs_erase_key(nvs_handle, WIFI_PROV_NVS_KEY_SSID);
+    nvs_erase_key(nvs_handle, WIFI_PROV_NVS_KEY_PASS);
     nvs_commit(nvs_handle);
     nvs_close(nvs_handle);
 
@@ -98,14 +95,14 @@ static esp_err_t wifi_credentials_clear(void)
 esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 {
     nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(PROV_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
     if (err != ESP_OK) {
         return err;
     }
 
-    err = nvs_set_str(nvs_handle, PROV_NVS_KEY_SSID, ssid);
+    err = nvs_set_str(nvs_handle, WIFI_PROV_NVS_KEY_SSID, ssid);
     if (err == ESP_OK) {
-        err = nvs_set_str(nvs_handle, PROV_NVS_KEY_PASS, password);
+        err = nvs_set_str(nvs_handle, WIFI_PROV_NVS_KEY_PASS, password);
     }
 
     if (err == ESP_OK) {
@@ -123,7 +120,7 @@ esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 static void wifi_retry_timer_callback(TimerHandle_t xTimer)
 {
     ESP_LOGI(TAG, "Retry timer expired, attempting reconnection (attempt %d/%d)...",
-             s_wifi_retry_count, WIFI_MAX_RETRY);
+             s_wifi_retry_count, WIFI_MAX_RETRY_ATTEMPTS);
     esp_wifi_connect();
 }
 
@@ -149,13 +146,13 @@ static void wifi_event_handler(void *arg,
         if (!s_provisioning_active) {
             s_wifi_retry_count++;
             ESP_LOGW(TAG, "WiFi disconnected (attempt %d/%d)",
-                     s_wifi_retry_count, WIFI_MAX_RETRY);
+                     s_wifi_retry_count, WIFI_MAX_RETRY_ATTEMPTS);
 
-            if (s_wifi_retry_count >= WIFI_MAX_RETRY) {
+            if (s_wifi_retry_count >= WIFI_MAX_RETRY_ATTEMPTS) {
                 ESP_LOGE(TAG, "WiFi connection failed after %d attempts - clearing credentials and restarting",
-                         WIFI_MAX_RETRY);
+                         WIFI_MAX_RETRY_ATTEMPTS);
                 wifi_credentials_clear();
-                vTaskDelay(pdMS_TO_TICKS(1000));
+                vTaskDelay(pdMS_TO_TICKS(WIFI_RESTART_DELAY_MS));
                 esp_restart();
             } else {
                 ESP_LOGI(TAG, "Will retry connection in %d seconds...", WIFI_RETRY_DELAY_MS / 1000);
@@ -200,11 +197,11 @@ static esp_err_t start_http_server(const char *ip_address)
     }
 
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
-    httpd_config.server_port = 80;
-    httpd_config.max_uri_handlers = 12;   // Increased from default 8 to handle all endpoints
-    httpd_config.recv_wait_timeout = 60;  // 60 seconds for large file uploads
-    httpd_config.send_wait_timeout = 60;  // 60 seconds for responses
-    httpd_config.stack_size = 8192;       // Larger stack for OTA operations
+    httpd_config.server_port = HTTP_SERVER_PORT;
+    httpd_config.max_uri_handlers = HTTP_MAX_URI_HANDLERS;
+    httpd_config.recv_wait_timeout = HTTP_RECV_TIMEOUT_SEC;
+    httpd_config.send_wait_timeout = HTTP_SEND_TIMEOUT_SEC;
+    httpd_config.stack_size = HTTP_STACK_SIZE;
 
     esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
     if (err == ESP_OK) {
@@ -230,7 +227,7 @@ static void get_device_service_name(char *service_name, size_t max)
     uint8_t eth_mac[6];
     esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
     snprintf(service_name, max, "%s%02X%02X%02X",
-             PROV_SOFTAP_SSID_PREFIX, eth_mac[3], eth_mac[4], eth_mac[5]);
+             WIFI_PROV_SOFTAP_SSID_PREFIX, eth_mac[3], eth_mac[4], eth_mac[5]);
 }
 
 static esp_err_t start_provisioning(void)
@@ -272,25 +269,30 @@ static esp_err_t start_provisioning(void)
     char ap_ssid[32];
     get_device_service_name(ap_ssid, sizeof(ap_ssid));
 
-    // Configure SoftAP
+    // Configure SoftAP with WPA2 security
     wifi_config_t wifi_config = {
         .ap = {
             .ssid_len = strlen(ap_ssid),
             .channel = 1,
             .max_connection = 4,
-            .authmode = WIFI_AUTH_OPEN,
+            .authmode = WIFI_AUTH_WPA2_PSK,
+            .pmf_cfg = {
+                .required = false,
+            },
         },
     };
     memcpy(wifi_config.ap.ssid, ap_ssid, sizeof(wifi_config.ap.ssid));
+    // Set default password for SoftAP (users must enter this to connect)
+    memcpy(wifi_config.ap.password, WIFI_PROV_SOFTAP_PASSWORD, strlen(WIFI_PROV_SOFTAP_PASSWORD));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "SoftAP started - SSID: %s", ap_ssid);
+    ESP_LOGI(TAG, "SoftAP started - SSID: %s, Password: %s", ap_ssid, WIFI_PROV_SOFTAP_PASSWORD);
 
     // Start HTTP server for web provisioning
-    return start_http_server("192.168.4.1");
+    return start_http_server(WIFI_PROV_SOFTAP_IP);
 }
 
 // ======================================================
@@ -359,10 +361,10 @@ void wifi_wait_for_connection(void)
 {
     if (s_provisioning_active) {
         ESP_LOGI(TAG, "Provisioning mode active - waiting for configuration...");
-        ESP_LOGI(TAG, "Connect to the WiFi AP and navigate to http://192.168.4.1");
+        ESP_LOGI(TAG, "Connect to WiFi SSID (password: '%s') and navigate to http://%s", WIFI_PROV_SOFTAP_PASSWORD, WIFI_PROV_SOFTAP_IP);
         // Wait indefinitely in provisioning mode
         while (1) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
         }
     } else {
         ESP_LOGI(TAG, "Waiting for WiFi connection...");

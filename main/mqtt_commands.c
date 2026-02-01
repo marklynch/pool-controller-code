@@ -1,4 +1,5 @@
 #include "mqtt_commands.h"
+#include "config.h"
 #include "mqtt_poolclient.h"
 #include "esp_log.h"
 #include "driver/uart.h"
@@ -6,9 +7,6 @@
 #include <stdlib.h>
 
 static const char *TAG = "MQTT_COMMANDS";
-
-// UART configuration (should match main.c)
-#define BUS_UART_NUM    UART_NUM_1
 
 // ======================================================
 // UART Command Helpers

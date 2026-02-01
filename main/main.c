@@ -12,6 +12,7 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 
+#include "config.h"
 #include "led_helper.h"
 #include "mqtt_poolclient.h"
 #include "pool_state.h"
@@ -19,19 +20,8 @@
 #include "tcp_bridge.h"
 #include "message_decoder.h"
 
-// ==================== USER CONFIG =====================
-
-#define TCP_PORT        7373
-
-// UART/bus config
-#define BUS_UART_NUM    UART_NUM_1
-#define BUS_BAUD_RATE   9600        // change to match bus
-#define BUS_TX_GPIO     2           // GPIO2 -> NPN base (via 10k)
-#define BUS_RX_GPIO     1           // GPIO1 <- divider tap
-
-// UART buffer sizes
-#define UART_RX_BUF_SIZE    (2048)
-#define UART_TX_BUF_SIZE    (2048)
+// ==================== APPLICATION =====================
+// All configuration values are in config.h
 
 static const char *TAG = "POOL_BUS_BRIDGE";
 
@@ -80,7 +70,7 @@ static int bus_send_message(const char *hex_string)
         return -1;
     }
 
-    uint8_t msg_buf[256];
+    uint8_t msg_buf[BUS_MESSAGE_MAX_SIZE];
     int msg_len = 0;
     const char *p = hex_string;
 
@@ -162,7 +152,7 @@ static int bus_send_message(const char *hex_string)
     }
 
     // Wait for TX to complete
-    ESP_ERROR_CHECK(uart_wait_tx_done(BUS_UART_NUM, pdMS_TO_TICKS(100)));
+    ESP_ERROR_CHECK(uart_wait_tx_done(BUS_UART_NUM, pdMS_TO_TICKS(UART_TX_TIMEOUT_MS)));
 
     ESP_LOGI(TAG, "TX complete: %d bytes written and transmitted", written);
 
@@ -208,8 +198,8 @@ static void uart_bus_init(void)
 
     // Install UART driver
     ESP_ERROR_CHECK(uart_driver_install(BUS_UART_NUM,
-                                        UART_RX_BUF_SIZE,
-                                        UART_TX_BUF_SIZE,
+                                        UART_RX_BUFFER_SIZE,
+                                        UART_TX_BUFFER_SIZE,
                                         0,
                                         NULL,
                                         0));
@@ -316,7 +306,7 @@ void app_main(void)
 
     // Start TCP bridge server
     tcp_bridge_config_t bridge_config = {
-        .port = TCP_PORT,
+        .port = TCP_BRIDGE_PORT,
         .uart_read = uart_read_wrapper,
         .uart_write = uart_write_wrapper,
         .decode_message = decode_wrapper,
@@ -325,7 +315,7 @@ void app_main(void)
     };
     esp_err_t bridge_err = tcp_bridge_start(&bridge_config);
     if (bridge_err == ESP_OK) {
-        ESP_LOGI(TAG, "TCP bridge started on port %d", TCP_PORT);
+        ESP_LOGI(TAG, "TCP bridge started on port %d", TCP_BRIDGE_PORT);
         ESP_LOGI(TAG, "Device IP: %s", wifi_get_device_ip());
     } else {
         ESP_LOGE(TAG, "Failed to start TCP bridge: %s", esp_err_to_name(bridge_err));

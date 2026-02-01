@@ -1,4 +1,5 @@
 #include "message_decoder.h"
+#include "config.h"
 #include "mqtt_publish.h"
 #include "esp_log.h"
 #include <string.h>
@@ -285,7 +286,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         ESP_LOGI(TAG, "%s Register 0x%02X label - \"%s\"", addr_info, reg_id, label);
 
         // Update pool state - find or create entry for this register
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             // Find existing entry or first available slot
             int slot = -1;
             for (int i = 0; i < 32; i++) {
@@ -325,7 +326,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
                 ESP_LOGI(TAG, "%s Channel %d name - \"%s\"", addr_info, ch_num, name);
 
                 // Update pool state
-                if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                     if (ch_num <= 8) {
                         strncpy(ctx->pool_state->channels[ch_num - 1].name, name, sizeof(ctx->pool_state->channels[ch_num - 1].name) - 1);
                         ctx->pool_state->channels[ch_num - 1].id = ch_num;
@@ -346,7 +347,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
             // Mark this zone as configured (only publish if this is the first time)
             bool should_publish = false;
             pool_state_t state_snapshot;
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                 bool was_configured = ctx->pool_state->lighting[zone_idx].configured;
 
                 ctx->pool_state->lighting[zone_idx].zone = zone_idx + 1;
@@ -388,7 +389,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
             bool should_publish = false;
             uint8_t zone_num = 0;
             pool_state_t state_snapshot;
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xC0;
                 ctx->pool_state->lighting[zone_idx].zone = zone_idx + 1;
                 ctx->pool_state->lighting[zone_idx].state = value2;
@@ -420,7 +421,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
             bool should_publish = false;
             uint8_t zone_num = 0;
             pool_state_t state_snapshot;
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xD0;
                 ctx->pool_state->lighting[zone_idx].color = color;
                 ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -450,7 +451,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
             bool should_publish = false;
             uint8_t zone_num = 0;
             pool_state_t state_snapshot;
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                 uint8_t zone_idx = channel - 0xE0;
                 ctx->pool_state->lighting[zone_idx].active = (active != 0);
                 ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -483,7 +484,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
                 ESP_LOGI(TAG, "%s Channel %d type - %s (%d)", addr_info, ch_num, type_name, ch_type);
 
                 // Update pool state
-                if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                     ctx->pool_state->channels[ch_num - 1].type = ch_type;
                     ctx->pool_state->channels[ch_num - 1].configured = true;
                     ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -504,7 +505,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         ESP_LOGI(TAG, "%s Config - temperature scale=%s", addr_info, scale_str);
 
         // Update pool state
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->temp_scale_fahrenheit = (config_byte & 0x10) != 0;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             xSemaphoreGive(ctx->state_mutex);
@@ -521,7 +522,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
         // Update pool state and create snapshot for publishing
         pool_state_t state_snapshot;
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->mode = mode;
             ctx->pool_state->mode_valid = true;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -569,7 +570,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
         // Update pool state
         pool_state_t state_snapshot;
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->num_channels = num_channels;
 
             while (ch_num <= num_channels) {
@@ -636,7 +637,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
         // Update pool state and create snapshot for publishing
         pool_state_t state_snapshot;
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->spa_setpoint = spa_set_temp_c;
             ctx->pool_state->pool_setpoint = pool_set_temp_c;
             ctx->pool_state->spa_setpoint_f = spa_set_temp_f;
@@ -664,7 +665,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
         // Update pool state and create snapshot for publishing
         pool_state_t state_snapshot;
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->current_temp = current_temp;
             ctx->pool_state->temp_valid = true;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -690,7 +691,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
         // Update pool state and create snapshot for publishing
         pool_state_t state_snapshot;
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->heater_on = (heater_state != 0);
             ctx->pool_state->heater_valid = true;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -719,7 +720,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
             // Update pool state and create snapshot for publishing
             pool_state_t state_snapshot;
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                 ctx->pool_state->ph_setpoint = value;
                 ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
@@ -740,7 +741,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
             // Update pool state and create snapshot for publishing
             pool_state_t state_snapshot;
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                 ctx->pool_state->orp_setpoint = value;
                 ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
@@ -761,7 +762,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
             // Update pool state and create snapshot for publishing
             pool_state_t state_snapshot;
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                 ctx->pool_state->ph_reading = value;
                 ctx->pool_state->ph_valid = true;
                 ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -783,7 +784,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
             // Update pool state and create snapshot for publishing
             pool_state_t state_snapshot;
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
                 ctx->pool_state->orp_reading = value;
                 ctx->pool_state->orp_valid = true;
                 ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -810,7 +811,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         ESP_LOGI(TAG, "%s Serial number - %lu (0x%08lX)", addr_info, (unsigned long)serial, (unsigned long)serial);
 
         // Update pool state
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->serial_number = serial;
             ctx->pool_state->serial_number_valid = true;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -834,7 +835,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
                  addr_info, ip[0], ip[1], ip[2], ip[3], signal_level);
 
         // Update pool state
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             memcpy(ctx->pool_state->gateway_ip, ip, 4);
             ctx->pool_state->gateway_signal_level = signal_level;
             ctx->pool_state->gateway_ip_valid = true;
@@ -854,7 +855,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         ESP_LOGI(TAG, "%s Internet Gateway comms status - %u (%s)", addr_info, comms_status, status_text);
 
         // Update pool state
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->gateway_comms_status = comms_status;
             ctx->pool_state->gateway_comms_status_valid = true;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -873,7 +874,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         ESP_LOGI(TAG, "%s Controller time - %02d:%02d:%02d", addr_info, hours, minutes, seconds);
 
         // Update pool state
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->controller_seconds = seconds;
             ctx->pool_state->controller_minutes = minutes;
             ctx->pool_state->controller_hours = hours;
@@ -893,7 +894,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         ESP_LOGI(TAG, "%s Touchscreen firmware version - %d.%d", addr_info, major, minor);
 
         // Update pool state
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->touchscreen_version_major = major;
             ctx->pool_state->touchscreen_version_minor = minor;
             ctx->pool_state->touchscreen_version_valid = true;

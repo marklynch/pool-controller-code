@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Clean up internals around web provisioning
 - Pull out the wifi provisioning code from `main.c` to `wifi_provisioning.c`
+- Refactor all the config variables into `config.h`
 
 ### Fixed
 - Made the title for Wifi Config page consistent

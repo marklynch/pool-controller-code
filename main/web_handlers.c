@@ -1,4 +1,5 @@
 #include "web_handlers.h"
+#include "config.h"
 #include "wifi_provisioning.h"
 #include "pool_state.h"
 #include "mqtt_poolclient.h"
@@ -145,10 +146,10 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     // Load current WiFi SSID from NVS to mark it in results
     char current_ssid[33] = {0};
     nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
     if (err == ESP_OK) {
         size_t ssid_len = sizeof(current_ssid);
-        err = nvs_get_str(nvs_handle, PROV_NVS_KEY_SSID, current_ssid, &ssid_len);
+        err = nvs_get_str(nvs_handle, WIFI_PROV_NVS_KEY_SSID, current_ssid, &ssid_len);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "Loaded current SSID from NVS: '%s' (len=%d)", current_ssid, ssid_len);
         } else {
@@ -156,7 +157,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         }
         nvs_close(nvs_handle);
     } else {
-        ESP_LOGW(TAG, "Failed to open %s NVS: %s", PROV_NVS_NAMESPACE, esp_err_to_name(err));
+        ESP_LOGW(TAG, "Failed to open %s NVS: %s", WIFI_PROV_NVS_NAMESPACE, esp_err_to_name(err));
     }
 
     wifi_scan_config_t scan_config = {
@@ -165,8 +166,8 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         .channel = 0,
         .show_hidden = false,
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
-        .scan_time.active.min = 100,
-        .scan_time.active.max = 300,
+        .scan_time.active.min = WIFI_SCAN_TIME_MIN_MS,
+        .scan_time.active.max = WIFI_SCAN_TIME_MAX_MS,
     };
 
     ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
@@ -220,7 +221,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     }
 
     // Build JSON response from unique list
-    char *json_resp = malloc(4096);
+    char *json_resp = malloc(HTTP_WIFI_SCAN_BUFFER_SIZE);
     if (json_resp == NULL) {
         free(ap_list);
         free(unique_aps);
@@ -228,18 +229,18 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    int len = snprintf(json_resp, 4096, "[");
-    for (int i = 0; i < unique_count && i < 20; i++) {
+    int len = snprintf(json_resp, HTTP_WIFI_SCAN_BUFFER_SIZE, "[");
+    for (int i = 0; i < unique_count && i < WIFI_SCAN_MAX_RESULTS; i++) {
         bool is_current = (strcmp(unique_aps[i].ssid, current_ssid) == 0);
         ESP_LOGI(TAG, "Comparing '%s' with '%s': %s", unique_aps[i].ssid, current_ssid, is_current ? "MATCH" : "no match");
-        len += snprintf(json_resp + len, 4096 - len,
+        len += snprintf(json_resp + len, HTTP_WIFI_SCAN_BUFFER_SIZE - len,
                        "%s{\"ssid\":\"%s\",\"rssi\":%d,\"current\":%s}",
                        i > 0 ? "," : "",
                        unique_aps[i].ssid,
                        unique_aps[i].rssi,
                        is_current ? "true" : "false");
     }
-    len += snprintf(json_resp + len, 4096 - len, "]");
+    len += snprintf(json_resp + len, HTTP_WIFI_SCAN_BUFFER_SIZE - len, "]");
 
     httpd_resp_set_type(req, "application/json; charset=UTF-8");
     httpd_resp_send(req, json_resp, len);
@@ -261,7 +262,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
 
 static esp_err_t provision_post_handler(httpd_req_t *req)
 {
-    char content[200];
+    char content[HTTP_PROVISION_BUFFER_SIZE];
     int ret = httpd_req_recv(req, content, sizeof(content) - 1);
     if (ret <= 0) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid request");
@@ -325,7 +326,7 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 
     // Restart device to apply new credentials
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
     esp_restart();
 
     return ESP_OK;
@@ -337,8 +338,8 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
 
 static esp_err_t status_get_handler(httpd_req_t *req)
 {
-    // Allocate a buffer for JSON response (8KB should be enough)
-    char *json_resp = malloc(8192);
+    // Allocate a buffer for JSON response
+    char *json_resp = malloc(HTTP_STATUS_BUFFER_SIZE);
     if (json_resp == NULL) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
         return ESP_FAIL;
@@ -350,60 +351,60 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     const esp_app_desc_t *app_desc = esp_app_get_description();
 
     // Lock the pool state and build JSON response
-    if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
         // Start JSON object
-        len += snprintf(json_resp + len, 8192 - len, "{");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "{");
 
         // Firmware version section
-        len += snprintf(json_resp + len, 8192 - len, "\"firmware\":{");
-        len += snprintf(json_resp + len, 8192 - len, "\"version\":\"%s\",", app_desc->version);
-        len += snprintf(json_resp + len, 8192 - len, "\"project\":\"%s\",", app_desc->project_name);
-        len += snprintf(json_resp + len, 8192 - len, "\"compile_time\":\"%s %s\",", app_desc->date, app_desc->time);
-        len += snprintf(json_resp + len, 8192 - len, "\"idf_version\":\"%s\"", app_desc->idf_ver);
-        len += snprintf(json_resp + len, 8192 - len, "},");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"firmware\":{");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"version\":\"%s\",", app_desc->version);
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"project\":\"%s\",", app_desc->project_name);
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"compile_time\":\"%s %s\",", app_desc->date, app_desc->time);
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"idf_version\":\"%s\"", app_desc->idf_ver);
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
 
         // Temperature section
-        len += snprintf(json_resp + len, 8192 - len, "\"temperature\":{");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"temperature\":{");
         if (s_pool_state.temp_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"current\":%d,", s_pool_state.current_temp);
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"current\":%d,", s_pool_state.current_temp);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "\"current\":null,");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"current\":null,");
         }
-        len += snprintf(json_resp + len, 8192 - len, "\"pool_setpoint\":%d,", s_pool_state.pool_setpoint);
-        len += snprintf(json_resp + len, 8192 - len, "\"spa_setpoint\":%d,", s_pool_state.spa_setpoint);
-        len += snprintf(json_resp + len, 8192 - len, "\"pool_setpoint_f\":%d,", s_pool_state.pool_setpoint_f);
-        len += snprintf(json_resp + len, 8192 - len, "\"spa_setpoint_f\":%d,", s_pool_state.spa_setpoint_f);
-        len += snprintf(json_resp + len, 8192 - len, "\"scale\":\"%s\"",
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"pool_setpoint\":%d,", s_pool_state.pool_setpoint);
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"spa_setpoint\":%d,", s_pool_state.spa_setpoint);
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"pool_setpoint_f\":%d,", s_pool_state.pool_setpoint_f);
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"spa_setpoint_f\":%d,", s_pool_state.spa_setpoint_f);
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"scale\":\"%s\"",
                        s_pool_state.temp_scale_fahrenheit ? "Fahrenheit" : "Celsius");
-        len += snprintf(json_resp + len, 8192 - len, "},");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
 
         // Heater section
-        len += snprintf(json_resp + len, 8192 - len, "\"heater\":{");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"heater\":{");
         if (s_pool_state.heater_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"state\":\"%s\"",
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"state\":\"%s\"",
                            s_pool_state.heater_on ? "On" : "Off");
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "\"state\":null");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"state\":null");
         }
-        len += snprintf(json_resp + len, 8192 - len, "},");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
 
         // Mode section
-        len += snprintf(json_resp + len, 8192 - len, "\"mode\":");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"mode\":");
         if (s_pool_state.mode_valid) {
             const char *mode_str = (s_pool_state.mode == 0) ? "Spa" :
                                    (s_pool_state.mode == 1) ? "Pool" : "Unknown";
-            len += snprintf(json_resp + len, 8192 - len, "\"%s\",", mode_str);
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%s\",", mode_str);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "null,");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
         }
 
         // Channels section
-        len += snprintf(json_resp + len, 8192 - len, "\"channels\":[");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"channels\":[");
         bool first_channel = true;
         for (int i = 0; i < 8; i++) {
             if (s_pool_state.channels[i].configured) {
                 if (!first_channel) {
-                    len += snprintf(json_resp + len, 8192 - len, ",");
+                    len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
                 }
                 first_channel = false;
 
@@ -412,7 +413,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                 const char *state_name = (s_pool_state.channels[i].state < CHANNEL_STATE_COUNT) ?
                                         CHANNEL_STATE_NAMES[s_pool_state.channels[i].state] : "Unknown";
 
-                len += snprintf(json_resp + len, 8192 - len,
+                len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
                                "{\"id\":%d,\"name\":\"%s\",\"type\":\"%s\",\"state\":\"%s\"}",
                                s_pool_state.channels[i].id,
                                s_pool_state.channels[i].name[0] ? s_pool_state.channels[i].name : type_name,
@@ -420,15 +421,15 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                                state_name);
             }
         }
-        len += snprintf(json_resp + len, 8192 - len, "],");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "],");
 
         // Lighting section
-        len += snprintf(json_resp + len, 8192 - len, "\"lighting\":[");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"lighting\":[");
         bool first_light = true;
         for (int i = 0; i < 4; i++) {
             if (s_pool_state.lighting[i].configured) {
                 if (!first_light) {
-                    len += snprintf(json_resp + len, 8192 - len, ",");
+                    len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
                 }
                 first_light = false;
 
@@ -437,7 +438,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                 const char *color_name = (s_pool_state.lighting[i].color < LIGHTING_COLOR_COUNT) ?
                                         LIGHTING_COLOR_NAMES[s_pool_state.lighting[i].color] : "Unknown";
 
-                len += snprintf(json_resp + len, 8192 - len,
+                len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
                                "{\"zone\":%d,\"state\":\"%s\",\"color\":\"%s\",\"active\":%s}",
                                s_pool_state.lighting[i].zone,
                                state_name,
@@ -445,99 +446,99 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                                s_pool_state.lighting[i].active ? "true" : "false");
             }
         }
-        len += snprintf(json_resp + len, 8192 - len, "],");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "],");
 
         // Chlorinator section
-        len += snprintf(json_resp + len, 8192 - len, "\"chlorinator\":{");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"chlorinator\":{");
         if (s_pool_state.ph_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"ph_setpoint\":%.1f,",
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"ph_setpoint\":%.1f,",
                            s_pool_state.ph_setpoint / 10.0);
-            len += snprintf(json_resp + len, 8192 - len, "\"ph_reading\":%.1f,",
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"ph_reading\":%.1f,",
                            s_pool_state.ph_reading / 10.0);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "\"ph_setpoint\":null,\"ph_reading\":null,");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"ph_setpoint\":null,\"ph_reading\":null,");
         }
         if (s_pool_state.orp_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"orp_setpoint\":%d,",
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"orp_setpoint\":%d,",
                            s_pool_state.orp_setpoint);
-            len += snprintf(json_resp + len, 8192 - len, "\"orp_reading\":%d",
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"orp_reading\":%d",
                            s_pool_state.orp_reading);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "\"orp_setpoint\":null,\"orp_reading\":null");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"orp_setpoint\":null,\"orp_reading\":null");
         }
-        len += snprintf(json_resp + len, 8192 - len, "},");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
 
         // Internet Gateway section
-        len += snprintf(json_resp + len, 8192 - len, "\"internet_gateway\":{");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"internet_gateway\":{");
 
         // Serial number
-        len += snprintf(json_resp + len, 8192 - len, "\"serial_number\":");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"serial_number\":");
         if (s_pool_state.serial_number_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "%lu,", (unsigned long)s_pool_state.serial_number);
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "%lu,", (unsigned long)s_pool_state.serial_number);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "null,");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
         }
 
         // IP address
-        len += snprintf(json_resp + len, 8192 - len, "\"ip\":");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"ip\":");
         if (s_pool_state.gateway_ip_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"%d.%d.%d.%d\",",
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%d.%d.%d.%d\",",
                            s_pool_state.gateway_ip[0], s_pool_state.gateway_ip[1],
                            s_pool_state.gateway_ip[2], s_pool_state.gateway_ip[3]);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "null,");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
         }
 
         // Signal level
-        len += snprintf(json_resp + len, 8192 - len, "\"signal_level\":");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"signal_level\":");
         if (s_pool_state.gateway_ip_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "%d,", s_pool_state.gateway_signal_level);
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "%d,", s_pool_state.gateway_signal_level);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "null,");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
         }
 
         // Comms status
-        len += snprintf(json_resp + len, 8192 - len, "\"comms_status\":");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"comms_status\":");
         if (s_pool_state.gateway_comms_status_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "%u,", s_pool_state.gateway_comms_status);
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "%u,", s_pool_state.gateway_comms_status);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "null,");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
         }
 
         // Comms status text
-        len += snprintf(json_resp + len, 8192 - len, "\"comms_status_text\":");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"comms_status_text\":");
         if (s_pool_state.gateway_comms_status_valid) {
             const char *status_text = get_gateway_comms_status_text(s_pool_state.gateway_comms_status);
-            len += snprintf(json_resp + len, 8192 - len, "\"%s\"", status_text);
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%s\"", status_text);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "null");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null");
         }
 
-        len += snprintf(json_resp + len, 8192 - len, "},");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
 
         // Touchscreen section
-        len += snprintf(json_resp + len, 8192 - len, "\"touchscreen\":{");
-        len += snprintf(json_resp + len, 8192 - len, "\"version\":");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"touchscreen\":{");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"version\":");
         if (s_pool_state.touchscreen_version_valid) {
-            len += snprintf(json_resp + len, 8192 - len, "\"%d.%d\"",
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%d.%d\"",
                            s_pool_state.touchscreen_version_major,
                            s_pool_state.touchscreen_version_minor);
         } else {
-            len += snprintf(json_resp + len, 8192 - len, "null");
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null");
         }
-        len += snprintf(json_resp + len, 8192 - len, "},");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
 
         // Last update timestamp
-        len += snprintf(json_resp + len, 8192 - len, "\"last_update_ms\":%lu",
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"last_update_ms\":%lu",
                        (unsigned long)s_pool_state.last_update_ms);
 
         // Current system time in ms
         uint64_t current_tick_count = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        len += snprintf(json_resp + len, 8192 - len, ",\"current_ms\":%lu",
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",\"current_ms\":%lu",
                        (unsigned long)current_tick_count);
 
         // Close JSON object
-        len += snprintf(json_resp + len, 8192 - len, "}");
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "}");
 
         xSemaphoreGive(s_pool_state_mutex);
     } else {
@@ -693,7 +694,7 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
 
 static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
 {
-    char content[512];
+    char content[HTTP_MQTT_CONFIG_BUFFER_SIZE];
     int ret = httpd_req_recv(req, content, sizeof(content) - 1);
     if (ret <= 0) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid request");
@@ -774,7 +775,7 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 
     // Restart device to apply new MQTT config
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
     esp_restart();
 
     return ESP_OK;
@@ -929,7 +930,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     }
 
     // Read and write firmware data
-    const size_t buf_size = 4096;  // 4KB buffer for better performance
+    const size_t buf_size = HTTP_OTA_BUFFER_SIZE;
     char *buf = malloc(buf_size);
     if (buf == NULL) {
         esp_ota_abort(ota_handle);
@@ -1017,7 +1018,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 
     // Restart after a delay
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_DELAY_MS));
     esp_restart();
 
     return ESP_OK;

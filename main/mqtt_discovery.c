@@ -1,4 +1,5 @@
 #include "mqtt_discovery.h"
+#include "config.h"
 #include "mqtt_poolclient.h"
 #include "pool_state.h"
 #include "esp_log.h"
@@ -193,13 +194,13 @@ static void publish_channel_discovery(const char *device_id, int channel_num, co
     snprintf(formatted_name, sizeof(formatted_name), "Ch%d - %s", channel_num, channel_name);
 
     // Allocate config buffer on heap to avoid stack overflow
-    char *config = malloc(1024);
+    char *config = malloc(MQTT_DISCOVERY_CONFIG_SIZE);
     if (!config) {
         ESP_LOGE(TAG, "Failed to allocate memory for channel discovery config");
         return;
     }
 
-    snprintf(config, 1024,
+    snprintf(config, MQTT_DISCOVERY_CONFIG_SIZE,
              "{\"name\":\"%s\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
              "\"value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
@@ -230,13 +231,13 @@ static void publish_light_discovery(const char *device_id, int zone_num)
     snprintf(object_id, sizeof(object_id), "light_%d", zone_num);
 
     // Allocate config buffer on heap to avoid stack overflow
-    char *config = malloc(1024);
+    char *config = malloc(MQTT_DISCOVERY_CONFIG_SIZE);
     if (!config) {
         ESP_LOGE(TAG, "Failed to allocate memory for light discovery config");
         return;
     }
 
-    snprintf(config, 1024,
+    snprintf(config, MQTT_DISCOVERY_CONFIG_SIZE,
              "{\"name\":\"Light Zone %d\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
              "\"state_value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
