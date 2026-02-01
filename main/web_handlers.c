@@ -1,4 +1,5 @@
 #include "web_handlers.h"
+#include "wifi_provisioning.h"
 #include "pool_state.h"
 #include "mqtt_poolclient.h"
 #include "esp_wifi.h"

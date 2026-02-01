@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "main.c"
         "led_helper.c"
+        "wifi_provisioning.c"
         "mqtt_poolclient.c"
         "mqtt_publish.c"
         "mqtt_discovery.c"
