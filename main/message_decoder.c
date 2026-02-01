@@ -14,6 +14,7 @@ static const char *TAG = "MSG_DECODER";
 // 50 Main Controller (Connect 10)
 static const uint8_t MSG_TYPE_REGISTER_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F, 0x17};
 static const uint8_t MSG_TYPE_REGISTER_LABEL[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x1A, 0x22};
+static const uint8_t MSG_TYPE_LIGHTING_VALVE_LABEL[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x16, 0x1E};
 static const uint8_t MSG_TYPE_38_BASE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38};  // Shorter pattern for channel names
 static const uint8_t MSG_TYPE_TEMP_SETTING[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x17, 0x10};
 static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x26, 0x0E};
@@ -41,6 +42,7 @@ static const uint8_t CHLOR_ORP_READING[]  = {0x1F, 0x0F, 0x3E, 0x02};
 static const uint8_t MSG_TYPE_SERIAL_NUMBER[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x11};
 static const uint8_t MSG_TYPE_GATEWAY_IP[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x15};
 static const uint8_t MSG_TYPE_GATEWAY_COMMS[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x0F};
+static const uint8_t MSG_TYPE_REGISTER_READ_REQUEST[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x39, 0x0E, 0xB7};
 
 // ======================================================
 // Lookup tables and constants
@@ -311,6 +313,46 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         return true;
     }
 
+    // Lighting/valve label messages (payload[0] = register ID 0xD0-0xD3, payload[2+] = label string)
+    if (len >= sizeof(MSG_TYPE_LIGHTING_VALVE_LABEL) + 3 && memcmp(data, MSG_TYPE_LIGHTING_VALVE_LABEL, sizeof(MSG_TYPE_LIGHTING_VALVE_LABEL)) == 0) {
+        if (payload_len < 3) return false;
+        uint8_t reg_id = payload[0];
+        const char *label = (const char *)&payload[2];
+
+        // Identify which zone this is (0xD0-0xD3 = zones 1-4)
+        if (reg_id >= 0xD0 && reg_id <= 0xD3) {
+            uint8_t zone_num = reg_id - 0xD0 + 1;
+            ESP_LOGI(TAG, "%s Lighting/Valve zone %d label (0x%02X) - \"%s\"", addr_info, zone_num, reg_id, label);
+        } else {
+            ESP_LOGI(TAG, "%s Register 0x%02X label - \"%s\"", addr_info, reg_id, label);
+        }
+
+        // Update pool state - find or create entry for this register
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+            // Find existing entry or first available slot
+            int slot = -1;
+            for (int i = 0; i < 32; i++) {
+                if (ctx->pool_state->register_labels[i].valid && ctx->pool_state->register_labels[i].reg_id == reg_id) {
+                    slot = i;  // Found existing entry
+                    break;
+                } else if (!ctx->pool_state->register_labels[i].valid && slot == -1) {
+                    slot = i;  // Remember first available slot
+                }
+            }
+
+            if (slot >= 0) {
+                ctx->pool_state->register_labels[slot].reg_id = reg_id;
+                strncpy(ctx->pool_state->register_labels[slot].label, label, sizeof(ctx->pool_state->register_labels[slot].label) - 1);
+                ctx->pool_state->register_labels[slot].label[sizeof(ctx->pool_state->register_labels[slot].label) - 1] = '\0';
+                ctx->pool_state->register_labels[slot].valid = true;
+                ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            }
+
+            xSemaphoreGive(ctx->state_mutex);
+        }
+        return true;
+    }
+
     // Channel name messages (payload[0] = 0x7C-0x83 for channels 1-8)
     if (len >= sizeof(MSG_TYPE_38_BASE) + 5 && memcmp(data, MSG_TYPE_38_BASE, sizeof(MSG_TYPE_38_BASE)) == 0) {
         if (payload_len < 5) return false;
@@ -492,7 +534,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
                 }
             }
         } else {
-            ESP_LOGI(TAG, "%s Type 0x38 - Channel=0x%02X, value1=%d, value2=%d", addr_info, channel, value1, value2);
+            // Unknown register - likely a register read response
+            ESP_LOGI(TAG, "%s Register read response - Register=0x%02X, value1=0x%02X, value2=0x%02X", addr_info, channel, value1, value2);
         }
         return true;
     }
@@ -861,6 +904,18 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             xSemaphoreGive(ctx->state_mutex);
         }
+        return true;
+    }
+
+    // Internet Gateway register read request
+    if (len >= sizeof(MSG_TYPE_REGISTER_READ_REQUEST) + 2 && memcmp(data, MSG_TYPE_REGISTER_READ_REQUEST, sizeof(MSG_TYPE_REGISTER_READ_REQUEST)) == 0) {
+        if (payload_len < 2) return false;
+        uint8_t reg_id = payload[0];
+
+        ESP_LOGI(TAG, "%s Register read request - 0x%02X", addr_info, reg_id);
+
+        // No state update needed - this is just a request message
+        // The controller will respond with MSG_TYPE_REGISTER_STATUS
         return true;
     }
 

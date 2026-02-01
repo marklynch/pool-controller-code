@@ -366,19 +366,38 @@ Generic register label assignments.
 - Byte 12+: ASCII label string (null terminated)
 
 
-**Pattern Variant: Valves?** `02 00 50 FF FF 80 00 38 16 1E`
-**Example: 38 16 1E**
+**Pattern Variant: Lighting/Valve Labels** `02 00 50 FF FF 80 00 38 16 1E`
+
+Assigns custom names to lighting zones or valve registers (0xD0-0xD3 range).
+
+**Example - Valve 1:**
 ```
 02 00 50 FF FF 80 00 38 16 1E D0 02 56 61 6C 76 65 20 31 00 21 03
-                              ^^ Register ID (0xD0)
-                                 ^^  Unknown
-                                    V  a  l  v  e     1  (null terminated)
-
-02 00 50 FF FF 80 00 38 16 1E D1 02 56 61 6C 76 65 20 32 00 23 03
-                              ^^ Register ID (0xD1)
-                                 ^^  Unknown
-                                    V  a  l  v  e     2  (null terminated)
+                              ^^ Register ID (0xD0 = Light Zone 1 Color/Valve 1)
+                                 ^^ Unknown (always 0x02)
+                                    V  a  l  v  e     1  \0  (null-terminated ASCII string)
 ```
+
+**Example - Valve 2:**
+```
+02 00 50 FF FF 80 00 38 16 1E D1 02 56 61 6C 76 65 20 32 00 23 03
+                              ^^ Register ID (0xD1 = Light Zone 2 Color/Valve 2)
+                                 ^^ Unknown (always 0x02)
+                                    V  a  l  v  e     2  \0  (null-terminated ASCII string)
+```
+
+**Data Fields:**
+
+- Byte 10: Register ID (0xD0-0xD3 for zones/valves 1-4)
+- Byte 11: Unknown (observed as 0x02)
+- Bytes 12+: Null-terminated ASCII string (custom label/name)
+
+**Notes:**
+
+- These registers (0xD0-0xD3) appear to be multipurpose
+- Can represent either lighting zone colors or valve names depending on system configuration
+- The null-terminated string format allows for variable-length names
+- Maximum string length appears to be limited by message size constraints
 
 ---
 
@@ -585,7 +604,58 @@ Status of the gateway's internet connection.
 
 ---
 
-### 18. Controller Time/Clock
+### 18. Register Read Request/Response
+
+The Internet Gateway periodically polls controller registers to sync state with the cloud service. This uses a request-response pattern.
+
+**Request Pattern:** `02 00 F0 FF FF 80 00 39 0E B7`
+
+**Response Pattern:** `02 00 50 FF FF 80 00 38 0F 17`
+
+**Example - Request for register 0x88:**
+
+```
+02 00 F0 FF FF 80 00 39 0E B7 88 02 8A 03
+                              ^^ Register ID (0x88)
+                                 ^^ Unknown (always 0x02)
+```
+
+**Example - Response with register 0x88 value:**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 88 02 00 8A 03
+                              ^^ Register ID (0x88)
+                                 ^^ Unknown (always 0x02)
+                                    ^^ Register value (0x00)
+```
+
+**Request Data Fields (from Gateway):**
+
+- Byte 10: Register ID to read
+- Byte 11: Unknown (observed as 0x02)
+
+**Response Data Fields (from Controller):**
+
+- Byte 10: Register ID (echoed from request)
+- Byte 11: Unknown (observed as 0x02)
+- Byte 12: Register value
+
+**Observed Behavior:**
+
+- Gateway sends sequential requests (e.g., 0x88, 0x89, 0x8A, 0x8B)
+- Controller responds ~120ms after each request
+- Next request sent ~780ms after previous response
+- Used for periodic status polling and cloud synchronization
+
+**Notes:**
+
+- The response command pattern `38 0F 17` is similar to `MSG_TYPE_REGISTER_STATUS` (`38 0F 17`)
+- Both request and response are broadcast (destination 0xFFFF)
+- The gateway appears to scan ranges of registers systematically
+
+---
+
+### 19. Controller Time/Clock
 
 Current time from the controller's internal clock. Broadcast periodically for synchronization.
 
@@ -622,7 +692,7 @@ Current time from the controller's internal clock. Broadcast periodically for sy
 
 ---
 
-### 19. Touchscreen Firmware Version
+### 20. Touchscreen Firmware Version
 
 Touchscreen firmware version announcement. Broadcast periodically by the controller.
 

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for the controller clock time
 - Added support for touchscreen firmware version and display on status
 - Added navigation around the Status page via `/status_view`
+- Added support for Valve label message types
+- Added support for requests from IG for request config 
 
 ### Removed 
 ### Changed
