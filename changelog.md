@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made the title for Wifi Config page consistent
 - Improved the make process to consistently update the version number for build
 - Fixed support for time which includes day of week.
+- Improve the reliability of message recieving to reduce broken messages
 
 ## [0.0.5] - 2026-01-31
 

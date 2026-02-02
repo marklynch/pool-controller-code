@@ -44,6 +44,7 @@
 // UART Buffers
 #define UART_RX_BUFFER_SIZE            2048
 #define UART_TX_BUFFER_SIZE            2048
+#define UART_RX_TIMEOUT_MS             15     // Timeout waiting for RX read (at 9600 baud, ~1ms per byte)
 #define UART_TX_TIMEOUT_MS             100     // Timeout waiting for TX completion
 
 // ======================================================
@@ -57,7 +58,7 @@
 // TCP Bridge Configuration
 // ======================================================
 
-#define TCP_UART_BUFFER_SIZE           256     // UART read buffer for TCP bridge
+#define TCP_UART_BUFFER_SIZE           64     // UART read buffer for TCP bridge - large enough for typical bus messages
 #define TCP_BUFFER_SIZE                256     // TCP socket buffer size
 #define TCP_LINE_BUFFER_SIZE           512     // Line buffering for TCP bridge
 #define TCP_TASK_STACK_SIZE            8192    // TCP bridge task stack size

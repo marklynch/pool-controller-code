@@ -23,6 +23,161 @@ static tcp_bridge_config_t s_config = {0};
 // Task handle for cleanup
 static TaskHandle_t s_bridge_task_handle = NULL;
 
+// Message reassembly buffer
+static uint8_t s_msg_buffer[BUS_MESSAGE_MAX_SIZE];
+static int s_msg_buffer_len = 0;
+
+/**
+ * Extract and process one complete message from the reassembly buffer.
+ * Uses message structure validation and checksum to detect message boundaries.
+ * Returns true if a message was found and processed.
+ */
+static bool extract_and_process_message(int client_sock)
+{
+    // Need at least minimum message: START + SRC + DST + CTRL + CMD(3) + CHK + END = 12 bytes
+    if (s_msg_buffer_len < 12) {
+        return false;
+    }
+
+    // Find start byte (0x02)
+    int start_idx = -1;
+    for (int i = 0; i < s_msg_buffer_len; i++) {
+        if (s_msg_buffer[i] == 0x02) {
+            start_idx = i;
+            break;
+        }
+    }
+
+    // No start byte found - discard everything
+    if (start_idx == -1) {
+        if (s_msg_buffer_len > 0) {
+            char hex_str[100];
+            int hex_pos = 0;
+            int dump_len = (s_msg_buffer_len < 32) ? s_msg_buffer_len : 32;
+            for (int i = 0; i < dump_len && hex_pos < (int)sizeof(hex_str) - 3; i++) {
+                hex_pos += snprintf(&hex_str[hex_pos], sizeof(hex_str) - hex_pos, "%02X ", s_msg_buffer[i]);
+            }
+            hex_str[hex_pos] = '\0';
+            ESP_LOGW(TAG, "No start byte in buffer, discarding %d bytes: %s%s",
+                     s_msg_buffer_len, hex_str, s_msg_buffer_len > 32 ? "..." : "");
+        }
+        s_msg_buffer_len = 0;
+        return false;
+    }
+
+    // Discard bytes before start
+    if (start_idx > 0) {
+        memmove(s_msg_buffer, &s_msg_buffer[start_idx], s_msg_buffer_len - start_idx);
+        s_msg_buffer_len -= start_idx;
+    }
+
+    // Check we have enough for header validation
+    if (s_msg_buffer_len < 10) {
+        return false;  // Wait for more data
+    }
+
+    // Validate control bytes (positions 5-6 should be 0x80 0x00)
+    if (s_msg_buffer[5] != 0x80 || s_msg_buffer[6] != 0x00) {
+        char hex_str[100];
+        int hex_pos = 0;
+        int dump_len = (s_msg_buffer_len < 32) ? s_msg_buffer_len : 32;
+        for (int i = 0; i < dump_len && hex_pos < (int)sizeof(hex_str) - 3; i++) {
+            hex_pos += snprintf(&hex_str[hex_pos], sizeof(hex_str) - hex_pos, "%02X ", s_msg_buffer[i]);
+        }
+        hex_str[hex_pos] = '\0';
+        ESP_LOGW(TAG, "Invalid control bytes: %02X %02X (expected 80 00), data: %s%s, discarding start byte",
+                 s_msg_buffer[5], s_msg_buffer[6], hex_str, s_msg_buffer_len > 32 ? "..." : "");
+        // Discard this start byte and look for next
+        memmove(s_msg_buffer, &s_msg_buffer[1], s_msg_buffer_len - 1);
+        s_msg_buffer_len--;
+        return false;
+    }
+
+    // Now scan for message end using checksum validation
+    // Data starts at index 10, checksum algorithm: sum(bytes 10..N-3) & 0xFF
+    for (int pos = 10; pos < s_msg_buffer_len - 1; pos++) {
+        // Calculate checksum from byte 10 to current position (inclusive)
+        uint32_t sum = 0;
+        for (int i = 10; i <= pos; i++) {
+            sum += s_msg_buffer[i];
+        }
+        uint8_t calculated_checksum = sum & 0xFF;
+
+        // Check if next byte matches checksum
+        if (pos + 1 < s_msg_buffer_len && s_msg_buffer[pos + 1] == calculated_checksum) {
+            // Check if byte after checksum is end marker (0x03)
+            if (pos + 2 < s_msg_buffer_len && s_msg_buffer[pos + 2] == 0x03) {
+                // Found complete message!
+                int msg_len = pos + 3;  // Include checksum and end byte
+
+                // Format as hex string
+                char hexLine[3 * BUS_MESSAGE_MAX_SIZE + 4];
+                int hex_pos = 0;
+                for (int i = 0; i < msg_len; i++) {
+                    if (hex_pos < (int)(sizeof(hexLine) - 4)) {
+                        hex_pos += snprintf(&hexLine[hex_pos], sizeof(hexLine) - hex_pos,
+                                          "%02X ", s_msg_buffer[i]);
+                    }
+                }
+                hexLine[hex_pos] = '\0';
+
+                // Check for loopback
+                bool is_loopback = false;
+                if (s_last_tx_len > 0 && msg_len == s_last_tx_len) {
+                    TickType_t time_since_tx = xTaskGetTickCount() - s_last_tx_time;
+                    if (time_since_tx < pdMS_TO_TICKS(500)) {
+                        if (memcmp(s_msg_buffer, s_last_tx_msg, msg_len) == 0) {
+                            is_loopback = true;
+                            ESP_LOGI(TAG, "RX LOOPBACK (our TX echoed): %s", hexLine);
+                            s_last_tx_len = 0;
+                        }
+                    }
+                }
+
+                // Decode message, log hex only if not decoded and not loopback
+                if (!is_loopback && !s_config.decode_message(s_msg_buffer, msg_len)) {
+                    ESP_LOGI(TAG, "RX: %s", hexLine);
+                }
+
+                // Send to TCP client if connected
+                if (client_sock >= 0) {
+                    hexLine[hex_pos++] = '\r';
+                    hexLine[hex_pos++] = '\n';
+                    int sent = send(client_sock, hexLine, hex_pos, 0);
+                    if (sent < 0) {
+                        ESP_LOGD(TAG, "Client send error: errno %d", errno);
+                    }
+                }
+
+                // Remove processed message from buffer
+                int remaining = s_msg_buffer_len - msg_len;
+                if (remaining > 0) {
+                    memmove(s_msg_buffer, &s_msg_buffer[msg_len], remaining);
+                }
+                s_msg_buffer_len = remaining;
+
+                return true;  // Message processed
+            }
+        }
+    }
+
+    // No complete message yet - check for buffer overflow
+    if (s_msg_buffer_len >= BUS_MESSAGE_MAX_SIZE - 10) {
+        char hex_str[100];
+        int hex_pos = 0;
+        int dump_len = 32;  // Show first 32 bytes
+        for (int i = 0; i < dump_len && hex_pos < (int)sizeof(hex_str) - 3; i++) {
+            hex_pos += snprintf(&hex_str[hex_pos], sizeof(hex_str) - hex_pos, "%02X ", s_msg_buffer[i]);
+        }
+        hex_str[hex_pos] = '\0';
+        ESP_LOGW(TAG, "Buffer nearly full (%d bytes) without complete message, first 32 bytes: %s..., clearing",
+                 s_msg_buffer_len, hex_str);
+        s_msg_buffer_len = 0;
+    }
+
+    return false;  // Wait for more data
+}
+
 /**
  * TCP server task implementation
  */
@@ -103,56 +258,27 @@ static void tcp_bridge_task(void *pvParameters)
             }
         }
 
-        // 1. UART RX - always read and log
-        int len = s_config.uart_read(uart_buf, sizeof(uart_buf), 10);
+        // 1. UART RX - accumulate into reassembly buffer
+        int len = s_config.uart_read(uart_buf, sizeof(uart_buf), UART_RX_TIMEOUT_MS);
         if (len > 0) {
             // Flash RX LED if callback provided
             if (s_config.led_flash_rx) {
                 s_config.led_flash_rx();
             }
 
-            // Format as hex string
-            char hexLine[3 * TCP_UART_BUFFER_SIZE + 4];
-            int pos = 0;
-            for (int i = 0; i < len; ++i) {
-                if (pos < (int)(sizeof(hexLine) - 4)) {
-                    pos += snprintf(&hexLine[pos],
-                                    sizeof(hexLine) - pos,
-                                    "%02X ",
-                                    uart_buf[i]);
-                }
-            }
-            hexLine[pos] = '\0';
-
-            // Check if this is our own transmitted message (loopback verification)
-            bool is_loopback = false;
-            if (s_last_tx_len > 0 && len == s_last_tx_len) {
-                TickType_t time_since_tx = xTaskGetTickCount() - s_last_tx_time;
-                if (time_since_tx < pdMS_TO_TICKS(500)) {  // Within 500ms of TX
-                    if (memcmp(uart_buf, s_last_tx_msg, len) == 0) {
-                        is_loopback = true;
-                        ESP_LOGI(TAG, "RX LOOPBACK (our TX echoed): %s", hexLine);
-                        s_last_tx_len = 0;  // Clear so we don't match again
-                    }
-                }
+            // Append to reassembly buffer
+            if (s_msg_buffer_len + len <= BUS_MESSAGE_MAX_SIZE) {
+                memcpy(&s_msg_buffer[s_msg_buffer_len], uart_buf, len);
+                s_msg_buffer_len += len;
+            } else {
+                ESP_LOGW(TAG, "Reassembly buffer overflow (%d + %d > %d), clearing",
+                         s_msg_buffer_len, len, BUS_MESSAGE_MAX_SIZE);
+                s_msg_buffer_len = 0;
             }
 
-            // Decode the message, log hex only if not decoded and not loopback
-            if (!is_loopback && !s_config.decode_message(uart_buf, len)) {
-                ESP_LOGI(TAG, "RX: %s", hexLine);
-            }
-
-            // Send to client if connected
-            if (client_sock >= 0) {
-                hexLine[pos++] = '\r';
-                hexLine[pos++] = '\n';
-                int sent = send(client_sock, hexLine, pos, 0);
-                if (sent < 0) {
-                    ESP_LOGW(TAG, "Client send error: errno %d", errno);
-                    shutdown(client_sock, SHUT_RDWR);
-                    close(client_sock);
-                    client_sock = -1;
-                }
+            // Extract and process all complete messages
+            while (extract_and_process_message(client_sock)) {
+                // Keep extracting until no more complete messages
             }
         }
 
