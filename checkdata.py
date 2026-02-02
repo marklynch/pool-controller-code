@@ -123,7 +123,7 @@ CMD_SUB_LABELS: Dict[Tuple[int, int, int], str] = {
 
 
     # 32769 - comunicating with server
-    # = 80 01 or 01 80
+    # = 80 01
     # 02 00 F0 FF FF 80 00 37 0F B6 02 01 80 83 03
     (0x37, 0x0F, 0xB6): "IG GW to Server Comm",    # Data: 02 00 F0 FF FF 80 00 37 0F B6 02 80 01 83 03
 

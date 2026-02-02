@@ -7,42 +7,88 @@
 static const char *TAG = "MSG_DECODER";
 
 // ======================================================
-// Message type patterns
+// Little-endian byte-to-word conversion helpers
+// ======================================================
+
+// Read 16-bit little-endian value from buffer at offset
+#define UINT16_LE(ptr, offset) ((uint16_t)((ptr)[(offset)] | ((ptr)[(offset)+1] << 8)))
+
+// Read 32-bit little-endian value from buffer at offset
+#define UINT32_LE(ptr, offset) ((uint32_t)((ptr)[(offset)] | ((ptr)[(offset)+1] << 8) | \
+                                            ((ptr)[(offset)+2] << 16) | ((ptr)[(offset)+3] << 24)))
+
+// ======================================================
+// Helper function for pattern matching
+// ======================================================
+
+/**
+ * Match data against a hex string pattern (e.g. "02 00 50 FF FF")
+ * Returns true if data matches pattern
+ */
+static bool match_pattern(const uint8_t *data, int data_len, const char *pattern)
+{
+    int data_idx = 0;
+    const char *p = pattern;
+
+    while (*p && data_idx < data_len) {
+        // Skip whitespace
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+
+        // Parse two hex digits
+        if (!*p || !*(p + 1)) return false;  // Need 2 hex digits
+
+        char hex[3] = {p[0], p[1], 0};
+        unsigned long expected = strtoul(hex, NULL, 16);
+
+        if (data[data_idx] != (uint8_t)expected) {
+            return false;
+        }
+
+        data_idx++;
+        p += 2;
+    }
+
+    return true;  // All pattern bytes matched
+}
+
+// ======================================================
+// Message type patterns (as hex strings for readability)
 // ======================================================
 
 // Message type patterns (messages start with 0x02, end with 0x03)
 // 50 Main Controller (Connect 10)
-static const uint8_t MSG_TYPE_REGISTER_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F, 0x17};
-static const uint8_t MSG_TYPE_REGISTER_LABEL[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x1A, 0x22};
-static const uint8_t MSG_TYPE_LIGHTING_VALVE_LABEL[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x16, 0x1E};
-static const uint8_t MSG_TYPE_38_BASE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38};  // Shorter pattern for channel names
-static const uint8_t MSG_TYPE_TEMP_SETTING[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x17, 0x10};
-static const uint8_t MSG_TYPE_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x26, 0x0E};
-static const uint8_t MSG_TYPE_MODE[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x14, 0x0D, 0xF1};
-static const uint8_t MSG_TYPE_CHANNELS[] = {0x02, 0x00, 0x50, 0x00, 0x6F, 0x80, 0x00, 0x0D, 0x0D, 0x5B};
-static const uint8_t MSG_TYPE_CHANNEL_STATUS[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0B, 0x25, 0x00};
-static const uint8_t MSG_TYPE_LIGHT_CONFIG[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x06, 0x0E, 0xE4};
-static const uint8_t MSG_TYPE_CONTROLLER_TIME[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0xFD, 0x0F, 0xDC};
-static const uint8_t MSG_TYPE_TOUCHSCREEN_VERSION[] = {0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0A, 0x0E, 0xE8};
+static const char *MSG_TYPE_REGISTER_STATUS = "02 00 50 FF FF 80 00 38 0F 17";
+static const char *MSG_TYPE_REGISTER_LABEL = "02 00 50 FF FF 80 00 38 1A 22";
+static const char *MSG_TYPE_LIGHTING_VALVE_LABEL = "02 00 50 FF FF 80 00 38 16 1E";
+static const char *MSG_TYPE_38_BASE = "02 00 50 FF FF 80 00 38";  // Shorter pattern for channel names
+static const char *MSG_TYPE_TEMP_SETTING = "02 00 50 FF FF 80 00 17 10";
+static const char *MSG_TYPE_CONFIG = "02 00 50 FF FF 80 00 26 0E";
+static const char *MSG_TYPE_MODE = "02 00 50 FF FF 80 00 14 0D F1";
+static const char *MSG_TYPE_CHANNELS = "02 00 50 00 6F 80 00 0D 0D 5B";
+static const char *MSG_TYPE_CHANNEL_STATUS = "02 00 50 FF FF 80 00 0B 25 00";
+static const char *MSG_TYPE_LIGHT_CONFIG = "02 00 50 FF FF 80 00 06 0E E4";
+static const char *MSG_TYPE_CONTROLLER_TIME = "02 00 50 FF FF 80 00 FD 0F DC";
+static const char *MSG_TYPE_TOUCHSCREEN_VERSION = "02 00 50 FF FF 80 00 0A 0E E8";
 
 // 62 Temperature sensor / Unknown subsystem
-static const uint8_t MSG_TYPE_TEMP_READING[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x16, 0x0E};
-static const uint8_t MSG_TYPE_HEATER[] = {0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00, 0x12, 0x0F};
+static const char *MSG_TYPE_TEMP_READING = "02 00 62 FF FF 80 00 16 0E";
+static const char *MSG_TYPE_HEATER = "02 00 62 FF FF 80 00 12 0F";
 
 // 90 Chlorinator (pH, ORP)
-static const uint8_t MSG_TYPE_CHLOR[] = {0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00};
+static const char *MSG_TYPE_CHLOR = "02 00 90 FF FF 80 00";
 
 // Chlorinator sub-type patterns (bytes 7-10)
-static const uint8_t CHLOR_PH_SETPOINT[]  = {0x1D, 0x0F, 0x3C, 0x01};
-static const uint8_t CHLOR_ORP_SETPOINT[] = {0x1D, 0x0F, 0x3C, 0x02};
-static const uint8_t CHLOR_PH_READING[]   = {0x1F, 0x0F, 0x3E, 0x01};
-static const uint8_t CHLOR_ORP_READING[]  = {0x1F, 0x0F, 0x3E, 0x02};
+static const char *CHLOR_PH_SETPOINT  = "1D 0F 3C 01";
+static const char *CHLOR_ORP_SETPOINT = "1D 0F 3C 02";
+static const char *CHLOR_PH_READING   = "1F 0F 3E 01";
+static const char *CHLOR_ORP_READING  = "1F 0F 3E 02";
 
 // F0 Internet Gateway
-static const uint8_t MSG_TYPE_SERIAL_NUMBER[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x11};
-static const uint8_t MSG_TYPE_GATEWAY_IP[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x15};
-static const uint8_t MSG_TYPE_GATEWAY_COMMS[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x37, 0x0F};
-static const uint8_t MSG_TYPE_REGISTER_READ_REQUEST[] = {0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00, 0x39, 0x0E, 0xB7};
+static const char *MSG_TYPE_SERIAL_NUMBER =           "02 00 F0 FF FF 80 00 37 11 B8";
+static const char *MSG_TYPE_GATEWAY_IP =              "02 00 F0 FF FF 80 00 37 15 BC";
+static const char *MSG_TYPE_GATEWAY_COMMS =           "02 00 F0 FF FF 80 00 37 0F B6";
+static const char *MSG_TYPE_REGISTER_READ_REQUEST =   "02 00 F0 FF FF 80 00 39 0E B7";
 
 // ======================================================
 // Lookup tables and constants
@@ -292,7 +338,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Register label messages (payload[0] = register ID, payload[2+] = label string)
-    if (len >= sizeof(MSG_TYPE_REGISTER_LABEL) + 3 && memcmp(data, MSG_TYPE_REGISTER_LABEL, sizeof(MSG_TYPE_REGISTER_LABEL)) == 0) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_REGISTER_LABEL)) {
         if (payload_len < 3) return false;
         uint8_t reg_id = payload[0];
         const char *label = (const char *)&payload[2];
@@ -326,7 +372,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Lighting/valve label messages (payload[0] = register ID 0xD0-0xD3, payload[2+] = label string)
-    if (len >= sizeof(MSG_TYPE_LIGHTING_VALVE_LABEL) + 3 && memcmp(data, MSG_TYPE_LIGHTING_VALVE_LABEL, sizeof(MSG_TYPE_LIGHTING_VALVE_LABEL)) == 0) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_LIGHTING_VALVE_LABEL)) {
         if (payload_len < 3) return false;
         uint8_t reg_id = payload[0];
         const char *label = (const char *)&payload[2];
@@ -366,7 +412,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Channel name messages (payload[0] = 0x7C-0x83 for channels 1-8)
-    if (len >= sizeof(MSG_TYPE_38_BASE) + 5 && memcmp(data, MSG_TYPE_38_BASE, sizeof(MSG_TYPE_38_BASE)) == 0) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_38_BASE)) {
         if (payload_len < 5) return false;
         uint8_t ch_id = payload[0];
         if (ch_id >= 0x7C && ch_id <= 0x83) {
@@ -394,7 +440,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Lighting zone configuration messages - tells us which zones are actually installed
-    if (len >= sizeof(MSG_TYPE_LIGHT_CONFIG) + 4 && memcmp(data, MSG_TYPE_LIGHT_CONFIG, sizeof(MSG_TYPE_LIGHT_CONFIG)) == 0) {
+    if (len >= 14 && match_pattern(data, len, MSG_TYPE_LIGHT_CONFIG)) {
         if (payload_len < 1) return false;
         uint8_t zone_idx = payload[0];
         if (zone_idx <= 3) {
@@ -428,7 +474,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Register status messages (lighting, channel types, etc.)
-    if (len >= sizeof(MSG_TYPE_REGISTER_STATUS) && memcmp(data, MSG_TYPE_REGISTER_STATUS, sizeof(MSG_TYPE_REGISTER_STATUS)) == 0) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_REGISTER_STATUS)) {
         if (payload_len < 3) return false;
         uint8_t channel = payload[0];
         uint8_t value1 = payload[1];
@@ -553,7 +599,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Configuration messages
-    if (len >= sizeof(MSG_TYPE_CONFIG) && memcmp(data, MSG_TYPE_CONFIG, sizeof(MSG_TYPE_CONFIG)) == 0) {
+    if (len >= 12 && match_pattern(data, len, MSG_TYPE_CONFIG)) {
         if (payload_len < 1) return false;
         uint8_t config_byte = payload[0];
         const char *scale_str = (config_byte & 0x10) ? "Fahrenheit" : "Celsius";
@@ -569,7 +615,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Mode messages (Spa/Pool)
-    if (len >= sizeof(MSG_TYPE_MODE) && memcmp(data, MSG_TYPE_MODE, sizeof(MSG_TYPE_MODE)) == 0) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_MODE)) {
         if (payload_len < 1) return false;
         uint8_t mode = payload[0];
         const char *mode_str = (mode == 0x00) ? "Spa" : (mode == 0x01) ? "Pool" : "Unknown";
@@ -596,7 +642,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Active channels bitmask
-    if (len >= sizeof(MSG_TYPE_CHANNELS) + 2 && memcmp(data, MSG_TYPE_CHANNELS, sizeof(MSG_TYPE_CHANNELS)) == 0) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHANNELS)) {
         if (payload_len < 1) return false;
         uint8_t bitmask = payload[0];
         ESP_LOGI(TAG, "%s Active channels - 0x%02X [%c%c%c%c%c%c%c%c]",
@@ -613,7 +659,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Channel status messages
-    if (len >= sizeof(MSG_TYPE_CHANNEL_STATUS) + 1 && memcmp(data, MSG_TYPE_CHANNEL_STATUS, sizeof(MSG_TYPE_CHANNEL_STATUS)) == 0) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHANNEL_STATUS)) {
         if (payload_len < 1) return false;
         uint8_t num_channels = payload[0];
         ESP_LOGI(TAG, "%s Channel status (%d channels):", addr_info, num_channels);
@@ -681,7 +727,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Temperature setting messages
-    if (len >= sizeof(MSG_TYPE_TEMP_SETTING) && memcmp(data, MSG_TYPE_TEMP_SETTING, sizeof(MSG_TYPE_TEMP_SETTING)) == 0) {
+    if (len >= 14 && match_pattern(data, len, MSG_TYPE_TEMP_SETTING)) {
         if (payload_len < 4) return false;
         uint8_t spa_set_temp_c = payload[0];
         uint8_t pool_set_temp_c = payload[1];
@@ -713,7 +759,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Temperature reading messages
-    if (len >= sizeof(MSG_TYPE_TEMP_READING) && memcmp(data, MSG_TYPE_TEMP_READING, sizeof(MSG_TYPE_TEMP_READING)) == 0) {
+    if (len >= 12 && match_pattern(data, len, MSG_TYPE_TEMP_READING)) {
         if (payload_len < 1) return false;
         uint8_t current_temp = payload[0];
         ESP_LOGI(TAG, "%s Current temperature - %d", addr_info, current_temp);
@@ -739,7 +785,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Heater status messages
-    if (len >= sizeof(MSG_TYPE_HEATER) && memcmp(data, MSG_TYPE_HEATER, sizeof(MSG_TYPE_HEATER)) == 0) {
+    if (len >= 12 && match_pattern(data, len, MSG_TYPE_HEATER)) {
         if (payload_len < 2) return false;
         uint8_t heater_state = payload[1];
         ESP_LOGI(TAG, "%s Heater - %s", addr_info, heater_state ? "On" : "Off");
@@ -765,12 +811,12 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Chlorinator messages (pH and ORP)
-    if (len >= sizeof(MSG_TYPE_CHLOR) + 6 && memcmp(data, MSG_TYPE_CHLOR, sizeof(MSG_TYPE_CHLOR)) == 0) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHLOR)) {
         if (payload_len < 3) return false;
         const uint8_t *sub = &data[7];  // Subcommand is in header (bytes 7-9)
-        uint16_t value = payload[1] | (payload[2] << 8);  // little endian value at payload[1-2]
+        uint16_t value = UINT16_LE(payload, 1);
 
-        if (memcmp(sub, CHLOR_PH_SETPOINT, sizeof(CHLOR_PH_SETPOINT)) == 0) {
+        if (match_pattern(sub, 4, CHLOR_PH_SETPOINT)) {
             ESP_LOGI(TAG, "%s Chlorinator pH setpoint - %.1f", addr_info, value / 10.0);
 
             // Update pool state and create snapshot for publishing
@@ -791,7 +837,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
             return true;
         }
-        else if (memcmp(sub, CHLOR_ORP_SETPOINT, sizeof(CHLOR_ORP_SETPOINT)) == 0) {
+        else if (match_pattern(sub, 4, CHLOR_ORP_SETPOINT)) {
             ESP_LOGI(TAG, "%s Chlorinator ORP setpoint - %d mV", addr_info, value);
 
             // Update pool state and create snapshot for publishing
@@ -812,7 +858,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
             return true;
         }
-        else if (memcmp(sub, CHLOR_PH_READING, sizeof(CHLOR_PH_READING)) == 0) {
+        else if (match_pattern(sub, 4, CHLOR_PH_READING)) {
             ESP_LOGI(TAG, "%s Chlorinator pH reading - %.1f", addr_info, value / 10.0);
 
             // Update pool state and create snapshot for publishing
@@ -834,7 +880,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
             return true;
         }
-        else if (memcmp(sub, CHLOR_ORP_READING, sizeof(CHLOR_ORP_READING)) == 0) {
+        else if (match_pattern(sub, 4, CHLOR_ORP_READING)) {
             ESP_LOGI(TAG, "%s Chlorinator ORP reading - %d mV", addr_info, value);
 
             // Update pool state and create snapshot for publishing
@@ -859,10 +905,10 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Internet Gateway serial number
-    if (len >= sizeof(MSG_TYPE_SERIAL_NUMBER) + 6 && memcmp(data, MSG_TYPE_SERIAL_NUMBER, sizeof(MSG_TYPE_SERIAL_NUMBER)) == 0) {
+    if (len >= 15 && match_pattern(data, len, MSG_TYPE_SERIAL_NUMBER)) {
         if (payload_len < 5) return false;
         // Serial number is in payload[1-4] (little endian)
-        uint32_t serial = payload[1] | (payload[2] << 8) | (payload[3] << 16) | (payload[4] << 24);
+        uint32_t serial = UINT32_LE(payload, 1);
         ESP_LOGI(TAG, "%s Serial number - %lu (0x%08lX)", addr_info, (unsigned long)serial, (unsigned long)serial);
 
         // Update pool state
@@ -876,7 +922,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Internet Gateway IP address
-    if (len >= sizeof(MSG_TYPE_GATEWAY_IP) + 10 && memcmp(data, MSG_TYPE_GATEWAY_IP, sizeof(MSG_TYPE_GATEWAY_IP)) == 0) {
+    if (len >= 19 && match_pattern(data, len, MSG_TYPE_GATEWAY_IP)) {
         if (payload_len < 9) return false;
         // IP address is in payload[4-7], signal level at payload[8]
         uint8_t ip[4];
@@ -901,10 +947,10 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Internet Gateway communications status
-    if (len >= sizeof(MSG_TYPE_GATEWAY_COMMS) + 5 && memcmp(data, MSG_TYPE_GATEWAY_COMMS, sizeof(MSG_TYPE_GATEWAY_COMMS)) == 0) {
+    if (len >= 14 && match_pattern(data, len, MSG_TYPE_GATEWAY_COMMS)) {
         if (payload_len < 3) return false;
         // Comms status is in payload[1-2] (little endian)
-        uint16_t comms_status = (payload[1] << 8) | payload[2];
+        uint16_t comms_status = UINT16_LE(payload, 1);
         const char *status_text = get_gateway_comms_status_text(comms_status);
 
         ESP_LOGI(TAG, "%s Internet Gateway comms status - %u (%s)", addr_info, comms_status, status_text);
@@ -920,7 +966,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Internet Gateway register read request
-    if (len >= sizeof(MSG_TYPE_REGISTER_READ_REQUEST) + 2 && memcmp(data, MSG_TYPE_REGISTER_READ_REQUEST, sizeof(MSG_TYPE_REGISTER_READ_REQUEST)) == 0) {
+    if (len >= 12 && match_pattern(data, len, MSG_TYPE_REGISTER_READ_REQUEST)) {
         if (payload_len < 2) return false;
         uint8_t reg_id = payload[0];
 
@@ -932,7 +978,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Controller time/clock
-    if (len >= sizeof(MSG_TYPE_CONTROLLER_TIME) + 3 && memcmp(data, MSG_TYPE_CONTROLLER_TIME, sizeof(MSG_TYPE_CONTROLLER_TIME)) == 0) {
+    if (len >= 14 && match_pattern(data, len, MSG_TYPE_CONTROLLER_TIME)) {
         if (payload_len < 3) return false;
         uint8_t minutes = payload[0];
         uint8_t hours = payload[1];
@@ -954,7 +1000,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Touchscreen firmware version
-    if (len >= sizeof(MSG_TYPE_TOUCHSCREEN_VERSION) + 2 && memcmp(data, MSG_TYPE_TOUCHSCREEN_VERSION, sizeof(MSG_TYPE_TOUCHSCREEN_VERSION)) == 0) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_VERSION)) {
         if (payload_len < 2) return false;
         uint8_t major = payload[0];
         uint8_t minor = payload[1];

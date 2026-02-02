@@ -19,6 +19,40 @@ Bytes you send will be forwarded to the bus.
 00
 ```
 
+## Testing Message Decoding
+
+You can test individual messages against the decoder using the HTTP API endpoint:
+
+```bash
+curl -X POST http://192.168.x.x/api/test_decode \
+  -d "02 00 50 FF FF 80 00 38 0F 17 D0 01 02 1A 03"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "decoded": true,
+  "length": 15,
+  "hex": "02 00 50 FF FF 80 00 38 0F 17 D0 01 02 1A 03",
+  "message": "Check ESP logs for decode details"
+}
+```
+
+- `decoded: true` - Pattern matched and message was decoded
+- `decoded: false` - Unknown message type
+
+**To see full decode details**, monitor the ESP logs:
+```bash
+idf.py monitor
+```
+
+You'll see output like:
+```
+I (12345) MSG_DECODER: [Controller -> Broadcast] Lighting zone 1 state - On
+```
+
+This allows you to quickly test message patterns and verify decoder behavior without needing to send messages to the actual bus.
 
 ## Initial Provisioning:
 

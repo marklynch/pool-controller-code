@@ -3,6 +3,7 @@
 #include "wifi_provisioning.h"
 #include "pool_state.h"
 #include "mqtt_poolclient.h"
+#include "message_decoder.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -1025,6 +1026,88 @@ static esp_err_t update_post_handler(httpd_req_t *req)
 }
 
 // ======================================================
+// Test Decode Handler
+// ======================================================
+
+// Forward declaration - defined in message_decoder.c
+extern bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx);
+extern message_decoder_context_t s_decoder_context;
+
+static esp_err_t test_decode_post_handler(httpd_req_t *req)
+{
+    char content[512];
+    int ret = httpd_req_recv(req, content, sizeof(content) - 1);
+    if (ret <= 0) {
+        const char *resp = "{\"success\":false,\"message\":\"Invalid request\"}";
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+    content[ret] = '\0';
+
+    // Parse hex string into bytes
+    uint8_t msg_buf[256];
+    int msg_len = 0;
+    const char *p = content;
+
+    while (*p != '\0' && msg_len < (int)sizeof(msg_buf)) {
+        // Skip whitespace and newlines
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+        if (*p == '\0') break;
+
+        // Parse two hex digits
+        if (p[0] && p[1]) {
+            char hex_byte[3] = {p[0], p[1], 0};
+            char *endptr;
+            unsigned long val = strtoul(hex_byte, &endptr, 16);
+            if (endptr == hex_byte + 2) {
+                msg_buf[msg_len++] = (uint8_t)val;
+                p += 2;
+            } else {
+                // Invalid hex
+                const char *resp = "{\"success\":false,\"message\":\"Invalid hex string\"}";
+                httpd_resp_set_type(req, "application/json; charset=UTF-8");
+                httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+                return ESP_OK;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if (msg_len == 0) {
+        const char *resp = "{\"success\":false,\"message\":\"No bytes parsed\"}";
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    // Format message for response
+    char hex_str[3 * sizeof(msg_buf) + 1];
+    int pos = 0;
+    for (int i = 0; i < msg_len && pos < (int)sizeof(hex_str) - 4; i++) {
+        pos += snprintf(&hex_str[pos], sizeof(hex_str) - pos, "%02X ", msg_buf[i]);
+    }
+    hex_str[pos] = '\0';
+
+    // Run through decoder
+    bool decoded = decode_message(msg_buf, msg_len, &s_decoder_context);
+
+    // Build JSON response (hex_str can be up to 768 bytes, plus JSON structure)
+    char json_resp[1024];
+    snprintf(json_resp, sizeof(json_resp),
+             "{\"success\":true,\"decoded\":%s,\"length\":%d,\"hex\":\"%s\",\"message\":\"Check ESP logs for decode details\"}",
+             decoded ? "true" : "false",
+             msg_len,
+             hex_str);
+
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
+    httpd_resp_send(req, json_resp, HTTPD_RESP_USE_STRLEN);
+
+    return ESP_OK;
+}
+
+// ======================================================
 // URI Handlers
 // ======================================================
 
@@ -1082,6 +1165,12 @@ static const httpd_uri_t update_post_uri = {
     .handler = update_post_handler
 };
 
+static const httpd_uri_t test_decode_uri = {
+    .uri = "/api/test_decode",
+    .method = HTTP_POST,
+    .handler = test_decode_post_handler
+};
+
 // ======================================================
 // Public Functions
 // ======================================================
@@ -1097,6 +1186,7 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &mqtt_config_post_uri);
     httpd_register_uri_handler(server, &update_get_uri);
     httpd_register_uri_handler(server, &update_post_uri);
+    httpd_register_uri_handler(server, &test_decode_uri);
     ESP_LOGI(TAG, "Web/HTTP handlers registered");
     return ESP_OK;
 }

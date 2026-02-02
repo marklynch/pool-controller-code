@@ -36,8 +36,8 @@ SemaphoreHandle_t s_pool_state_mutex = NULL;
 // Message decoder wrapper for tcp_bridge callback
 // ======================================================
 
-// Decoder context (shared across callbacks)
-static message_decoder_context_t s_decoder_context = {
+// Decoder context (shared across callbacks and accessible to web handlers)
+message_decoder_context_t s_decoder_context = {
     .pool_state = &s_pool_state,
     .state_mutex = NULL,  // Will be initialized in app_main
     .enable_mqtt = true,
