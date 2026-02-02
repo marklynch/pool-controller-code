@@ -88,6 +88,18 @@ const char *LIGHTING_STATE_NAMES[] = {
     "On",           // 2
 };
 
+// Day of week names
+const char *DAY_OF_WEEK_NAMES[] = {
+    "Monday",       // 0
+    "Tuesday",      // 1
+    "Wednesday",    // 2
+    "Thursday",     // 3
+    "Friday",       // 4
+    "Saturday",     // 5
+    "Sunday",       // 6
+};
+#define DAY_OF_WEEK_COUNT 7
+
 // Lighting color names
 const char *LIGHTING_COLOR_NAMES[] = {
     "Unknown",           // 0
@@ -922,17 +934,18 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     // Controller time/clock
     if (len >= sizeof(MSG_TYPE_CONTROLLER_TIME) + 3 && memcmp(data, MSG_TYPE_CONTROLLER_TIME, sizeof(MSG_TYPE_CONTROLLER_TIME)) == 0) {
         if (payload_len < 3) return false;
-        uint8_t seconds = payload[0];
-        uint8_t minutes = payload[1];
-        uint8_t hours = payload[2];
+        uint8_t minutes = payload[0];
+        uint8_t hours = payload[1];
+        uint8_t day_of_week = payload[2]; // 0=Monday, 6=Sunday
 
-        ESP_LOGI(TAG, "%s Controller time - %02d:%02d:%02d", addr_info, hours, minutes, seconds);
+        const char *day_name = (day_of_week < DAY_OF_WEEK_COUNT) ? DAY_OF_WEEK_NAMES[day_of_week] : "Unknown";
+        ESP_LOGI(TAG, "%s Controller time - %02d:%02d %s", addr_info, hours, minutes, day_name);
 
         // Update pool state
         if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-            ctx->pool_state->controller_seconds = seconds;
             ctx->pool_state->controller_minutes = minutes;
             ctx->pool_state->controller_hours = hours;
+            ctx->pool_state->controller_day_of_week = day_of_week;
             ctx->pool_state->controller_time_valid = true;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             xSemaphoreGive(ctx->state_mutex);

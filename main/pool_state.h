@@ -97,9 +97,9 @@ typedef struct {
     bool orp_valid;
 
     // Controller time/clock
-    uint8_t controller_seconds;
     uint8_t controller_minutes;
     uint8_t controller_hours;
+    uint8_t controller_day_of_week; // 0=Monday, 6=Sunday
     bool controller_time_valid;
 
     // Touchscreen firmware version

@@ -655,7 +655,7 @@ The Internet Gateway periodically polls controller registers to sync state with 
 
 ---
 
-### 19. Controller Time/Clock
+### 19. Controller Day/Time/Clock
 
 Current time from the controller's internal clock. Broadcast periodically for synchronization.
 
@@ -665,10 +665,10 @@ Current time from the controller's internal clock. Broadcast periodically for sy
 
 ```
 02 00 50 FF FF 80 00 FD 0F DC 39 08 05 46 03
-                              ^^ Seconds (57)
-                                 ^^ Minutes (8)
-                                    ^^ Hours (5)
-                                       → 05:08:57
+                              ^^ Minutes (57)
+                                 ^^ Hours (8)
+                                    ^^ Day of Week (5)
+                                       → 08:57 on Saturday
 ```
 
 **Example - Minute rollover:**
@@ -680,15 +680,15 @@ Current time from the controller's internal clock. Broadcast periodically for sy
 
 **Data Fields:**
 
-- Byte 10: Seconds (0-59)
-- Byte 11: Minutes (0-59)
-- Byte 12: Hours (0-23, 24-hour format)
+- Byte 10: Minutes (0-59)
+- Byte 11: Hours (0-23, 24-hour format)
+- Byte 12: Day of Week (0-6, 0: Monday -> 6: Sunday)
 
 **Notes:**
 
 - This message is broadcast by the controller for device time synchronization
 - Used by connected devices (touchscreen, internet gateway) to maintain consistent time
-- Appears to be sent approximately every 30 seconds or so
+- Appears to be sent approximately every minute.
 
 ---
 
