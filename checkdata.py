@@ -48,27 +48,27 @@ from typing import Iterable, List, Optional, Tuple, Dict
 # Label tables (edit as needed)
 # ----------------------------
 
-# Source label mapping (bytes 2-3)
-SRC_LABELS: Dict[Tuple[int, int], str] = {
-    (0x00, 0x50): "Controller",
-    (0x00, 0x62): "Temperature",
-    (0x00, 0x90): "Chemistry",
-    (0x00, 0xF0): "Internet Gateway",
+# Source label mapping (bytes 2-3). Format: "HH LL"
+SRC_LABELS: Dict[str, str] = {
+    "00 50": "Controller",
+    "00 62": "Temperature",
+    "00 90": "Chemistry",
+    "00 F0": "Internet Gateway",
 }
 
 # Command/Subcommand label mapping (byte 8 / byte 9)
-# Key = (CMD, SUB, REG). Add entries as you identify them.
-CMD_SUB_LABELS: Dict[Tuple[int, int, int], str] = {
+# Key format: "HH HH HH" (CMD SUB REG). Add entries as you identify them.
+CMD_SUB_LABELS: Dict[str, str] = {
     # Controller
-    (0x05, 0x0D, 0xE2): "Light (active) (maybe)", # 0 off, 1 on - TBC
-    (0x06, 0x0E, 0xE4): "Light config",
-    (0x0B, 0x25, 0x00): "Channel Status",
-    (0x0D, 0x0D, 0x5B): "Channels",
+    "05 0D E2": "Light (active) (maybe)", # 0 off, 1 on - TBC
+    "06 0E E4": "Light config",
+    "0B 25 00": "Channel Status",
+    "0D 0D 5B": "Channels",
 
-    (0x14, 0x0D, 0xF1): "Pool/Spa mode",
-    (0x17, 0x10, 0xF7): "Pool and Spa Setpoints",
+    "14 0D F1": "Pool/Spa mode",
+    "17 10 F7": "Pool and Spa Setpoints",
 
-    (0x26, 0x0E, 0x04): "Temperature Scale C/F",
+    "26 0E 04": "Temperature Scale C/F",
 
     # 02 00 50 FF FF 80 00 38 0F 17 C0 01 00 C1 03
     # 02 00 50 FF FF 80 00 38 0F 17 C1 01 00 C2 03
@@ -82,60 +82,60 @@ CMD_SUB_LABELS: Dict[Tuple[int, int, int], str] = {
     # 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03
     # 02 00 50 FF FF 80 00 38 0F 17 E2 01 00 E3 03
     # 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03
-    (0x38, 0x0F, 0x17): "Register State Data", 
+    "38 0F 17": "Register State Data",
 
-    (0x0A, 0x0E, 0xE8): "Controller version",  # 02 00 50 FF FF 80 00 0A 0E E8 02 08 0A 03. (v2.8)
+    "0A 0E E8": "Controller version",  # 02 00 50 FF FF 80 00 0A 0E E8 02 08 0A 03. (v2.8)
 
     # These labels are strange as the data holds the channel reference - but I can't figure out the CMD/SUB/REG that identifies the channel label itself
-    (0x38, 0x12, 0x1A): "Spa Label",
-    (0x38, 0x13, 0x1B): "Multi Label", # 80: Jets
+    "38 12 1A": "Spa Label",
+    "38 13 1B": "Multi Label", # 80: Jets
                                        # 31: Pool
                                        # 0A, 0B, 0C, 0D, 0E, 0F, 10, 11, 12, 13, 14, 15, 16, 17 : Null
 
-    (0x38, 0x15, 0x1D): "Channel 6 Label", # Blower
-    (0x38, 0x16, 0x1E): "Valve Label",  #. D0: Valve 1, D1: Valve 2. Gas multiple valves keyed by data (valve 1, valve 2, etc)
-    (0x38, 0x17, 0x1F): "Channel 2 Label", # Cleaning
+    "38 15 1D": "Channel 6 Label", # Blower
+    "38 16 1E": "Valve Label",  #. D0: Valve 1, D1: Valve 2. Gas multiple valves keyed by data (valve 1, valve 2, etc)
+    "38 17 1F": "Channel 2 Label", # Cleaning
     
-    (0x38, 0x1A, 0x22): "Channel 1 Label", # Filter Pump
-    (0xFD, 0x0F, 0xDC): "Controller Time",
+    "38 1A 22": "Channel 1 Label", # Filter Pump
+    "FD 0F DC": "Controller Time",
 
     # Temperature sensor commands
-    (0x12, 0x0F, 0x03): "Heater State",
-    (0x16, 0x0E, 0x06): "Temp Reading",  # 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03
+    "12 0F 03": "Heater State",
+    "16 0E 06": "Temp Reading",  # 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03
 
     # Chemistry
-    (0x1D, 0x0F, 0x3C): "Chlorinator Setpoints", # 01 pH setpoint, 02 ORP setpoint
-    (0x1F, 0x0F, 0x3E): "Chlorinator Readings", # 01 pH reading, 02 ORP reading
+    "1D 0F 3C": "Chlorinator Setpoints", # 01 pH setpoint, 02 ORP setpoint
+    "1F 0F 3E": "Chlorinator Readings", # 01 pH reading, 02 ORP reading
 
 
     # Internet Gateway
-    (0x0A, 0x0E, 0x88): "IG Version (maybe)",  # Data: 05 01 -> version 5.1?
-    (0x12, 0x0F, 0x91): "IG Version (maybe)",  # Data: 05 01 06 -> version 5.1.6?
+    "0A 0E 88": "IG Version (maybe)",  # Data: 05 01 -> version 5.1?
+    "12 0F 91": "IG Version (maybe)",  # Data: 05 01 06 -> version 5.1.6?
     
-    (0x39, 0x0E, 0xB7): "IG Request Config (maybe)",    # Data: 02 00 F0 FF FF 80 00 39 0E B7 E0 01 E1 03 - response of 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03
-    (0x3A, 0x0F, 0xB9): "IG Lights (maybe)",    # Data: 02 00 F0 FF FF 80 00 3A 0F B9 C1 01 02 C4 03
+    "39 0E B7": "IG Request Config (maybe)",    # Data: 02 00 F0 FF FF 80 00 39 0E B7 E0 01 E1 03 - response of 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03
+    "3A 0F B9": "IG Lights (maybe)",    # Data: 02 00 F0 FF FF 80 00 3A 0F B9 C1 01 02 C4 03
 
-    (0x37, 0x11, 0xB8): "IG Serial number",    # Data: 02 00 F0 FF FF 80 00 37 11 B8 04 A3 15 21 00 DD 03
+    "37 11 B8": "IG Serial number",    # Data: 02 00 F0 FF FF 80 00 37 11 B8 04 A3 15 21 00 DD 03
 
     # 02 00 F0 FF FF 80 00 37 15 BC 01 00 00 03 00 00 00 00 00 04 03 - not configured
     # 02 00 F0 FF FF 80 00 37 15 BC 01 01 01 07 C0 A8 00 17 2B B4 03 - configured and connected with wifi
-    (0x37, 0x15, 0xBC): "IG Gateway IP",    # Data: 02 00 F0 FF FF 80 00 37 15 BC 01 01 01 03 00 00 00 00 00 06 03
+    "37 15 BC": "IG Gateway IP",    # Data: 02 00 F0 FF FF 80 00 37 15 BC 01 01 01 03 00 00 00 00 00 06 03
 
 
     # 32769 - comunicating with server
     # = 80 01
     # 02 00 F0 FF FF 80 00 37 0F B6 02 01 80 83 03
-    (0x37, 0x0F, 0xB6): "IG GW to Server Comm",    # Data: 02 00 F0 FF FF 80 00 37 0F B6 02 80 01 83 03
+    "37 0F B6": "IG GW to Server Comm",    # Data: 02 00 F0 FF FF 80 00 37 0F B6 02 80 01 83 03
 
 }
 
 
 def src_label(src_hi: int, src_lo: int) -> str:
-    return SRC_LABELS.get((src_hi, src_lo), "Unknown")
+    return SRC_LABELS.get(f"{src_hi:02X} {src_lo:02X}", "Unknown")
 
 
 def cmdsub_label(cmd: int, sub: int, register: int) -> str:
-    return CMD_SUB_LABELS.get((cmd, sub, register), "Unknown")
+    return CMD_SUB_LABELS.get(f"{cmd:02X} {sub:02X} {register:02X}", "Unknown")
 
 
 # Output formatting tweak: reduce SRC label column width
