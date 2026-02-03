@@ -62,13 +62,19 @@ CMD_SUB_LABELS: Dict[str, str] = {
     # Controller
     "05 0D E2": "Light (active) (maybe)", # 0 off, 1 on - TBC
     "06 0E E4": "Light config",
+    "0A 0E E8": "Controller version",  # 02 00 50 FF FF 80 00 0A 0E E8 02 08 0A 03 -> (v2.8)
     "0B 25 00": "Channel Status",
+
     "0D 0D 5B": "Channels",
 
-    "14 0D F1": "Pool/Spa mode",
-    "17 10 F7": "Pool and Spa Setpoints",
+    "12 0E F0": "Touchscreen Unknown 1(5 0)",  # 02 00 50 FF FF 80 00 12 0E F0 05 00 05 03
 
-    "26 0E 04": "Temperature Scale C/F",
+    "14 0D F1": "Pool/Spa mode",
+    "17 10 F7": "Temp Settings", # 02 00 50 FF FF 80 00 17 10 F7 25 1D 63 54 F9 03
+
+
+    "26 0E 04": "Temp Scale C/F",
+    "27 0D 04": "Touchscreen Unknown 2 (0 0)",  # 02 00 50 FF FF 80 00 27 0D 04 00 00 03
 
     # 02 00 50 FF FF 80 00 38 0F 17 C0 01 00 C1 03
     # 02 00 50 FF FF 80 00 38 0F 17 C1 01 00 C2 03
@@ -84,8 +90,6 @@ CMD_SUB_LABELS: Dict[str, str] = {
     # 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03
     "38 0F 17": "Register State Data",
 
-    "0A 0E E8": "Controller version",  # 02 00 50 FF FF 80 00 0A 0E E8 02 08 0A 03. (v2.8)
-
     # These labels are strange as the data holds the channel reference - but I can't figure out the CMD/SUB/REG that identifies the channel label itself
     "38 12 1A": "Spa Label",
     "38 13 1B": "Multi Label", # 80: Jets
@@ -97,13 +101,15 @@ CMD_SUB_LABELS: Dict[str, str] = {
     "38 17 1F": "Channel 2 Label", # Cleaning
     
     "38 1A 22": "Channel 1 Label", # Filter Pump
-    "FD 0F DC": "Controller Time",
 
-    # Temperature sensor commands
+    "FD 0F DC": "Controller Day/Time",
+
+
+    # Temperature Sensor
     "12 0F 03": "Heater State",
     "16 0E 06": "Temp Reading",  # 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03
 
-    # Chemistry
+    # Chlorinator
     "1D 0F 3C": "Chlorinator Setpoints", # 01 pH setpoint, 02 ORP setpoint
     "1F 0F 3E": "Chlorinator Readings", # 01 pH reading, 02 ORP reading
 

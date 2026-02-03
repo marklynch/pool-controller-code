@@ -21,14 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for requests from IG for request config 
 - Added endpoint `/test_decode` to test message decoding.
 - Added functions to extract UINT16_LE and UINT32_LE in message_decoder
+- Added touchscreen_unknown1 and touchscreen_unknown2 messages
 
 ### Removed 
+- Removed unused function `decode_wrapper_for_bridge`
 ### Changed
 - Clean up internals around web provisioning
 - Pull out the wifi provisioning code from `main.c` to `wifi_provisioning.c`
 - Refactor all the config variables into `config.h`
 - Changed message lookup tables to use `02 00 FF` style instead of `0x02, 0x00, 0xFF` for consistent searching. 
 - Refactored the `decode_message` function and split into smaller functions
+- Improve the message label consistency
 
 ### Fixed
 - Made the title for Wifi Config page consistent

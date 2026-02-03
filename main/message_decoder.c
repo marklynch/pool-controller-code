@@ -58,22 +58,24 @@ static bool match_pattern(const uint8_t *data, int data_len, const char *pattern
 
 // Message type patterns (messages start with 0x02, end with 0x03)
 // 50 Main Controller (Connect 10)
-static const char *MSG_TYPE_REGISTER_STATUS = "02 00 50 FF FF 80 00 38 0F 17";
-static const char *MSG_TYPE_REGISTER_LABEL = "02 00 50 FF FF 80 00 38 1A 22";
-static const char *MSG_TYPE_LIGHTING_VALVE_LABEL = "02 00 50 FF FF 80 00 38 16 1E";
-static const char *MSG_TYPE_38_BASE = "02 00 50 FF FF 80 00 38";  // Shorter pattern for channel names
-static const char *MSG_TYPE_TEMP_SETTING = "02 00 50 FF FF 80 00 17 10";
-static const char *MSG_TYPE_CONFIG = "02 00 50 FF FF 80 00 26 0E";
-static const char *MSG_TYPE_MODE = "02 00 50 FF FF 80 00 14 0D F1";
-static const char *MSG_TYPE_CHANNELS = "02 00 50 00 6F 80 00 0D 0D 5B";
-static const char *MSG_TYPE_CHANNEL_STATUS = "02 00 50 FF FF 80 00 0B 25 00";
-static const char *MSG_TYPE_LIGHT_CONFIG = "02 00 50 FF FF 80 00 06 0E E4";
-static const char *MSG_TYPE_CONTROLLER_TIME = "02 00 50 FF FF 80 00 FD 0F DC";
-static const char *MSG_TYPE_TOUCHSCREEN_VERSION = "02 00 50 FF FF 80 00 0A 0E E8";
+static const char *MSG_TYPE_REGISTER_STATUS =       "02 00 50 FF FF 80 00 38 0F 17";
+static const char *MSG_TYPE_REGISTER_LABEL =        "02 00 50 FF FF 80 00 38 1A 22";
+static const char *MSG_TYPE_LIGHTING_VALVE_LABEL =  "02 00 50 FF FF 80 00 38 16 1E";
+static const char *MSG_TYPE_38_BASE =               "02 00 50 FF FF 80 00 38";  // Shorter pattern for channel names
+static const char *MSG_TYPE_TEMP_SETTING =          "02 00 50 FF FF 80 00 17 10 F7";
+static const char *MSG_TYPE_CONFIG =                "02 00 50 FF FF 80 00 26 0E 04";
+static const char *MSG_TYPE_MODE =                  "02 00 50 FF FF 80 00 14 0D F1";
+static const char *MSG_TYPE_CHANNELS =              "02 00 50 00 6F 80 00 0D 0D 5B";
+static const char *MSG_TYPE_CHANNEL_STATUS =        "02 00 50 FF FF 80 00 0B 25 00";
+static const char *MSG_TYPE_LIGHT_CONFIG =          "02 00 50 FF FF 80 00 06 0E E4";
+static const char *MSG_TYPE_CONTROLLER_TIME =       "02 00 50 FF FF 80 00 FD 0F DC";
+static const char *MSG_TYPE_TOUCHSCREEN_VERSION =   "02 00 50 FF FF 80 00 0A 0E E8";
+static const char *MSG_TYPE_TOUCHSCREEN_UNKNOWN1 =  "02 00 50 FF FF 80 00 12 0E F0";
+static const char *MSG_TYPE_TOUCHSCREEN_UNKNOWN2 =  "02 00 50 FF FF 80 00 27 0D 04";
 
 // 62 Temperature sensor / Unknown subsystem
-static const char *MSG_TYPE_TEMP_READING = "02 00 62 FF FF 80 00 16 0E";
-static const char *MSG_TYPE_HEATER = "02 00 62 FF FF 80 00 12 0F";
+static const char *MSG_TYPE_TEMP_READING =          "02 00 62 FF FF 80 00 16 0E 06";
+static const char *MSG_TYPE_HEATER =                "02 00 62 FF FF 80 00 12 0F 03";
 
 // 90 Chlorinator (pH, ORP)
 static const char *MSG_TYPE_CHLOR = "02 00 90 FF FF 80 00";
@@ -418,7 +420,7 @@ static bool handle_heater(
 
 /**
  * Handler: Temperature setting message
- * Pattern: "02 00 50 FF FF 80 00 17 10"
+ * Pattern: "02 00 50 FF FF 80 00 17 10 F7"
  */
 static bool handle_temp_setting(
     const uint8_t *data, int len,
@@ -570,6 +572,58 @@ static bool handle_touchscreen_version(
         ctx->pool_state->touchscreen_version_valid = true;
         ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
         xSemaphoreGive(ctx->state_mutex);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Touchscreen other status info message
+ * Pattern: "02 00 50 FF FF 80 00 12 0E F0"
+ */
+static bool handle_touchscreen_unknown1(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 2) return false;
+
+    uint8_t data_byte1 = payload[0];
+    uint8_t data_byte2 = payload[1];
+
+    if (data_byte1 != 0x05 || data_byte2 != 0x00) {
+        ESP_LOGW(TAG, "%s Touchscreen other status - UNEXPECTED VALUE: Byte1: 0x%02X (%d), Byte2: 0x%02X (%d) (expected 0x05 0x00)",
+                 addr_info, data_byte1, data_byte1, data_byte2, data_byte2);
+    } else {
+        ESP_LOGI(TAG, "%s Touchscreen other status - Byte1: 0x%02X (%d), Byte2: 0x%02X (%d)",
+                 addr_info, data_byte1, data_byte1, data_byte2, data_byte2);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Controller status message
+ * Pattern: "02 00 50 FF FF 80 00 27 0D 04"
+ */
+static bool handle_touchscreen_unknown2(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 2) return false;
+
+    uint8_t data_byte1 = payload[0];
+    uint8_t data_byte2 = payload[1];
+
+    if (data_byte1 != 0x00 || data_byte2 != 0x00) {
+        ESP_LOGW(TAG, "%s Controller status - UNEXPECTED VALUE: Byte1: 0x%02X (%d), Byte2: 0x%02X (%d) (expected 0x00 0x00)",
+                 addr_info, data_byte1, data_byte1, data_byte2, data_byte2);
+    } else {
+        ESP_LOGI(TAG, "%s Controller status - Byte1: 0x%02X (%d), Byte2: 0x%02X (%d)",
+                 addr_info, data_byte1, data_byte1, data_byte2, data_byte2);
     }
 
     return true;
@@ -1396,6 +1450,14 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     if (len >= 13 && match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_VERSION)) {
         return handle_touchscreen_version(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    if (len >= 14 && match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_UNKNOWN1)) {
+        return handle_touchscreen_unknown1(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_UNKNOWN2)) {
+        return handle_touchscreen_unknown2(data, len, payload, payload_len, addr_info, ctx);
     }
 
     // No handler matched

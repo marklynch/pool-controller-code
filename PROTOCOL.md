@@ -126,7 +126,7 @@ Current water temperature from the sensor.
 
 Reports whether the heater is on or off.
 
-**Pattern:** `02 00 62 FF FF 80 00 12 0F`
+**Pattern:** `02 00 62 FF FF 80 00 12 0F 03`
 
 **Example - Heater On:**
 
@@ -688,7 +688,7 @@ Current time from the controller's internal clock. Broadcast periodically for sy
 
 - This message is broadcast by the controller for device time synchronization
 - Used by connected devices (touchscreen, internet gateway) to maintain consistent time
-- Appears to be sent approximately every minute.
+- Appears to be sent every minute.
 
 ---
 
@@ -721,6 +721,55 @@ Touchscreen firmware version announcement. Broadcast periodically by the control
 
 ---
 
+### 21. Touchscreen Unknown 1 - 5 little pigs?
+
+This is broadcast consistently after the version number message `0A 0E E8` and currently
+appears to always have the data value `05 00`
+
+**Pattern:** `02 00 50 FF FF 80 00 12 0E F0 05 00 05 03`
+
+**Example:**
+
+```
+02 00 50 FF FF 80 00 12 0E F0 05 00 05 03
+                              ^^ Unknown (always 0x05)
+                                 ^^ Unknown (always 0x00)
+```
+
+**Data Fields:**
+
+- Byte 10: Unknown
+- Byte 11: Unknown
+
+**Notes:**
+
+- This message is broadcast by the controller as part of the regular system status sequence
+
+### 22.  Touchscreen Unknown 2 - ??
+
+This is broadcast consistently after the version number message `27 0D 04` and currently
+appears to always have the data value `00 00`
+
+**Pattern:** `02 00 50 FF FF 80 00 27 0D 04 00 00 03`
+
+**Example:**
+
+```
+02 00 50 FF FF 80 00 12 0E F0 05 00 05 03
+                              ^^ Unknown (always 0x00)
+                                 ^^ Unknown (always 0x00)
+```
+
+**Data Fields:**
+
+- Byte 10: Unknown
+- Byte 11: Unknown
+
+**Notes:**
+
+- This message is broadcast by the controller as part of the regular system status sequence
+
+
 ## Implementation Notes
 
 ### Message Validation
@@ -745,7 +794,7 @@ When implementing a decoder:
 The Astral bus uses:
 
 - **Baud rate:** 9600
-- **Data bits:** 8
+- **Data bits:** 82
 - **Parity:** None
 - **Stop bits:** 1
 - **TX inversion:** May be required depending on interface hardware

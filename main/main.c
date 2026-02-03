@@ -43,11 +43,6 @@ message_decoder_context_t s_decoder_context = {
     .enable_mqtt = true,
 };
 
-// Wrapper for tcp_bridge callback
-static bool decode_wrapper_for_bridge(const uint8_t *data, int len)
-{
-    return decode_message(data, len, &s_decoder_context);
-}
 
 // ======================================================
 // Send message to bus
