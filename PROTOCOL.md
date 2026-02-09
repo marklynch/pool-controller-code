@@ -272,76 +272,152 @@ Detailed status for all configured channels.
 
 ---
 
-### 8. Channel Type Registers
+### 8. Register Messages (Universal Register System)
 
-Configures the registers for each channel.  Handles lights and channels
+The controller uses a unified register-based system for configuration and state. All register messages follow the same pattern with a register ID and slot (data type) to distinguish different aspects of the same register.
 
-**Pattern:** `02 00 50 FF FF 80 00 38 0F 17`
+#### Message Structure
 
+**Base Pattern:** `02 00 50 FF FF 80 00 38`
 
-**Example - Light zone:**
+**Complete Structure:**
+```
+02 00 50 FF FF 80 00 38 [CMD] [SUB] [REG_ID] [SLOT] [DATA...] [CHECKSUM] 03
+                        ^^^^^^^^^^^
+                        CMD/SUB have a checksum relationship:
+                        SUB = CMD + 8
+```
 
+**Example:**
 ```
 02 00 50 FF FF 80 00 38 0F 17 C0 01 00 C1 03
-                              ^^ Light Zone 1 (0xC0)
-                                 ^^ Unknown 
-                                    ^^ Light status (off)
-
-02 00 50 FF FF 80 00 38 0F 17 C0 01 02 C3 03
-                              ^^ Light Zone 1 (0xC0)
-                                 ^^ Unknown 
-                                    ^^ Light status (on)
+                        ^^ CMD (0x0F)
+                           ^^ SUB (0x17 = 0x0F + 8) ✓
+                              ^^ Register ID (0xC0)
+                                 ^^ Slot/Data Type (0x01)
+                                    ^^ Data (Light state: 0=Off)
 ```
 
-**Data Fields:**
+**Key Fields:**
+- Byte 8 (CMD): Command byte
+- Byte 9 (SUB): Subcommand byte - **always equals CMD + 8**
+- Byte 10 (REG_ID): Register identifier (which setting/channel/zone)
+- Byte 11 (SLOT): Data slot - defines data type and format
+- Byte 12+: Data payload (varies by register and slot)
 
-- Byte 10: Channel type ID (`0xC0` to `0xC3` for light zones 1-4)
-- Byte 11: Slot ID
-- Byte 12: State (0: Off, 1: Auto, 2: Off)
+**Important:** The CMD/SUB checksum relationship (SUB = CMD + 8) is a validation mechanism. Messages violating this are rejected.
 
+#### Register Dispatch Table
 
-**Example - Channel zone:**
+The register ID and slot together determine the message meaning. The slot distinguishes different data aspects of the same register:
 
+| Register Range | Slot | Purpose | Data Format |
+|---------------|------|---------|-------------|
+| 0x31-0x38 | 0x03 | Favourite Labels | Null-terminated ASCII string |
+| 0x6C-0x73 | 0x02 | Channel Types | 1-byte type code (see channel types) |
+| 0x7C-0x83 | 0x02 | Channel Names | Null-terminated ASCII string |
+| 0xC0-0xC7 | 0x01 | Light Zone State | 1-byte value (0=Off, 1=Auto, 2=On) |
+| 0xD0-0xD1 | 0x03 | Valve Labels | Null-terminated ASCII string |
+| 0xD0-0xD7 | 0x01 | Light Zone Color | 1-byte color code |
+| 0xE0-0xE7 | 0x01 | Light Zone Active | 1-byte binary (0x00=Inactive, 0x01=Active) |
+
+**Note:**
+- Register ranges can overlap (e.g., 0xD0-0xD7) but are distinguished by the slot value
+- The same slot value (e.g., 0x02) can represent different data formats depending on the register
+- Slot values appear to be context-dependent rather than globally defining a data type
+
+#### Examples by Register Type
+
+**Channel Type Configuration (0x6C-0x73, Slot 0x02):**
 ```
 02 00 50 FF FF 80 00 38 0F 17 6C 02 01 6F 03
-                              ^^ Channel 1  (0x6C)
-                                 ^^ Slot ID
-                                    ^^ Channel type (lookup table)
-                                    
+                              ^^ Channel 1 (0x6C)
+                                 ^^ Slot 0x02 (Type)
+                                    ^^ Type code: 0x01 = Filter
 ```
 
+**Channel Name (0x7C-0x83, Slot 0x02):**
+```
+02 00 50 FF FF 80 00 38 17 1F 7C 02 46 69 6C 74 65 72 00 A6 03
+                              ^^ Channel 1 (0x7C)
+                                 ^^ Slot 0x02 (Name)
+                                    F  i  l  t  e  r  \0
+```
 
-**Data Fields:**
+**Light Zone State (0xC0-0xC7, Slot 0x01):**
+```
+02 00 50 FF FF 80 00 38 0F 17 C0 01 02 C3 03
+                              ^^ Light Zone 1 (0xC0)
+                                 ^^ Slot 0x01 (State)
+                                    ^^ Value: 0x02 = On
+```
 
-- Byte 10: Channel type ID (`0x6C` to `0x73` for channels 1-8)
-- Byte 11: Slot ID
-- Byte 12: Channel type code
+**Light Zone Color (0xD0-0xD7, Slot 0x01):**
+```
+02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03
+                              ^^ Light Zone 1 (0xD0)
+                                 ^^ Slot 0x01 (Color)
+                                    ^^ Color code: 0x05 = Blue
+```
 
-**Channel Type ID Mapping:**
+**Valve Label (0xD0-0xD1, Slot 0x03):**
+```
+02 00 50 FF FF 80 00 38 16 1E D0 03 56 61 6C 76 65 20 31 00 21 03
+                              ^^ Valve 1 (0xD0) - same register as Light Zone 1!
+                                 ^^ Slot 0x03 (Label) - different slot
+                                    V  a  l  v  e     1  \0
+```
 
-- `0x6C`: Channel 1 type (see channel type lookup table)
-- `0x6D`: Channel 2 type
-- `0x6E`: Channel 3 type
-- `0x6F`: Channel 4 type
-- `0x70`: Channel 5 type
-- `0x71`: Channel 6 type
-- `0x72`: Channel 7 type
-- `0x73`: Channel 8 type
+**Note:** Register 0xD0 serves dual purpose:
+- With slot 0x01: Light zone 1 color (numeric)
+- With slot 0x03: Valve 1 label (text)
 
-- `0xC0`: Light Zone 1 State
-- `0xC1`: Light Zone 2 State
-- `0xC2`: Light Zone 3 State
-- `0xC3`: Light Zone 4 State
+**Light Zone Active (0xE0-0xE7, Slot 0x01):**
+```
+02 00 50 FF FF 80 00 38 0F 17 E0 01 01 E2 03
+                              ^^ Light Zone 1 (0xE0)
+                                 ^^ Slot 0x01 (Active flag)
+                                    ^^ Value: 0x01 = Active
+```
 
-- `0xD0`: Light Zone 1 Color (maybe)
-- `0xD1`: Light Zone 2 Color (maybe)
-- `0xD2`: Light Zone 3 Color (maybe)
-- `0xD3`: Light Zone 4 Color (maybe)
+#### Register ID Mappings
 
-- `0xE0`: Light Zone 1 Active (0: Off, 1: On)
-- `0xE1`: Light Zone 2 Active
-- `0xE2`: Light Zone 3 Active
-- `0xE3`: Light Zone 4 Active
+**Channels (0x6C-0x73):**
+- `0x6C`: Channel 1
+- `0x6D`: Channel 2
+- `0x6E`: Channel 3
+- `0x6F`: Channel 4
+- `0x70`: Channel 5
+- `0x71`: Channel 6
+- `0x72`: Channel 7
+- `0x73`: Channel 8
+
+**Lighting Zones:**
+- State (0xC0-0xC7): `0xC0` = Zone 1, `0xC1` = Zone 2, etc.
+- Color (0xD0-0xD7): `0xD0` = Zone 1, `0xD1` = Zone 2, etc.
+- Active (0xE0-0xE7): `0xE0` = Zone 1, `0xE1` = Zone 2, etc.
+
+#### Implementation
+
+The firmware uses a dispatch table to route register messages to appropriate handlers. See `message_decoder.c` for the complete implementation:
+
+```c
+static const register_handler_t REGISTER_HANDLERS[] = {
+    {0x6C, 0x73, 0x02, handle_channel_type,       "Channel Type"},
+    {0x7C, 0x83, 0x02, handle_channel_name,       "Channel Name"},
+    {0xC0, 0xC7, 0x01, handle_light_zone_state,   "Light Zone State"},
+    {0xD0, 0xD7, 0x01, handle_light_zone_color,   "Light Zone Color"},
+    {0xE0, 0xE7, 0x01, handle_light_zone_active,  "Light Zone Active"},
+    {0xD0, 0xD1, 0x03, handle_valve_label,        "Valve Label"},
+    {0x00, 0xFF, 0x03, handle_register_label_generic, "Register Label"},
+};
+```
+
+The dispatcher:
+1. Validates CMD/SUB relationship (SUB = CMD + 8)
+2. Extracts register ID and slot
+3. Looks up matching handler in table
+4. Routes to appropriate handler function
 
 ---
 

@@ -58,10 +58,7 @@ static bool match_pattern(const uint8_t *data, int data_len, const char *pattern
 
 // Message type patterns (messages start with 0x02, end with 0x03)
 // 50 Main Controller (Connect 10)
-static const char *MSG_TYPE_REGISTER_STATUS =       "02 00 50 FF FF 80 00 38 0F 17";
-static const char *MSG_TYPE_REGISTER_LABEL =        "02 00 50 FF FF 80 00 38 1A 22";
-static const char *MSG_TYPE_LIGHTING_VALVE_LABEL =  "02 00 50 FF FF 80 00 38 16 1E";
-static const char *MSG_TYPE_CHANNEL_NAMES =         "02 00 50 FF FF 80 00 38 17 1F"; 
+static const char *MSG_TYPE_REGISTER =              "02 00 50 FF FF 80 00 38"; 
 static const char *MSG_TYPE_TEMP_SETTING =          "02 00 50 FF FF 80 00 17 10 F7";
 static const char *MSG_TYPE_CONFIG =                "02 00 50 FF FF 80 00 26 0E 04";
 static const char *MSG_TYPE_MODE =                  "02 00 50 FF FF 80 00 14 0D F1";
@@ -353,6 +350,49 @@ typedef bool (*message_handler_fn)(
     int payload_len,
     const char *addr_info,
     message_decoder_context_t *ctx);
+
+/**
+ * Register handler dispatch table entry
+ * Maps (register_range, slot) to handler function
+ */
+typedef struct {
+    uint8_t reg_start;      // Start of register range
+    uint8_t reg_end;        // End of register range (inclusive)
+    uint8_t slot;           // Data slot identifier
+    message_handler_fn handler;
+    const char *name;       // For logging
+} register_handler_t;
+
+// Forward declarations for register handlers
+static bool handle_channel_type(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_channel_name(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_light_zone_state(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_light_zone_color(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_light_zone_active(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_valve_label(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_register_label_generic(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+
+/**
+ * Register message dispatch table
+ * Entries are checked in order, first match wins
+ * Only includes register ranges with confirmed behavior
+ */
+static const register_handler_t REGISTER_HANDLERS[] = {
+    // Channel configuration
+    {0x6C, 0x73, 0x02, handle_channel_type,       "Channel Type"},
+    {0x7C, 0x83, 0x02, handle_channel_name,       "Channel Name"},
+
+    // Lighting zones
+    {0xC0, 0xC7, 0x01, handle_light_zone_state,   "Light Zone State"},
+    {0xD0, 0xD7, 0x01, handle_light_zone_color,   "Light Zone Color"},
+    {0xE0, 0xE7, 0x01, handle_light_zone_active,  "Light Zone Active"},
+
+    // Labels (slot 0x03) - only specific ranges we've observed
+    {0x31, 0x38, 0x03, handle_register_label_generic, "Favourite Label"},
+    {0xD0, 0xD1, 0x03, handle_valve_label,        "Valve Label"},
+};
+
+#define REGISTER_HANDLER_COUNT (sizeof(REGISTER_HANDLERS) / sizeof(REGISTER_HANDLERS[0]))
 
 /**
  * Handler: Temperature reading message
@@ -889,138 +929,6 @@ static bool handle_chlor_orp_reading(
     return true;
 }
 
-/**
- * Handler: Register label message
- * Pattern: "02 00 50 FF FF 80 00 38 1A 22"
- */
-static bool handle_register_label(
-    const uint8_t *data, int len,
-    const uint8_t *payload, int payload_len,
-    const char *addr_info,
-    message_decoder_context_t *ctx)
-{
-    if (payload_len < 3) return false;
-
-    uint8_t reg_id = payload[0];
-    const char *label = (const char *)&payload[2];
-
-    ESP_LOGI(TAG, "%s Register 0x%02X label - \"%s\"", addr_info, reg_id, label);
-
-    // Update pool state - find or create entry for this register
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-        // Find existing entry or first available slot
-        int slot = -1;
-        for (int i = 0; i < 32; i++) {
-            if (ctx->pool_state->register_labels[i].valid && ctx->pool_state->register_labels[i].reg_id == reg_id) {
-                slot = i;  // Found existing entry
-                break;
-            } else if (!ctx->pool_state->register_labels[i].valid && slot == -1) {
-                slot = i;  // Remember first available slot
-            }
-        }
-
-        if (slot >= 0) {
-            ctx->pool_state->register_labels[slot].reg_id = reg_id;
-            strncpy(ctx->pool_state->register_labels[slot].label, label, sizeof(ctx->pool_state->register_labels[slot].label) - 1);
-            ctx->pool_state->register_labels[slot].label[sizeof(ctx->pool_state->register_labels[slot].label) - 1] = '\0';
-            ctx->pool_state->register_labels[slot].valid = true;
-            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        }
-
-        xSemaphoreGive(ctx->state_mutex);
-    }
-
-    return true;
-}
-
-/**
- * Handler: Lighting/valve label message
- * Pattern: "02 00 50 FF FF 80 00 38 16 1E"
- */
-static bool handle_lighting_valve_label(
-    const uint8_t *data, int len,
-    const uint8_t *payload, int payload_len,
-    const char *addr_info,
-    message_decoder_context_t *ctx)
-{
-    if (payload_len < 3) return false;
-
-    uint8_t reg_id = payload[0];
-    const char *label = (const char *)&payload[2];
-
-    // Identify which zone this is (0xD0-0xD3 = zones 1-4)
-    if (reg_id >= 0xD0 && reg_id <= 0xD3) {
-        uint8_t zone_num = reg_id - 0xD0 + 1;
-        ESP_LOGI(TAG, "%s Lighting/Valve zone %d label (0x%02X) - \"%s\"", addr_info, zone_num, reg_id, label);
-    } else {
-        ESP_LOGI(TAG, "%s Register 0x%02X label - \"%s\"", addr_info, reg_id, label);
-    }
-
-    // Update pool state - find or create entry for this register
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-        // Find existing entry or first available slot
-        int slot = -1;
-        for (int i = 0; i < 32; i++) {
-            if (ctx->pool_state->register_labels[i].valid && ctx->pool_state->register_labels[i].reg_id == reg_id) {
-                slot = i;  // Found existing entry
-                break;
-            } else if (!ctx->pool_state->register_labels[i].valid && slot == -1) {
-                slot = i;  // Remember first available slot
-            }
-        }
-
-        if (slot >= 0) {
-            ctx->pool_state->register_labels[slot].reg_id = reg_id;
-            strncpy(ctx->pool_state->register_labels[slot].label, label, sizeof(ctx->pool_state->register_labels[slot].label) - 1);
-            ctx->pool_state->register_labels[slot].label[sizeof(ctx->pool_state->register_labels[slot].label) - 1] = '\0';
-            ctx->pool_state->register_labels[slot].valid = true;
-            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        }
-
-        xSemaphoreGive(ctx->state_mutex);
-    }
-
-    return true;
-}
-
-/**
- * Handler: Channel name message
- * Pattern: "02 00 50 FF FF 80 00 38 17 1F"
- */
-static bool handle_channel_names(
-    const uint8_t *data, int len,
-    const uint8_t *payload, int payload_len,
-    const char *addr_info,
-    message_decoder_context_t *ctx)
-{
-    if (payload_len < 5) return false;
-
-    uint8_t ch_id = payload[0];
-    if (ch_id >= 0x7C && ch_id <= 0x83) {
-        uint8_t ch_num = ch_id - 0x7C + 1;
-        const char *name = (const char *)&payload[2];
-
-        // Check if it's an empty/unused channel (first byte is 0x00)
-        if (payload[2] == 0x00) {
-            ESP_LOGI(TAG, "%s Channel %d name - (empty)", addr_info, ch_num);
-        } else {
-            ESP_LOGI(TAG, "%s Channel %d name - \"%s\"", addr_info, ch_num, name);
-
-            // Update pool state
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-                if (ch_num <= 8) {
-                    strncpy(ctx->pool_state->channels[ch_num - 1].name, name, sizeof(ctx->pool_state->channels[ch_num - 1].name) - 1);
-                    ctx->pool_state->channels[ch_num - 1].id = ch_num;
-                    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                }
-                xSemaphoreGive(ctx->state_mutex);
-            }
-        }
-        return true;
-    }
-
-    return false;
-}
 
 /**
  * Handler: Light configuration message
@@ -1066,148 +974,299 @@ static bool handle_light_config(
     return true;
 }
 
+// ======================================================
+// Register message handlers (dispatched by register range and slot)
+// ======================================================
+
 /**
- * Handler: Register status message (handles multiple sub-types)
- * Pattern: "02 00 50 FF FF 80 00 38 0F 17"
+ * Handler: Channel type configuration
+ * Register range: 0x6C-0x73, Slot: 0x02
  */
-static bool handle_register_status(
+static bool handle_channel_type(
     const uint8_t *data, int len,
     const uint8_t *payload, int payload_len,
     const char *addr_info,
     message_decoder_context_t *ctx)
 {
-    ESP_LOGI(TAG, "Payload_len - %s (len=%d)", addr_info, payload_len);
     if (payload_len < 3) return false;
 
-    uint8_t channel = payload[0];
-    uint8_t value1 = payload[1];
-    uint8_t value2 = payload[2];
+    uint8_t reg_id = payload[0];
+    uint8_t ch_type = payload[2];
+    uint8_t ch_num = reg_id - 0x6C + 1;
 
-    // Lighting zone state (0xC0-0xC3)
-    if (channel >= 0xC0 && channel <= 0xC3) {
-        const char *state = (value2 < LIGHTING_STATE_COUNT) ? LIGHTING_STATE_NAMES[value2] : "Unknown";
-        ESP_LOGI(TAG, "%s Lighting zone %d - %s", addr_info, channel - 0xC0 + 1, state);
+    if (ch_type == CHANNEL_END) {
+        ESP_LOGI(TAG, "%s Channel %d type - Unused (last channel)", addr_info, ch_num);
+    } else if (ch_type == CHANNEL_UNUSED) {
+        ESP_LOGI(TAG, "%s Channel %d type - Unused", addr_info, ch_num);
+    } else {
+        const char *type_name = (ch_type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[ch_type] : "Unknown";
+        ESP_LOGI(TAG, "%s Channel %d type - %s (%d)", addr_info, ch_num, type_name, ch_type);
 
-        bool should_publish = false;
-        uint8_t zone_num = 0;
-        pool_state_t state_snapshot;
-
+        // Update pool state
         if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-            uint8_t zone_idx = channel - 0xC0;
-            ctx->pool_state->lighting[zone_idx].zone = zone_idx + 1;
-            ctx->pool_state->lighting[zone_idx].state = value2;
+            ctx->pool_state->channels[ch_num - 1].type = ch_type;
+            ctx->pool_state->channels[ch_num - 1].configured = true;
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
-            if (ctx->pool_state->lighting[zone_idx].configured) {
-                should_publish = true;
-                zone_num = ctx->pool_state->lighting[zone_idx].zone;
-            }
-
-            state_snapshot = *ctx->pool_state;
             xSemaphoreGive(ctx->state_mutex);
         }
-
-        if (should_publish && ctx->enable_mqtt) {
-            mqtt_publish_light(&state_snapshot, zone_num);
-        }
-
-        return true;
     }
 
-    // Lighting zone color (0xD0-0xD3)
-    if (channel >= 0xD0 && channel <= 0xD3) {
-        uint8_t zone = channel - 0xD0 + 1;
-        uint8_t color = value2;
-        const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
-        ESP_LOGI(TAG, "%s Lighting zone %d color - %s (%d)", addr_info, zone, color_name, color);
-
-        bool should_publish = false;
-        uint8_t zone_num = 0;
-        pool_state_t state_snapshot;
-
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-            uint8_t zone_idx = channel - 0xD0;
-            ctx->pool_state->lighting[zone_idx].color = color;
-            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
-            if (ctx->pool_state->lighting[zone_idx].configured) {
-                should_publish = true;
-                zone_num = ctx->pool_state->lighting[zone_idx].zone;
-            }
-
-            state_snapshot = *ctx->pool_state;
-            xSemaphoreGive(ctx->state_mutex);
-        }
-
-        if (should_publish && ctx->enable_mqtt) {
-            mqtt_publish_light(&state_snapshot, zone_num);
-        }
-
-        return true;
-    }
-
-    // Lighting zone active state (0xE0-0xE3)
-    if (channel >= 0xE0 && channel <= 0xE3) {
-        uint8_t zone = channel - 0xE0 + 1;
-        uint8_t active = value2;
-        ESP_LOGI(TAG, "%s Lighting zone %d active - %s", addr_info, zone, active ? "Yes" : "No");
-
-        bool should_publish = false;
-        uint8_t zone_num = 0;
-        pool_state_t state_snapshot;
-
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-            uint8_t zone_idx = channel - 0xE0;
-            ctx->pool_state->lighting[zone_idx].active = (active != 0);
-            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
-            if (ctx->pool_state->lighting[zone_idx].configured) {
-                should_publish = true;
-                zone_num = ctx->pool_state->lighting[zone_idx].zone;
-            }
-
-            state_snapshot = *ctx->pool_state;
-            xSemaphoreGive(ctx->state_mutex);
-        }
-
-        if (should_publish && ctx->enable_mqtt) {
-            mqtt_publish_light(&state_snapshot, zone_num);
-        }
-
-        return true;
-    }
-
-    // Channel type configuration (0x6C-0x73)
-    if (channel >= 0x6C && channel <= 0x73) {
-        uint8_t ch_num = channel - 0x6C + 1;
-        uint8_t ch_type = value2;
-
-        if (ch_type == CHANNEL_END) {
-            ESP_LOGI(TAG, "%s Channel %d type - Unused (last channel)", addr_info, ch_num);
-        } else if (ch_type == CHANNEL_UNUSED) {
-            ESP_LOGI(TAG, "%s Channel %d type - Unused", addr_info, ch_num);
-        } else {
-            const char *type_name = (ch_type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[ch_type] : "Unknown";
-            ESP_LOGI(TAG, "%s Channel %d type - %s (%d)", addr_info, ch_num, type_name, ch_type);
-
-            // Update pool state
-            if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-                ctx->pool_state->channels[ch_num - 1].type = ch_type;
-                ctx->pool_state->channels[ch_num - 1].configured = true;
-                ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                xSemaphoreGive(ctx->state_mutex);
-            }
-        }
-
-        return true;
-    }
-
-
-
-    // Unknown register - likely a register read response
-    ESP_LOGW(TAG, "%s Unhandled - Register read response - Register=0x%02X, value1=0x%02X, value2=0x%02X", addr_info, channel, value1, value2);
-    return false;
+    return true;
 }
+
+/**
+ * Handler: Channel names
+ * Register range: 0x7C-0x83, Slot: 0x02
+ */
+static bool handle_channel_name(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    // Need at least 3 bytes: register ID, slot, and name data (even if null terminator)
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    uint8_t ch_num = reg_id - 0x7C + 1;
+    const char *name = (const char *)&payload[2];
+
+    // Check if it's an empty/unused channel (first byte is 0x00)
+    if (payload[2] == 0x00) {
+        ESP_LOGI(TAG, "%s Channel %d name - (empty)", addr_info, ch_num);
+    } else {
+        ESP_LOGI(TAG, "%s Channel %d name - \"%s\"", addr_info, ch_num, name);
+
+        // Update pool state
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+            if (ch_num <= 8) {
+                strncpy(ctx->pool_state->channels[ch_num - 1].name, name, sizeof(ctx->pool_state->channels[ch_num - 1].name) - 1);
+                ctx->pool_state->channels[ch_num - 1].id = ch_num;
+                ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            }
+            xSemaphoreGive(ctx->state_mutex);
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Lighting zone state
+ * Register range: 0xC0-0xC7, Slot: 0x01
+ */
+static bool handle_light_zone_state(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    uint8_t state = payload[2];
+    uint8_t zone_idx = reg_id - 0xC0;
+
+    const char *state_name = (state < LIGHTING_STATE_COUNT) ? LIGHTING_STATE_NAMES[state] : "Unknown";
+    ESP_LOGI(TAG, "%s Lighting zone %d state - %s", addr_info, zone_idx + 1, state_name);
+
+    bool should_publish = false;
+    uint8_t zone_num = 0;
+    pool_state_t state_snapshot;
+
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ctx->pool_state->lighting[zone_idx].zone = zone_idx + 1;
+        ctx->pool_state->lighting[zone_idx].state = state;
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        if (ctx->pool_state->lighting[zone_idx].configured) {
+            should_publish = true;
+            zone_num = ctx->pool_state->lighting[zone_idx].zone;
+        }
+
+        state_snapshot = *ctx->pool_state;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    if (should_publish && ctx->enable_mqtt) {
+        mqtt_publish_light(&state_snapshot, zone_num);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Lighting zone color
+ * Register range: 0xD0-0xD7, Slot: 0x01
+ */
+static bool handle_light_zone_color(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    uint8_t color = payload[2];
+    uint8_t zone_idx = reg_id - 0xD0;
+
+    const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
+    ESP_LOGI(TAG, "%s Lighting zone %d color - %s (%d)", addr_info, zone_idx + 1, color_name, color);
+
+    bool should_publish = false;
+    uint8_t zone_num = 0;
+    pool_state_t state_snapshot;
+
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ctx->pool_state->lighting[zone_idx].color = color;
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        if (ctx->pool_state->lighting[zone_idx].configured) {
+            should_publish = true;
+            zone_num = ctx->pool_state->lighting[zone_idx].zone;
+        }
+
+        state_snapshot = *ctx->pool_state;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    if (should_publish && ctx->enable_mqtt) {
+        mqtt_publish_light(&state_snapshot, zone_num);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Lighting zone active state
+ * Register range: 0xE0-0xE7, Slot: 0x01
+ */
+static bool handle_light_zone_active(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    uint8_t active = payload[2];
+    uint8_t zone_idx = reg_id - 0xE0;
+
+    ESP_LOGI(TAG, "%s Lighting zone %d active - %s", addr_info, zone_idx + 1, active ? "Yes" : "No");
+
+    bool should_publish = false;
+    uint8_t zone_num = 0;
+    pool_state_t state_snapshot;
+
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ctx->pool_state->lighting[zone_idx].active = (active != 0);
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        if (ctx->pool_state->lighting[zone_idx].configured) {
+            should_publish = true;
+            zone_num = ctx->pool_state->lighting[zone_idx].zone;
+        }
+
+        state_snapshot = *ctx->pool_state;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    if (should_publish && ctx->enable_mqtt) {
+        mqtt_publish_light(&state_snapshot, zone_num);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Valve labels
+ * Register range: 0xD0-0xD1, Slot: 0x03
+ */
+static bool handle_valve_label(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    const char *label = (const char *)&payload[2];
+    uint8_t zone_num = reg_id - 0xD0 + 1;
+
+    ESP_LOGI(TAG, "%s Valve zone %d label (0x%02X) - \"%s\"", addr_info, zone_num, reg_id, label);
+
+    // Update pool state
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        int slot = -1;
+        for (int i = 0; i < 32; i++) {
+            if (ctx->pool_state->register_labels[i].valid && ctx->pool_state->register_labels[i].reg_id == reg_id) {
+                slot = i;
+                break;
+            } else if (!ctx->pool_state->register_labels[i].valid && slot == -1) {
+                slot = i;
+            }
+        }
+
+        if (slot >= 0) {
+            ctx->pool_state->register_labels[slot].reg_id = reg_id;
+            strncpy(ctx->pool_state->register_labels[slot].label, label, sizeof(ctx->pool_state->register_labels[slot].label) - 1);
+            ctx->pool_state->register_labels[slot].label[sizeof(ctx->pool_state->register_labels[slot].label) - 1] = '\0';
+            ctx->pool_state->register_labels[slot].valid = true;
+            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        }
+
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Generic register label (catch-all for other label types)
+ * Register range: 0x00-0xFF, Slot: 0x03
+ */
+static bool handle_register_label_generic(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    const char *label = (const char *)&payload[2];
+
+    ESP_LOGI(TAG, "%s Register 0x%02X label - \"%s\"", addr_info, reg_id, label);
+
+    // Update pool state
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        int slot = -1;
+        for (int i = 0; i < 32; i++) {
+            if (ctx->pool_state->register_labels[i].valid && ctx->pool_state->register_labels[i].reg_id == reg_id) {
+                slot = i;
+                break;
+            } else if (!ctx->pool_state->register_labels[i].valid && slot == -1) {
+                slot = i;
+            }
+        }
+
+        if (slot >= 0) {
+            ctx->pool_state->register_labels[slot].reg_id = reg_id;
+            strncpy(ctx->pool_state->register_labels[slot].label, label, sizeof(ctx->pool_state->register_labels[slot].label) - 1);
+            ctx->pool_state->register_labels[slot].label[sizeof(ctx->pool_state->register_labels[slot].label) - 1] = '\0';
+            ctx->pool_state->register_labels[slot].valid = true;
+            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        }
+
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    return true;
+}
+
 
 /**
  * Handler: Active channels bitmask message
@@ -1382,26 +1441,63 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Dispatch to message handlers
 
-    // Register/label messages
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_REGISTER_LABEL)) {
-        return handle_register_label(data, len, payload, payload_len, addr_info, ctx);
-    }
+    // Register messages (NEW dispatch table approach)
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_REGISTER)) {
+        // Verify checksum relationship: byte[8] + 8 should equal byte[9]
+        uint8_t cmd = data[8];
+        uint8_t sub = data[9];
 
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_LIGHTING_VALVE_LABEL)) {
-        return handle_lighting_valve_label(data, len, payload, payload_len, addr_info, ctx);
-    }
+        if ((cmd + 8) != sub) {
+            ESP_LOGW(TAG, "%s Register message - Invalid CMD/SUB relationship: "
+                     "0x%02X + 8 != 0x%02X", addr_info, cmd, sub);
+            return false;
+        }
 
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHANNEL_NAMES)) {
-        return handle_channel_names(data, len, payload, payload_len, addr_info, ctx);
+        // Extract register ID and slot
+        if (payload_len < 2) {
+            ESP_LOGW(TAG, "%s Register message - Payload too short", addr_info);
+            return false;
+        }
+
+        uint8_t reg_id = payload[0];
+        uint8_t slot = payload[1];
+
+        ESP_LOGI(TAG, "%s Register message received - Reg=0x%02X, Slot=0x%02X, searching handlers...",
+                 addr_info, reg_id, slot);
+
+        // Find matching handler in dispatch table
+        ESP_LOGI(TAG, "  Checking %d handlers...", REGISTER_HANDLER_COUNT);
+        for (int i = 0; i < REGISTER_HANDLER_COUNT; i++) {
+            const register_handler_t *entry = &REGISTER_HANDLERS[i];
+
+            if (reg_id >= entry->reg_start && reg_id <= entry->reg_end && entry->slot == slot) {
+                ESP_LOGI(TAG, "  -> Matched handler: %s", entry->name);
+                return entry->handler(data, len, payload, payload_len, addr_info, ctx);
+            }
+        }
+
+        // No handler found - log as unhandled register with full payload dump
+        ESP_LOGI(TAG, "  -> No handler matched, logging as unhandled");
+
+        // Format all payload bytes as hex for debugging (e.g., "7F 02 00 81")
+        char payload_hex[payload_len * 3 + 1];
+        int pos = 0;
+        for (int i = 0; i < payload_len; i++) {
+            pos += snprintf(&payload_hex[pos], sizeof(payload_hex) - pos, "%02X ", payload[i]);
+        }
+        // Remove trailing space
+        if (pos > 0 && payload_hex[pos - 1] == ' ') {
+            payload_hex[pos - 1] = '\0';
+        }
+
+        ESP_LOGW(TAG, "%s Unhandled register - Reg=0x%02X, Slot=0x%02X, Payload[%d]: %s",
+                 addr_info, reg_id, slot, payload_len, payload_hex);
+        return false;
     }
 
     // Configuration messages
     if (len >= 14 && match_pattern(data, len, MSG_TYPE_LIGHT_CONFIG)) {
         return handle_light_config(data, len, payload, payload_len, addr_info, ctx);
-    }
-
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_REGISTER_STATUS)) {
-        return handle_register_status(data, len, payload, payload_len, addr_info, ctx);
     }
 
     if (len >= 12 && match_pattern(data, len, MSG_TYPE_CONFIG)) {

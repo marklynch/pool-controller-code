@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored the `decode_message` function and split into smaller functions
 - Improve the message label consistency
 - Renamed MSG_TYPE_38_BASE to MSG_TYPE_CHANNEL_NAMES and use full subcommand bytes
+- Reworked the REGISTER message handling based on Registers and Slots.
 
 ### Fixed
 - Made the title for Wifi Config page consistent
