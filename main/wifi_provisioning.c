@@ -14,6 +14,7 @@
 #include "esp_netif.h"
 #include "nvs.h"
 #include <esp_http_server.h>
+#include "mdns.h"
 
 static const char *TAG = "WIFI_PROV";
 
@@ -125,6 +126,37 @@ static void wifi_retry_timer_callback(TimerHandle_t xTimer)
 }
 
 // ======================================================
+// mDNS Service
+// ======================================================
+
+static void start_mdns_service(void)
+{
+    // Initialize mDNS
+    ESP_ERROR_CHECK(mdns_init());
+
+    // Set mDNS hostname (will be accessible as <hostname>.local)
+    ESP_ERROR_CHECK(mdns_hostname_set(MDNS_HOSTNAME));
+
+    // Set default instance name
+    ESP_ERROR_CHECK(mdns_instance_name_set(MDNS_INSTANCE_NAME));
+
+    ESP_LOGI(TAG, "mDNS started - accessible at %s.local", MDNS_HOSTNAME);
+
+    // Advertise HTTP service
+    ESP_ERROR_CHECK(mdns_service_add(NULL, "_http", "_tcp", HTTP_SERVER_PORT, NULL, 0));
+    ESP_LOGI(TAG, "  - HTTP service: http://%s.local:%d", MDNS_HOSTNAME, HTTP_SERVER_PORT);
+
+    // Advertise TCP bridge service (custom service type)
+    mdns_txt_item_t tcp_bridge_txt[] = {
+        {"protocol", "astral-pool-bus"},
+        {"version", "1.0"}
+    };
+    ESP_ERROR_CHECK(mdns_service_add(NULL, "_pool-bridge", "_tcp", TCP_BRIDGE_PORT,
+                                     tcp_bridge_txt, sizeof(tcp_bridge_txt) / sizeof(mdns_txt_item_t)));
+    ESP_LOGI(TAG, "  - Pool Bridge service: tcp://%s.local:%d", MDNS_HOSTNAME, TCP_BRIDGE_PORT);
+}
+
+// ======================================================
 // WiFi Event Handler
 // ======================================================
 
@@ -182,6 +214,9 @@ static void wifi_event_handler(void *arg,
 
         // Start MQTT client on WiFi connect
         mqtt_client_start();
+
+        // Start mDNS service for network discovery
+        start_mdns_service();
     }
 }
 

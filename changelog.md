@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added control of log levels for each 
 - Always log out unhandled messages
 - Add decoding of messages sent also to allow for debugging more easily
+- Added mdns for easy discovery at `poolcontrol.local`
 
 ### Removed 
 - Removed unused function `decode_wrapper_for_bridge`

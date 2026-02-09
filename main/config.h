@@ -5,6 +5,10 @@
 // Network Configuration
 // ======================================================
 
+// mDNS Service Discovery
+#define MDNS_HOSTNAME                  "poolcontrol"           // Hostname for mDNS (accessible as poolcontroller.local)
+#define MDNS_INSTANCE_NAME             "Pool Control"  // Friendly name for service discovery
+
 // HTTP Server
 #define HTTP_SERVER_PORT                80
 #define HTTP_MAX_URI_HANDLERS          12      // Number of endpoint handlers
