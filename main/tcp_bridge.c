@@ -3,12 +3,14 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "lwip/sockets.h"
 #include "lwip/inet.h"
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 static const char *TAG = "TCP_BRIDGE";
 
@@ -26,6 +28,54 @@ static TaskHandle_t s_bridge_task_handle = NULL;
 // Message reassembly buffer
 static uint8_t s_msg_buffer[BUS_MESSAGE_MAX_SIZE];
 static int s_msg_buffer_len = 0;
+
+// Global client socket for log forwarding
+static int s_log_client_sock = -1;
+static SemaphoreHandle_t s_log_mutex = NULL;
+
+// Original vprintf function
+static vprintf_like_t s_original_vprintf = NULL;
+
+/**
+ * Custom vprintf that outputs to both console and TCP client
+ */
+static int tcp_bridge_vprintf(const char *fmt, va_list args)
+{
+    int len = 0;
+
+    // Send to original output (console)
+    if (s_original_vprintf) {
+        va_list args_copy;
+        va_copy(args_copy, args);
+        len = s_original_vprintf(fmt, args_copy);
+        va_end(args_copy);
+    }
+
+    // Also send to TCP client if connected
+    if (s_log_mutex && xSemaphoreTake(s_log_mutex, 0) == pdTRUE) {
+        if (s_log_client_sock >= 0) {
+            char log_buf[256];
+            int tcp_len = vsnprintf(log_buf, sizeof(log_buf), fmt, args);
+            if (tcp_len > 0) {
+                send(s_log_client_sock, log_buf, tcp_len, MSG_DONTWAIT);
+            }
+        }
+        xSemaphoreGive(s_log_mutex);
+    }
+
+    return len;
+}
+
+/**
+ * Update the client socket for log forwarding
+ */
+static void tcp_bridge_set_log_client(int sock)
+{
+    if (s_log_mutex && xSemaphoreTake(s_log_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_log_client_sock = sock;
+        xSemaphoreGive(s_log_mutex);
+    }
+}
 
 /**
  * Extract and process one complete message from the reassembly buffer.
@@ -250,8 +300,12 @@ static void tcp_bridge_task(void *pvParameters)
                 const char *hello =
                     "Connected to ESP32-C6 pool bus bridge.\r\n"
                     "UART bytes will be shown here in hex.\r\n"
+                    "Decoded messages will also be shown.\r\n"
                     "Send hex strings (e.g., '02 00 50 FF FF 03') to transmit to the bus.\r\n\r\n";
                 send(client_sock, hello, strlen(hello), 0);
+
+                // Enable log forwarding for this client
+                tcp_bridge_set_log_client(client_sock);
 
                 // Reset line buffer for new client
                 line_pos = 0;
@@ -329,6 +383,11 @@ static void tcp_bridge_task(void *pvParameters)
                                 const char *ok_msg = "OK - sent\r\n";
                                 send(client_sock, ok_msg, strlen(ok_msg), 0);
 
+                                // Decode the sent message (will be logged via custom vprintf)
+                                if (s_config.decode_message && s_last_tx_len > 0) {
+                                    s_config.decode_message(s_last_tx_msg, s_last_tx_len);
+                                }
+
                                 // Flash TX LED if callback provided
                                 if (s_config.led_flash_tx) {
                                     s_config.led_flash_tx();
@@ -360,6 +419,7 @@ static void tcp_bridge_task(void *pvParameters)
                 }
             } else if (r == 0) {
                 ESP_LOGI(TAG, "Client disconnected");
+                tcp_bridge_set_log_client(-1);  // Disable log forwarding
                 shutdown(client_sock, SHUT_RDWR);
                 close(client_sock);
                 client_sock = -1;
@@ -367,6 +427,7 @@ static void tcp_bridge_task(void *pvParameters)
             } else {
                 if (errno != EAGAIN && errno != EWOULDBLOCK) {
                     ESP_LOGW(TAG, "Client recv error: errno %d", errno);
+                    tcp_bridge_set_log_client(-1);  // Disable log forwarding
                     shutdown(client_sock, SHUT_RDWR);
                     close(client_sock);
                     client_sock = -1;
@@ -407,6 +468,19 @@ esp_err_t tcp_bridge_start(const tcp_bridge_config_t *config)
 
     // Copy configuration
     memcpy(&s_config, config, sizeof(tcp_bridge_config_t));
+
+    // Initialize log forwarding
+    if (!s_log_mutex) {
+        s_log_mutex = xSemaphoreCreateMutex();
+        if (!s_log_mutex) {
+            ESP_LOGE(TAG, "Failed to create log mutex");
+            return ESP_ERR_NO_MEM;
+        }
+
+        // Install custom vprintf to forward logs to TCP client
+        s_original_vprintf = esp_log_set_vprintf(tcp_bridge_vprintf);
+        ESP_LOGI(TAG, "Log forwarding to TCP enabled");
+    }
 
     // Create bridge task
     BaseType_t result = xTaskCreate(

@@ -296,7 +296,7 @@ Configures the registers for each channel.  Handles lights and channels
 **Data Fields:**
 
 - Byte 10: Channel type ID (`0xC0` to `0xC3` for light zones 1-4)
-- Byte 11: Unknown (maybe type) 
+- Byte 11: Slot ID
 - Byte 12: State (0: Off, 1: Auto, 2: Off)
 
 
@@ -305,15 +305,16 @@ Configures the registers for each channel.  Handles lights and channels
 ```
 02 00 50 FF FF 80 00 38 0F 17 6C 02 01 6F 03
                               ^^ Channel 1  (0x6C)
-                                 ^^ Channel type (lookup table)
-                                    ^^ Unknown
+                                 ^^ Slot ID
+                                    ^^ Channel type (lookup table)
+                                    
 ```
 
 
 **Data Fields:**
 
 - Byte 10: Channel type ID (`0x6C` to `0x73` for channels 1-8)
-- Byte 11: Padding
+- Byte 11: Slot ID
 - Byte 12: Channel type code
 
 **Channel Type ID Mapping:**
@@ -348,21 +349,21 @@ Configures the registers for each channel.  Handles lights and channels
 
 Generic register label assignments.
 
-**Pattern: Cahnnels?** `02 00 50 FF FF 80 00 38 1A 22`
+**Pattern: Channels?** `02 00 50 FF FF 80 00 38 1A 22`
 
 **Example:**
 
 ```
 02 00 50 FF FF 80 00 38 1A 22 7C 02 46 69 6C 74 65 72 20 50 75 6D 70 00 A6 03
                               ^^ Register ID (0x7C)
-                                ^^  Unknown
+                                 ^^  Slot ID
                                     F  i  l  t  e  r     P  u  m  p  (null terminated)
 
 ```
 **Data Fields:**
 
 - Byte 10: Register ID
-- Byte 11: Unknown
+- Byte 11: Slot ID
 - Byte 12+: ASCII label string (null terminated)
 
 
@@ -374,7 +375,7 @@ Assigns custom names to lighting zones or valve registers (0xD0-0xD3 range).
 ```
 02 00 50 FF FF 80 00 38 16 1E D0 02 56 61 6C 76 65 20 31 00 21 03
                               ^^ Register ID (0xD0 = Light Zone 1 Color/Valve 1)
-                                 ^^ Unknown (always 0x02)
+                                 ^^ Slot ID
                                     V  a  l  v  e     1  \0  (null-terminated ASCII string)
 ```
 
@@ -382,14 +383,14 @@ Assigns custom names to lighting zones or valve registers (0xD0-0xD3 range).
 ```
 02 00 50 FF FF 80 00 38 16 1E D1 02 56 61 6C 76 65 20 32 00 23 03
                               ^^ Register ID (0xD1 = Light Zone 2 Color/Valve 2)
-                                 ^^ Unknown (always 0x02)
+                                 ^^ Slot ID
                                     V  a  l  v  e     2  \0  (null-terminated ASCII string)
 ```
 
 **Data Fields:**
 
 - Byte 10: Register ID (0xD0-0xD3 for zones/valves 1-4)
-- Byte 11: Unknown (observed as 0x02)
+- Byte 11: Slot ID
 - Bytes 12+: Null-terminated ASCII string (custom label/name)
 
 **Notes:**
@@ -617,7 +618,7 @@ The Internet Gateway periodically polls controller registers to sync state with 
 ```
 02 00 F0 FF FF 80 00 39 0E B7 88 02 8A 03
                               ^^ Register ID (0x88)
-                                 ^^ Unknown (always 0x02)
+                                 ^^ Slot ID
 ```
 
 **Example - Response with register 0x88 value:**
@@ -625,19 +626,19 @@ The Internet Gateway periodically polls controller registers to sync state with 
 ```
 02 00 50 FF FF 80 00 38 0F 17 88 02 00 8A 03
                               ^^ Register ID (0x88)
-                                 ^^ Unknown (always 0x02)
+                                 ^^ Slot ID
                                     ^^ Register value (0x00)
 ```
 
 **Request Data Fields (from Gateway):**
 
 - Byte 10: Register ID to read
-- Byte 11: Unknown (observed as 0x02)
+- Byte 11: Slot ID 
 
 **Response Data Fields (from Controller):**
 
 - Byte 10: Register ID (echoed from request)
-- Byte 11: Unknown (observed as 0x02)
+- Byte 11: Slot ID 
 - Byte 12: Register value
 
 **Observed Behavior:**
@@ -794,7 +795,7 @@ When implementing a decoder:
 The Astral bus uses:
 
 - **Baud rate:** 9600
-- **Data bits:** 82
+- **Data bits:** 8
 - **Parity:** None
 - **Stop bits:** 1
 - **TX inversion:** May be required depending on interface hardware

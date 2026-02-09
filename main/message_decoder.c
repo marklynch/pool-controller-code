@@ -61,7 +61,7 @@ static bool match_pattern(const uint8_t *data, int data_len, const char *pattern
 static const char *MSG_TYPE_REGISTER_STATUS =       "02 00 50 FF FF 80 00 38 0F 17";
 static const char *MSG_TYPE_REGISTER_LABEL =        "02 00 50 FF FF 80 00 38 1A 22";
 static const char *MSG_TYPE_LIGHTING_VALVE_LABEL =  "02 00 50 FF FF 80 00 38 16 1E";
-static const char *MSG_TYPE_38_BASE =               "02 00 50 FF FF 80 00 38";  // Shorter pattern for channel names
+static const char *MSG_TYPE_CHANNEL_NAMES =         "02 00 50 FF FF 80 00 38 17 1F"; 
 static const char *MSG_TYPE_TEMP_SETTING =          "02 00 50 FF FF 80 00 17 10 F7";
 static const char *MSG_TYPE_CONFIG =                "02 00 50 FF FF 80 00 26 0E 04";
 static const char *MSG_TYPE_MODE =                  "02 00 50 FF FF 80 00 14 0D F1";
@@ -492,7 +492,7 @@ static bool handle_mode(
 
 /**
  * Handler: Configuration message
- * Pattern: "02 00 50 FF FF 80 00 26 0E"
+ * Pattern: "02 00 50 FF FF 80 00 26 0E 04"
  */
 static bool handle_config(
     const uint8_t *data, int len,
@@ -601,6 +601,29 @@ static bool handle_touchscreen_unknown1(
     }
 
     return true;
+}
+
+/**
+ * Handler: Unknown/unhandled message
+ * Logs the raw hex bytes for messages that don't match any known pattern
+ */
+static bool handle_unknown(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    // Format message as hex string
+    char hex_str[3 * len + 1];
+    int pos = 0;
+    for (int i = 0; i < len && pos < (int)sizeof(hex_str) - 4; i++) {
+        pos += snprintf(&hex_str[pos], sizeof(hex_str) - pos, "%02X ", data[i]);
+    }
+    hex_str[pos] = '\0';
+
+    ESP_LOGW(TAG, "Unhandled: %s", hex_str);
+
+    return false;  // Not decoded
 }
 
 /**
@@ -733,7 +756,8 @@ static bool handle_register_read_request(
     if (payload_len < 2) return false;
 
     uint8_t reg_id = payload[0];
-    ESP_LOGI(TAG, "%s Register read request - 0x%02X", addr_info, reg_id);
+    uint8_t slot_id = payload[1];
+    ESP_LOGI(TAG, "%s Register read request - Reg=0x%02X, Slot=0x%02X", addr_info, reg_id, slot_id);
 
     // No state update needed - this is just a request message
     return true;
@@ -961,7 +985,7 @@ static bool handle_lighting_valve_label(
 
 /**
  * Handler: Channel name message
- * Pattern: "02 00 50 FF FF 80 00 38" (base pattern)
+ * Pattern: "02 00 50 FF FF 80 00 38 17 1F"
  */
 static bool handle_channel_names(
     const uint8_t *data, int len,
@@ -1052,6 +1076,7 @@ static bool handle_register_status(
     const char *addr_info,
     message_decoder_context_t *ctx)
 {
+    ESP_LOGI(TAG, "Payload_len - %s (len=%d)", addr_info, payload_len);
     if (payload_len < 3) return false;
 
     uint8_t channel = payload[0];
@@ -1177,9 +1202,11 @@ static bool handle_register_status(
         return true;
     }
 
+
+
     // Unknown register - likely a register read response
-    ESP_LOGI(TAG, "%s Register read response - Register=0x%02X, value1=0x%02X, value2=0x%02X", addr_info, channel, value1, value2);
-    return true;
+    ESP_LOGW(TAG, "%s Unhandled - Register read response - Register=0x%02X, value1=0x%02X, value2=0x%02X", addr_info, channel, value1, value2);
+    return false;
 }
 
 /**
@@ -1364,7 +1391,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         return handle_lighting_valve_label(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_38_BASE)) {
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHANNEL_NAMES)) {
         return handle_channel_names(data, len, payload, payload_len, addr_info, ctx);
     }
 
@@ -1460,7 +1487,6 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         return handle_touchscreen_unknown2(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    // No handler matched
-
-    return false;
+    // No handler matched - log as unknown
+    return handle_unknown(data, len, payload, payload_len, addr_info, ctx);
 }

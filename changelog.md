@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added endpoint `/test_decode` to test message decoding.
 - Added functions to extract UINT16_LE and UINT32_LE in message_decoder
 - Added touchscreen_unknown1 and touchscreen_unknown2 messages
+- Added control of log levels for each 
+- Always log out unhandled messages
+- Add decoding of messages sent also to allow for debugging more easily
 
 ### Removed 
 - Removed unused function `decode_wrapper_for_bridge`
@@ -32,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed message lookup tables to use `02 00 FF` style instead of `0x02, 0x00, 0xFF` for consistent searching. 
 - Refactored the `decode_message` function and split into smaller functions
 - Improve the message label consistency
+- Renamed MSG_TYPE_38_BASE to MSG_TYPE_CHANNEL_NAMES and use full subcommand bytes
 
 ### Fixed
 - Made the title for Wifi Config page consistent
