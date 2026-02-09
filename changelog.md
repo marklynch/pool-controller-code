@@ -9,9 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [TODO]
 - Don't publish to MQTT after every change - add small debounce to it (verify frequency)
-- add mDNS config
 - 
+
 ## [Unreleased]
+### Added
+### Removed
+### Changed
+### Fixed
+
+## [0.0.6] - 2026-02-09
 ### Added
 - Added the version number to the footer of web pages
 - Added support for the controller clock time
