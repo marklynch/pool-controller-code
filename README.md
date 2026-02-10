@@ -67,19 +67,35 @@ Note - if the wrong password is entered - it will try to connect for about 30 se
 
 Note 2: you need to clear the NVRam to redo this flow via "Erase Flash Memory from device"
 
-## Visual Feedback Flow:
-First Boot (No WiFi):
-* Blue solid (startup)
-* Purple solid (unconfigured wifi - enter provisioning mode)
-* Connect to AP → Configure → Device restarts
+## Visual Feedback (LED Status):
 
-Subsequent Boots (With WiFi):
-* Blue solid (startup)
-* Yellow solid (connected & got IP)
-* Cyan solid (MQTT connected)
-* Orange solid (MQTT disconnected)
-* Green flash - (RJ12 data recieved)
-* Red flash - (RJ12 data sent)
+### Persistent States (Solid Colors)
+* **Blue** - Startup (brief, during boot)
+* **Purple** - Unconfigured (no WiFi credentials, provisioning mode active)
+* **White** - WiFi connected, waiting for MQTT connection
+* **Green** - Fully operational (WiFi + MQTT connected) ✓
+* **Orange** - MQTT disconnected (WiFi ok, MQTT issue)
+
+### Activity Indicators (Brief Flashes)
+* **Cyan flash** - RJ12 data received (RX)
+* **Magenta flash** - RJ12 data transmitted (TX)
+
+### Boot Flow Examples
+
+**First Boot (No WiFi):**
+1. Blue (startup)
+2. Purple (unconfigured - connect to AP)
+3. Connect to AP → Configure WiFi → Device restarts
+
+**Normal Boot (WiFi Configured):**
+1. Blue (startup)
+2. White (WiFi connected)
+3. Green (MQTT connected) ✓
+
+**MQTT Connection Issue:**
+1. Blue (startup)
+2. White (WiFi connected)
+3. Orange (MQTT failed to connect)
 
 
 ## General architecture

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 ### Changed
+- Improved the clarity of the LED states and restore state after RX/TX
+
 ### Fixed
 - Improved security of mqtt credentials password (don't send back)
 - Added default port for MQTT

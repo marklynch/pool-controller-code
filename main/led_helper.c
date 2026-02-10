@@ -8,6 +8,30 @@
 static const char *TAG = "LED_HELPER";
 static led_strip_handle_t s_led_strip = NULL;
 
+// State memory for restoring after flashes
+typedef struct {
+    uint8_t green;
+    uint8_t red;
+    uint8_t blue;
+} led_rgb_t;
+
+static led_rgb_t s_current_state = {0, 0, 0};
+static led_persistent_state_t s_persistent_state = LED_STATE_STARTUP;
+
+// Helper function to set LED and save state
+static void set_led_state(uint8_t green, uint8_t red, uint8_t blue, led_persistent_state_t state)
+{
+    if (s_led_strip == NULL) return;
+
+    s_current_state.green = green;
+    s_current_state.red = red;
+    s_current_state.blue = blue;
+    s_persistent_state = state;
+
+    led_strip_set_pixel(s_led_strip, 0, green, red, blue);
+    led_strip_refresh(s_led_strip);
+}
+
 // Initialize the LED strip
 esp_err_t led_init(void)
 {
@@ -40,73 +64,70 @@ esp_err_t led_init(void)
 // Set LED to startup color (blue)
 void led_set_startup(void)
 {
-    if (s_led_strip == NULL) return;
-
-    led_strip_set_pixel(s_led_strip, 0, 0, 0, 32);  // Blue (G=0, R=0, B=32)
-    led_strip_refresh(s_led_strip);
-    ESP_LOGW(TAG, "led_set_startup: LED set to blue");
+    set_led_state(0, 0, 32, LED_STATE_STARTUP);  // Blue
+    ESP_LOGI(TAG, "LED: Startup (Blue)");
 }
 
-// Flash LED when receiving from UART
+// Flash LED when receiving from UART (cyan flash)
 void led_flash_rx(void)
 {
     if (s_led_strip == NULL) return;
 
-    led_strip_set_pixel(s_led_strip, 0, 32, 0, 0);  // Red (G=32, R=0, B=0)
+    // Save current state
+    led_rgb_t saved = s_current_state;
+
+    // Flash cyan (cool color = incoming data)
+    led_strip_set_pixel(s_led_strip, 0, 32, 0, 32);  // Cyan (G=32, R=0, B=32)
     led_strip_refresh(s_led_strip);
     vTaskDelay(pdMS_TO_TICKS(LED_FLASH_DURATION_MS));
-    led_strip_clear(s_led_strip);
+
+    // Restore previous state
+    led_strip_set_pixel(s_led_strip, 0, saved.green, saved.red, saved.blue);
     led_strip_refresh(s_led_strip);
 }
 
-// Flash LED when transmitting to UART
+// Flash LED when transmitting to UART (magenta flash)
 void led_flash_tx(void)
 {
     if (s_led_strip == NULL) return;
 
-    led_strip_set_pixel(s_led_strip, 0, 0, 32, 0);  // Green (G=0, R=32, B=0)
+    // Save current state
+    led_rgb_t saved = s_current_state;
+
+    // Flash magenta (warm color = outgoing data)
+    led_strip_set_pixel(s_led_strip, 0, 0, 32, 32);  // Magenta (G=0, R=32, B=32)
     led_strip_refresh(s_led_strip);
     vTaskDelay(pdMS_TO_TICKS(LED_FLASH_DURATION_MS));
-    led_strip_clear(s_led_strip);
+
+    // Restore previous state
+    led_strip_set_pixel(s_led_strip, 0, saved.green, saved.red, saved.blue);
     led_strip_refresh(s_led_strip);
 }
 
 // Set LED to unconfigured state (purple)
 void led_set_unconfigured(void)
 {
-    if (s_led_strip == NULL) return;
-
-    led_strip_set_pixel(s_led_strip, 0, 0, 32, 32);  // Purple (G=0, R=32, B=32)
-    led_strip_refresh(s_led_strip);
-    ESP_LOGW(TAG, "led_set_unconfigured: LED set to purple");
+    set_led_state(0, 32, 32, LED_STATE_UNCONFIGURED);  // Purple
+    ESP_LOGI(TAG, "LED: Unconfigured - WiFi setup needed (Purple)");
 }
 
-// Set LED to connected state (yellow)
+// Set LED to WiFi connected state (white) - MQTT not yet connected
 void led_set_connected(void)
 {
-    if (s_led_strip == NULL) return;
-
-    led_strip_set_pixel(s_led_strip, 0, 32, 32, 0);  // Yellow (G=32, R=32, B=0)
-    led_strip_refresh(s_led_strip);
-    ESP_LOGW(TAG, "led_set_connected: LED set to Yellow");
+    set_led_state(20, 20, 20, LED_STATE_WIFI_ONLY);  // White (neutral, partial connection)
+    ESP_LOGI(TAG, "LED: WiFi connected, waiting for MQTT (White)");
 }
 
-// Set LED to MQTT connected state (cyan)
+// Set LED to fully connected state (green) - WiFi + MQTT both operational
 void led_set_mqtt_connected(void)
 {
-    if (s_led_strip == NULL) return;
-
-    led_strip_set_pixel(s_led_strip, 0, 32, 0, 32);  // Cyan (G=32, R=0, B=32)
-    led_strip_refresh(s_led_strip);
-    ESP_LOGW(TAG, "led_set_mqtt_connected: LED set to Cyan");
+    set_led_state(32, 0, 0, LED_STATE_FULLY_CONNECTED);  // Green (universal "all good")
+    ESP_LOGI(TAG, "LED: Fully connected - WiFi + MQTT operational (Green)");
 }
 
-// Set LED to MQTT disconnected state (orange)
+// Set LED to MQTT disconnected state (orange) - WiFi ok, MQTT issue
 void led_set_mqtt_disconnected(void)
 {
-    if (s_led_strip == NULL) return;
-
-    led_strip_set_pixel(s_led_strip, 0, 16, 32, 0);  // Orange (G=16, R=32, B=0)
-    led_strip_refresh(s_led_strip);
-    ESP_LOGW(TAG, "led_set_mqtt_disconnected: LED set to Orange");
+    set_led_state(16, 32, 0, LED_STATE_MQTT_DISCONNECTED);  // Orange (warning state)
+    ESP_LOGW(TAG, "LED: MQTT disconnected - WiFi ok, MQTT issue (Orange)");
 }
