@@ -10,6 +10,7 @@ idf_component_register(
         "web_handlers.c"
         "tcp_bridge.c"
         "message_decoder.c"
+        "dns_server.c"
     INCLUDE_DIRS
          "."
     REQUIRES

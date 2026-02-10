@@ -98,7 +98,7 @@ const char WIFI_PAGE[] = "<div class='container'><h1>WiFi Configuration</h1>"
 "<div id='status'></div>"
 "<form id='wifiForm'><label>WiFi Network:</label>"
 "<select id='ssid' name='ssid' required><option value=''>Scanning...</option></select>"
-"<label>Password:</label><input type='password' id='password' name='password' required>"
+"<label>Password:</label><input type='password' id='password' name='password' placeholder='Enter network password' required>"
 "<button type='submit'>Connect</button></form></div>"
 "<script>"
 "function showStatus(msg,isError){const d=document.getElementById('status');"
@@ -639,16 +639,20 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         strncpy(checkbox_checked, " checked", sizeof(checkbox_checked) - 1);
     }
 
+    // Default port to 1883 if not set
+    int display_port = config.port > 0 ? config.port : 1883;
+
     char html_mid[1024];
     snprintf(html_mid, sizeof(html_mid),
         "%s><span class='checkbox-label'>Enable MQTT</span></label>"
         "<label>Broker Host/IP:<input type='text' id='broker' name='broker' value='%s' placeholder='mqtt.example.com'></label>"
-        "<label>Port:<input type='number' id='port' name='port' value='%d' min='1' max='65535'></label>"
+        "<label>Port:<input type='number' id='port' name='port' value='%d' min='1' max='65535' placeholder='1883'></label>"
         "<label>Username (optional):<input type='text' id='username' name='username' value='%s' placeholder='Leave empty if not required'></label>"
-        "<label>Password (optional):<input type='password' id='password' name='password' value='%s' placeholder='Leave empty if not required'></label>"
+        "<label>Password (optional):<input type='password' id='password' name='password' value='' placeholder='%s'></label>"
         "<button type='submit'>Save Configuration</button>"
         "<div id='status' class='status'></div></form>",
-        checkbox_checked, config.broker, config.port, config.username, config.password);
+        checkbox_checked, config.broker, display_port, config.username,
+        strlen(config.password) > 0 ? "Leave empty to keep current password" : "Leave empty if not required");
 
     const char *html_end =
         "<script>"
@@ -703,9 +707,14 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
     }
     content[ret] = '\0';
 
-    // Simple JSON parsing
+    // Load existing config first (to preserve password if not changed)
     mqtt_config_t config = {0};
-    config.port = 1883;  // Default port
+    mqtt_load_config(&config);
+
+    // If no existing port, default to 1883
+    if (config.port == 0) {
+        config.port = 1883;
+    }
 
     char *enabled_start = strstr(content, "\"enabled\":");
     if (enabled_start) {
@@ -751,10 +760,12 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
         char *password_end = strchr(password_start, '"');
         if (password_end) {
             int password_len = password_end - password_start;
-            if (password_len < sizeof(config.password)) {
+            // Only update password if a non-empty value was submitted
+            if (password_len > 0 && password_len < sizeof(config.password)) {
                 memcpy(config.password, password_start, password_len);
                 config.password[password_len] = '\0';
             }
+            // If empty, keep existing password (already loaded from config)
         }
     }
 
@@ -1171,12 +1182,23 @@ static const httpd_uri_t test_decode_uri = {
     .handler = test_decode_post_handler
 };
 
+// Custom 404 error handler for captive portal
+// Redirects all unmatched requests to the provisioning page
+static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
+{
+    ESP_LOGI(TAG, "Captive portal: redirecting %s to root", req->uri);
+
+    // Serve the root page content for any 404
+    return root_get_handler(req);
+}
+
 // ======================================================
 // Public Functions
 // ======================================================
 
 esp_err_t web_handlers_register(httpd_handle_t server)
 {
+    // Register main application handlers
     httpd_register_uri_handler(server, &root_uri);
     httpd_register_uri_handler(server, &scan_uri);
     httpd_register_uri_handler(server, &provision_uri);
@@ -1187,7 +1209,12 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &update_get_uri);
     httpd_register_uri_handler(server, &update_post_uri);
     httpd_register_uri_handler(server, &test_decode_uri);
-    ESP_LOGI(TAG, "Web/HTTP handlers registered");
+
+    // Register custom 404 error handler for captive portal
+    // This catches all unmatched URIs and redirects to the provisioning page
+    httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, http_404_error_handler);
+
+    ESP_LOGI(TAG, "Web/HTTP handlers registered (with captive portal 404 redirect)");
     return ESP_OK;
 }
 

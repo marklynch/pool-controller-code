@@ -3,6 +3,7 @@
 #include "web_handlers.h"
 #include "mqtt_poolclient.h"
 #include "led_helper.h"
+#include "dns_server.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -204,6 +205,18 @@ static void wifi_event_handler(void *arg,
         s_wifi_connected = true;
         s_wifi_retry_count = 0;
 
+        // If we were in provisioning mode, stop it now
+        if (s_provisioning_active) {
+            ESP_LOGI(TAG, "Exiting provisioning mode");
+            s_provisioning_active = false;
+
+            // Stop DNS server
+            dns_server_stop();
+
+            // Switch from APSTA to STA mode
+            esp_wifi_set_mode(WIFI_MODE_STA);
+        }
+
         // Stop retry timer if running
         if (s_wifi_retry_timer != NULL && xTimerIsTimerActive(s_wifi_retry_timer)) {
             xTimerStop(s_wifi_retry_timer, 0);
@@ -325,6 +338,14 @@ static esp_err_t start_provisioning(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "SoftAP started - SSID: %s, Password: %s", ap_ssid, WIFI_PROV_SOFTAP_PASSWORD);
+
+    // Start DNS server for captive portal
+    esp_err_t dns_err = dns_server_start();
+    if (dns_err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to start DNS server: %s", esp_err_to_name(dns_err));
+    } else {
+        ESP_LOGI(TAG, "Captive portal DNS server started");
+    }
 
     // Start HTTP server for web provisioning
     return start_http_server(WIFI_PROV_SOFTAP_IP);

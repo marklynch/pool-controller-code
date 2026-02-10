@@ -7,9 +7,11 @@ This has been created by listening to the communications on the control bus, and
 ## Output
 To see the output, either monitor the device using the ESP monitor - or connect to the port exposed on the wifi network.
 
+The device is accessible via mDNS at `poolcontrol.local` or by its IP address.
+
 Example on a mac using nc (netcat)
 ```
-% nc 192.168.0.222 7373
+% nc poolcontrol.local 7373
 Connected to ESP32-C6 pool bus bridge.
 UART bytes will be shown here in hex.
 Bytes you send will be forwarded to the bus.
@@ -24,7 +26,7 @@ Bytes you send will be forwarded to the bus.
 You can test individual messages against the decoder using the HTTP API endpoint:
 
 ```bash
-curl -X POST http://192.168.x.x/api/test_decode \
+curl -X POST http://poolcontrol.local/api/test_decode \
   -d "02 00 50 FF FF 80 00 38 0F 17 D0 01 02 1A 03"
 ```
 
@@ -57,7 +59,7 @@ This allows you to quickly test message patterns and verify decoder behavior wit
 ## Initial Provisioning:
 
 If the LED is purple then connect to the POOL_XXXXXX wifi access point on your phone
-In your phone browser navigate to http://192.168.4.1
+In your phone browser navigate to http://poolcontrol.local or http://192.168.4.1
 Here you can choose the wifi network and enter the password.
 This will save the details to the NVRam.
 
@@ -68,15 +70,16 @@ Note 2: you need to clear the NVRam to redo this flow via "Erase Flash Memory fr
 ## Visual Feedback Flow:
 First Boot (No WiFi):
 * Blue solid (startup)
-* Purple solid (unconfigured detected)
-* Purple solid (provisioning mode active)
+* Purple solid (unconfigured wifi - enter provisioning mode)
 * Connect to AP → Configure → Device restarts
 
 Subsequent Boots (With WiFi):
 * Blue solid (startup)
 * Yellow solid (connected & got IP)
-TODO - add the MQTT States
-
+* Cyan solid (MQTT connected)
+* Orange solid (MQTT disconnected)
+* Green flash - (RJ12 data recieved)
+* Red flash - (RJ12 data sent)
 
 
 ## General architecture
@@ -86,31 +89,72 @@ flowchart TD
 
     Pool[fa:fa-life-ring Pool Connect 10]
 
-    subgraph Astral Pool Controller
-        Comms[Comms Module]
-        Core[fa:fa-microchip Core System]
-        Web[HTTP Interface]
-        Telnet[Serial Debug]
-        MQTT[MQTT Client]
-        LED[Led signals]
+    subgraph ESP32-C6[fa:fa-microchip ESP32-C6 Astral Pool Controller]
+        subgraph Transport[Transport Layer]
+            UART[UART Interface<br/>9600 baud]
+            TCP[TCP Bridge<br/>Port 7373]
+        end
+
+        subgraph Protocol[Protocol Layer]
+            Decoder[Message Decoder<br/>Register Dispatch Table]
+        end
+
+        subgraph State[State Management]
+            PoolState[Pool State<br/>Mutex Protected]
+        end
+
+        subgraph Network[Network Layer]
+            WiFi[WiFi Provisioning<br/>SoftAP + mDNS]
+        end
+
+        subgraph Application[Application Layer]
+            WebAPI[Web Handlers<br/>HTTP Endpoints]
+
+            subgraph MQTTSub[MQTT Subsystem]
+                MQTTClient[MQTT Client]
+                MQTTPub[MQTT Publish]
+                MQTTDisc[MQTT Discovery]
+                MQTTCmd[MQTT Commands]
+            end
+        end
+
+        subgraph Status[Status Indication]
+            LED[LED Helper<br/>WS2812 RGB]
+        end
+
+        UART <--> TCP
+        UART --> Decoder
+        Decoder --> PoolState
+        PoolState --> MQTTPub
+        PoolState --> WebAPI
+        MQTTCmd --> PoolState
+        WiFi -.-> WebAPI
+        WiFi -.-> MQTTClient
+        MQTTClient --> MQTTPub
+        MQTTClient --> MQTTDisc
+        MQTTClient --> MQTTCmd
+        MQTTPub --> MQTTSub
+        MQTTDisc --> MQTTSub
+        MQTTCmd --> MQTTSub
+        PoolState -.-> LED
+        WiFi -.-> LED
     end
 
+    Clients[Network Clients<br/>nc, telnet, custom]
+    Browser[Web Browser]
     HA[Home Assistant]
 
-    Pool <-->|fa:fa-plug via RJ12| Comms
-    Comms <--> Core
-    Web <--> Core
-    MQTT <--> Core
-    Telnet <--> Core
-    LED <--> Core
-    MQTT <-->|fa:fa-wifi via wifi| HA
+    Pool <-->|RJ12 Serial Bus| UART
+    TCP <-->|TCP/IP Port 7373| Clients
+    WebAPI <-->|HTTP Port 80<br/>poolcontrol.local| Browser
+    MQTTSub <-->|MQTT over WiFi| HA
 ```
 
-The system consists of an ESP32 C6 module that can be daisy chained into and existing connect 10 system via a RJ12 connection.
+The system consists of an ESP32 C6 module that can be daisy chained into an existing connect 10 system via a RJ12 connection.
 
-It setups up a wifi AP on 192.168.4.1 for initial configuration to connect to the existing network.
+It sets up a wifi AP called POOL_[XXXXXX] which if you connect to should bring you to `poolcontrol.local` (`192.168.4.1`) for initial configuration to connect to the existing network.
 
-It used MQTT to connect and publish information and recieve information from Home Assistant.
+It uses MQTT to connect and publish information and receive information from Home Assistant.
 
 ## Building and Flashing
 

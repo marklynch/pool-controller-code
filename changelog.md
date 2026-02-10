@@ -13,9 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Added DNS for captive portal initial setup
+
 ### Removed
 ### Changed
 ### Fixed
+- Improved security of mqtt credentials password (don't send back)
+- Added default port for MQTT
+
 
 ## [0.0.6] - 2026-02-09
 ### Added
