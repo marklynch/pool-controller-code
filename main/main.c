@@ -238,11 +238,52 @@ static bool decode_wrapper(const uint8_t *data, int len)
 }
 
 // ======================================================
+// Logging Configuration
+// ======================================================
+
+/**
+ * Configure log levels for application and system components
+ *
+ * Available log levels (from most to least verbose):
+ *   ESP_LOG_NONE    - No log output
+ *   ESP_LOG_ERROR   - Critical errors, system may fail
+ *   ESP_LOG_WARN    - Error conditions, but system continues
+ *   ESP_LOG_INFO    - Informational messages
+ *   ESP_LOG_DEBUG   - Extra information for debugging
+ *   ESP_LOG_VERBOSE - All details, including data dumps
+ */
+static void configure_log_levels(void)
+{
+    // Set global default log level (affects all modules not explicitly configured)
+    esp_log_level_set("*", ESP_LOG_INFO);
+
+    // Application components
+    esp_log_level_set("POOL_BUS_BRIDGE", ESP_LOG_INFO);    // Main application
+    esp_log_level_set("MSG_DECODER", ESP_LOG_INFO);        // Message decoder
+    esp_log_level_set("TCP_BRIDGE", ESP_LOG_INFO);         // TCP bridge server
+    esp_log_level_set("MQTT_CLIENT", ESP_LOG_WARN);        // MQTT client
+    esp_log_level_set("MQTT_PUBLISH", ESP_LOG_WARN);       // MQTT publishing
+    esp_log_level_set("MQTT_DISCOVERY", ESP_LOG_WARN);     // MQTT discovery
+    esp_log_level_set("MQTT_COMMANDS", ESP_LOG_INFO);      // MQTT commands
+    esp_log_level_set("WEB_HANDLERS", ESP_LOG_INFO);       // HTTP handlers
+    esp_log_level_set("WIFI_PROV", ESP_LOG_INFO);          // WiFi provisioning
+    esp_log_level_set("LED_HELPER", ESP_LOG_INFO);         // LED status
+
+    // System components (ESP-IDF) - uncomment to reduce verbosity
+    // esp_log_level_set("wifi", ESP_LOG_WARN);            // WiFi stack
+    // esp_log_level_set("httpd", ESP_LOG_WARN);           // HTTP server
+    // esp_log_level_set("esp_netif", ESP_LOG_WARN);       // Network interface
+}
+
+// ======================================================
 // app_main
 // ======================================================
 
 void app_main(void)
 {
+    // Configure logging early to control verbosity during startup
+    configure_log_levels();
+
     // Init NVS (required for Wi-Fi and provisioning)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -295,37 +336,6 @@ void app_main(void)
 
     // Wait for WiFi connection or stay in provisioning mode
     wifi_wait_for_connection();
-
-    // ======================================================
-    // Configure log levels
-    // ======================================================
-    // Available log levels (from most to least verbose):
-    //   ESP_LOG_NONE    - No log output
-    //   ESP_LOG_ERROR   - Critical errors, system may fail
-    //   ESP_LOG_WARN    - Error conditions, but system continues
-    //   ESP_LOG_INFO    - Informational messages
-    //   ESP_LOG_DEBUG   - Extra information for debugging
-    //   ESP_LOG_VERBOSE - All details, including data dumps
-    //
-    // Set global default log level (affects all modules not explicitly configured)
-    esp_log_level_set("*", ESP_LOG_INFO);
-
-    // Per-module log level configuration
-    esp_log_level_set("POOL_BUS_BRIDGE", ESP_LOG_INFO);    // Main application
-    esp_log_level_set("MSG_DECODER", ESP_LOG_INFO);        // Message decoder
-    esp_log_level_set("TCP_BRIDGE", ESP_LOG_INFO);         // TCP bridge server
-    esp_log_level_set("MQTT_CLIENT", ESP_LOG_WARN);        // MQTT client
-    esp_log_level_set("MQTT_PUBLISH", ESP_LOG_WARN);       // MQTT publishing
-    esp_log_level_set("MQTT_DISCOVERY", ESP_LOG_WARN);     // MQTT discovery
-    esp_log_level_set("MQTT_COMMANDS", ESP_LOG_INFO);      // MQTT commands
-    esp_log_level_set("WEB_HANDLERS", ESP_LOG_INFO);       // HTTP handlers
-    esp_log_level_set("WIFI_PROV", ESP_LOG_INFO);          // WiFi provisioning
-    esp_log_level_set("LED_HELPER", ESP_LOG_INFO);         // LED status
-
-    // System components (ESP-IDF)
-    // esp_log_level_set("wifi", ESP_LOG_WARN);            // WiFi stack
-    // esp_log_level_set("httpd", ESP_LOG_WARN);           // HTTP server
-    // esp_log_level_set("esp_netif", ESP_LOG_WARN);       // Network interface
 
     // If we get here, WiFi is connected and HTTP server is running
     ESP_LOGI(TAG, "Starting TCP bridge server...");
