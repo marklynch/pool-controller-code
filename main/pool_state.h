@@ -7,10 +7,6 @@
 #include <stdbool.h>
 #include "esp_err.h"
 
-// Channel types
-#define CHANNEL_TYPE_COUNT 19
-extern const char *CHANNEL_TYPE_NAMES[];
-
 // Channel states
 #define CHANNEL_STATE_COUNT 6
 extern const char *CHANNEL_STATE_NAMES[];

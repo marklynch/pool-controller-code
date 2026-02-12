@@ -145,7 +145,7 @@ static bool extract_and_process_message(int client_sock)
 
     // Now scan for message end using checksum validation
     // Data starts at index 10, checksum algorithm: sum(bytes 10..N-3) & 0xFF
-    for (int pos = 10; pos < s_msg_buffer_len - 1; pos++) {
+    for (int pos = 10; pos < s_msg_buffer_len - 2; pos++) {  // Need at least 2 more bytes (checksum + END)
         // Calculate checksum from byte 10 to current position (inclusive)
         uint32_t sum = 0;
         for (int i = 10; i <= pos; i++) {
@@ -153,61 +153,59 @@ static bool extract_and_process_message(int client_sock)
         }
         uint8_t calculated_checksum = sum & 0xFF;
 
-        // Check if next byte matches checksum
-        if (pos + 1 < s_msg_buffer_len && s_msg_buffer[pos + 1] == calculated_checksum) {
-            // Check if byte after checksum is end marker (0x03)
-            if (pos + 2 < s_msg_buffer_len && s_msg_buffer[pos + 2] == 0x03) {
-                // Found complete message!
-                int msg_len = pos + 3;  // Include checksum and end byte
+        // Check if next byte matches checksum AND byte after that is END marker (0x03)
+        // This prevents false positives from accidental checksum matches in payload
+        if (s_msg_buffer[pos + 1] == calculated_checksum && s_msg_buffer[pos + 2] == 0x03) {
+            // Found complete message!
+            int msg_len = pos + 3;  // Include checksum and end byte
 
-                // Format as hex string
-                char hexLine[3 * BUS_MESSAGE_MAX_SIZE + 4];
-                int hex_pos = 0;
-                for (int i = 0; i < msg_len; i++) {
-                    if (hex_pos < (int)(sizeof(hexLine) - 4)) {
-                        hex_pos += snprintf(&hexLine[hex_pos], sizeof(hexLine) - hex_pos,
-                                          "%02X ", s_msg_buffer[i]);
-                    }
+            // Format as hex string
+            char hexLine[3 * BUS_MESSAGE_MAX_SIZE + 4];
+            int hex_pos = 0;
+            for (int i = 0; i < msg_len; i++) {
+                if (hex_pos < (int)(sizeof(hexLine) - 4)) {
+                    hex_pos += snprintf(&hexLine[hex_pos], sizeof(hexLine) - hex_pos,
+                                      "%02X ", s_msg_buffer[i]);
                 }
-                hexLine[hex_pos] = '\0';
-
-                // Check for loopback
-                bool is_loopback = false;
-                if (s_last_tx_len > 0 && msg_len == s_last_tx_len) {
-                    TickType_t time_since_tx = xTaskGetTickCount() - s_last_tx_time;
-                    if (time_since_tx < pdMS_TO_TICKS(500)) {
-                        if (memcmp(s_msg_buffer, s_last_tx_msg, msg_len) == 0) {
-                            is_loopback = true;
-                            ESP_LOGI(TAG, "RX LOOPBACK (our TX echoed): %s", hexLine);
-                            s_last_tx_len = 0;
-                        }
-                    }
-                }
-
-                // Decode message, log hex only if not decoded and not loopback
-                if (!is_loopback && !s_config.decode_message(s_msg_buffer, msg_len)) {
-                    ESP_LOGI(TAG, "RX: %s", hexLine);
-                }
-
-                // Send to TCP client if connected
-                if (client_sock >= 0) {
-                    hexLine[hex_pos++] = '\r';
-                    hexLine[hex_pos++] = '\n';
-                    int sent = send(client_sock, hexLine, hex_pos, 0);
-                    if (sent < 0) {
-                        ESP_LOGD(TAG, "Client send error: errno %d", errno);
-                    }
-                }
-
-                // Remove processed message from buffer
-                int remaining = s_msg_buffer_len - msg_len;
-                if (remaining > 0) {
-                    memmove(s_msg_buffer, &s_msg_buffer[msg_len], remaining);
-                }
-                s_msg_buffer_len = remaining;
-
-                return true;  // Message processed
             }
+            hexLine[hex_pos] = '\0';
+
+            // Check for loopback
+            bool is_loopback = false;
+            if (s_last_tx_len > 0 && msg_len == s_last_tx_len) {
+                TickType_t time_since_tx = xTaskGetTickCount() - s_last_tx_time;
+                if (time_since_tx < pdMS_TO_TICKS(500)) {
+                    if (memcmp(s_msg_buffer, s_last_tx_msg, msg_len) == 0) {
+                        is_loopback = true;
+                        ESP_LOGI(TAG, "RX LOOPBACK (our TX echoed): %s", hexLine);
+                        s_last_tx_len = 0;
+                    }
+                }
+            }
+
+            // Decode message, log hex only if not decoded and not loopback
+            if (!is_loopback && !s_config.decode_message(s_msg_buffer, msg_len)) {
+                ESP_LOGI(TAG, "RX: %s", hexLine);
+            }
+
+            // Send to TCP client if connected
+            if (client_sock >= 0) {
+                hexLine[hex_pos++] = '\r';
+                hexLine[hex_pos++] = '\n';
+                int sent = send(client_sock, hexLine, hex_pos, 0);
+                if (sent < 0) {
+                    ESP_LOGD(TAG, "Client send error: errno %d", errno);
+                }
+            }
+
+            // Remove processed message from buffer
+            int remaining = s_msg_buffer_len - msg_len;
+            if (remaining > 0) {
+                memmove(s_msg_buffer, &s_msg_buffer[msg_len], remaining);
+            }
+            s_msg_buffer_len = remaining;
+
+            return true;  // Message processed
         }
     }
 

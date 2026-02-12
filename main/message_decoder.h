@@ -62,19 +62,24 @@ const char* get_device_name(uint8_t addr_hi, uint8_t addr_lo);
 const char* get_gateway_comms_status_text(uint16_t code);
 
 // External constant arrays (defined in message_decoder.c)
-extern const char *CHANNEL_TYPE_NAMES[];
 extern const char *CHANNEL_STATE_NAMES[];
 extern const char *LIGHTING_STATE_NAMES[];
 extern const char *LIGHTING_COLOR_NAMES[];
 
 // Constant counts
-#define CHANNEL_TYPE_COUNT 19
 #define CHANNEL_STATE_COUNT 6
 #define LIGHTING_STATE_COUNT 3
 #define LIGHTING_COLOR_COUNT 51
 
+/**
+ * Get channel type name from type code
+ * Supports all channel types including special codes (0xFD=Heater, 0xFE=Light Zone)
+ * @param type_code Channel type code
+ * @return Channel type name, or "Unknown" if not found
+ */
+const char* get_channel_type_name(uint8_t type_code);
+
 // Special channel markers
-#define CHANNEL_UNUSED 0xFE
-#define CHANNEL_END    0xFD
+#define CHANNEL_UNUSED     0x00  // Unused/unconfigured channel
 
 #endif // MESSAGE_DECODER_H

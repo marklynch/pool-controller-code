@@ -409,8 +409,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                 }
                 first_channel = false;
 
-                const char *type_name = (s_pool_state.channels[i].type < CHANNEL_TYPE_COUNT) ?
-                                       CHANNEL_TYPE_NAMES[s_pool_state.channels[i].type] : "Unknown";
+                const char *type_name = get_channel_type_name(s_pool_state.channels[i].type);
                 const char *state_name = (s_pool_state.channels[i].state < CHANNEL_STATE_COUNT) ?
                                         CHANNEL_STATE_NAMES[s_pool_state.channels[i].state] : "Unknown";
 

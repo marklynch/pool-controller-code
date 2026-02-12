@@ -2,6 +2,7 @@
 #include "mqtt_poolclient.h"
 #include "mqtt_discovery.h"
 #include "pool_state.h"
+#include "message_decoder.h"
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
@@ -130,7 +131,7 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
     }
 
     // Use channel name if set, otherwise fall back to type name
-    const char *type_name = (channel->type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[channel->type] : "Unknown";
+    const char *type_name = get_channel_type_name(channel->type);
     const char *display_name = (channel->name[0] != '\0') ? channel->name : type_name;
 
     // Publish discovery if this is the first time seeing this channel

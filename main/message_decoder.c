@@ -93,28 +93,51 @@ static const char *MSG_TYPE_REGISTER_READ_REQUEST =   "02 00 F0 FF FF 80 00 39 0
 // Lookup tables and constants
 // ======================================================
 
-// Channel type names
-const char *CHANNEL_TYPE_NAMES[] = {
-    "Unknown",       // 0
-    "Filter",        // 1
-    "Cleaning",      // 2
-    "Heater Pump",   // 3
-    "Booster",       // 4
-    "Waterfall",     // 5
-    "Fountain",      // 6
-    "Spa Pump",      // 7
-    "Solar",         // 8
-    "Blower",        // 9
-    "Swimjet",       // 10
-    "Jets",          // 11
-    "Spa Jets",      // 12
-    "Overflow",      // 13
-    "Spillway",      // 14
-    "Audio",         // 15
-    "Hot Seat",      // 16
-    "Heater Power",  // 17
-    "Custom Name",   // 18
+// Channel type lookup table
+typedef struct {
+    uint8_t code;
+    const char *name;
+} channel_type_entry_t;
+
+static const channel_type_entry_t CHANNEL_TYPE_TABLE[] = {
+    {0x00, "Unused"},
+    {0x01, "Filter"},
+    {0x02, "Cleaning"},
+    {0x03, "Heater Pump"},
+    {0x04, "Booster"},
+    {0x05, "Waterfall"},
+    {0x06, "Fountain"},
+    {0x07, "Spa Pump"},
+    {0x08, "Solar"},
+    {0x09, "Blower"},
+    {0x0A, "Swimjet"},
+    {0x0B, "Jets"},
+    {0x0C, "Spa Jets"},
+    {0x0D, "Overflow"},
+    {0x0E, "Spillway"},
+    {0x0F, "Audio"},
+    {0x10, "Hot Seat"},
+    {0x11, "Heater Power"},
+    {0x12, "Custom Name"},
+    {0xFD, "Heater"},
+    {0xFE, "Light Zone"},
 };
+
+#define CHANNEL_TYPE_TABLE_SIZE (sizeof(CHANNEL_TYPE_TABLE) / sizeof(CHANNEL_TYPE_TABLE[0]))
+
+/**
+ * Get channel type name from type code
+ * @param type_code Channel type code (0x00-0x12, 0xFD, 0xFE)
+ * @return Channel type name, or "Unknown" if not found
+ */
+const char* get_channel_type_name(uint8_t type_code) {
+    for (int i = 0; i < CHANNEL_TYPE_TABLE_SIZE; i++) {
+        if (CHANNEL_TYPE_TABLE[i].code == type_code) {
+            return CHANNEL_TYPE_TABLE[i].name;
+        }
+    }
+    return "Unknown";
+}
 
 // Channel state names
 const char *CHANNEL_STATE_NAMES[] = {
@@ -296,10 +319,10 @@ const char* get_device_name(uint8_t addr_hi, uint8_t addr_lo)
     if (addr_hi == 0xFF && addr_lo == 0xFF) return "Broadcast";
     if (addr_hi == 0x00) {
         switch (addr_lo) {
-            case 0x50: return "Controller";
+            case 0x50: return "Touch Screen";
             case 0x62: return "Temp Sensor";
             case 0x90: return "Chlorinator";
-            case 0x6F: return "Touch Screen";
+            case 0x6F: return "Controller";
             case 0xF0: return "Internet GW";
         }
     }
@@ -656,7 +679,7 @@ static bool handle_unknown(
     // Format message as hex string
     char hex_str[3 * len + 1];
     int pos = 0;
-    for (int i = 0; i < len && pos < (int)sizeof(hex_str) - 4; i++) {
+    for (int i = 0; i < len; i++) {
         pos += snprintf(&hex_str[pos], sizeof(hex_str) - pos, "%02X ", data[i]);
     }
     hex_str[pos] = '\0';
@@ -994,14 +1017,10 @@ static bool handle_channel_type(
     uint8_t ch_type = payload[2];
     uint8_t ch_num = reg_id - 0x6C + 1;
 
-    if (ch_type == CHANNEL_END) {
-        ESP_LOGI(TAG, "%s Channel %d type - Unused (last channel)", addr_info, ch_num);
-    } else if (ch_type == CHANNEL_UNUSED) {
-        ESP_LOGI(TAG, "%s Channel %d type - Unused", addr_info, ch_num);
-    } else {
-        const char *type_name = (ch_type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[ch_type] : "Unknown";
-        ESP_LOGI(TAG, "%s Channel %d type - %s (%d)", addr_info, ch_num, type_name, ch_type);
+    const char *type_name = get_channel_type_name(ch_type);
+    ESP_LOGI(TAG, "%s Channel %d type - %s (%d)", addr_info, ch_num, type_name, ch_type);
 
+    if (ch_type != CHANNEL_UNUSED) {
         // Update pool state
         if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
             ctx->pool_state->channels[ch_num - 1].type = ch_type;
@@ -1329,13 +1348,6 @@ static bool handle_channel_status(
             }
 
             uint8_t ch_type = payload[payload_idx];
-            if (ch_type == CHANNEL_END) {
-                past_end = true;
-                ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
-                ch_num++;
-                continue;
-            }
-
             uint8_t state = payload[payload_idx + 1];
             const char *state_name = (state < CHANNEL_STATE_COUNT) ? CHANNEL_STATE_NAMES[state] : "Unknown";
 
@@ -1343,7 +1355,7 @@ static bool handle_channel_status(
                 ESP_LOGI(TAG, "  Ch%d: Unused", ch_num);
                 ctx->pool_state->channels[ch_num - 1].configured = false;
             } else {
-                const char *type_name = (ch_type < CHANNEL_TYPE_COUNT) ? CHANNEL_TYPE_NAMES[ch_type] : "Unknown";
+                const char *type_name = get_channel_type_name(ch_type);
                 ESP_LOGI(TAG, "  Ch%d: %s (%d) = %s", ch_num, type_name, ch_type, state_name);
 
                 // Update channel state
@@ -1466,12 +1478,11 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
                  addr_info, reg_id, slot);
 
         // Find matching handler in dispatch table
-        ESP_LOGI(TAG, "  Checking %d handlers...", REGISTER_HANDLER_COUNT);
         for (int i = 0; i < REGISTER_HANDLER_COUNT; i++) {
             const register_handler_t *entry = &REGISTER_HANDLERS[i];
 
             if (reg_id >= entry->reg_start && reg_id <= entry->reg_end && entry->slot == slot) {
-                ESP_LOGI(TAG, "  -> Matched handler: %s", entry->name);
+                // ESP_LOGI(TAG, "  -> Matched handler: %s", entry->name);
                 return entry->handler(data, len, payload, payload_len, addr_info, ctx);
             }
         }

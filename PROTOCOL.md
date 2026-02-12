@@ -39,16 +39,18 @@ uint8_t checksum = sum & 0xFF;
 
 | Address  | Device       | Description                       |
 | -------- | ------------ | --------------------------------- |
-| `0x0050` | Controller   | Main pool controller (Connect 10) |
+| `0x0050` | Touch Screen | Touch screen interface.           |
 | `0x0062` | Temp Sensor  | Temperature sensor module         |
-| `0x006F` | Touch Screen | Touch screen interface            |
+| `0x006F` | Controller   | Main pool controller (Connect 10) |
 | `0x0090` | Chlorinator  | Chemistry/chlorinator module      |
 | `0x00F0` | Internet GW  | Internet gateway module           |
 | `0xFFFF` | Broadcast    | Broadcast to all devices          |
 
 ## Message Types
 
-### 1. Mode Message (Spa/Pool)
+The messages that are fully decoded have a ✅ and the partially decoded ones have a ⚠️
+
+### 1. Mode Message (Spa/Pool) ✅
 
 Reports the current operating mode - pool or spa.
 
@@ -74,7 +76,7 @@ Reports the current operating mode - pool or spa.
 
 ---
 
-### 2. Temperature Settings
+### 2. Temperature Settings ✅
 
 Reports the temperature setpoints for both spa and pool.
 
@@ -101,7 +103,7 @@ Reports the temperature setpoints for both spa and pool.
 
 ---
 
-### 3. Temperature Reading
+### 3. Temperature Reading ⚠️
 
 Current water temperature from the sensor.
 
@@ -122,7 +124,7 @@ Current water temperature from the sensor.
 
 ---
 
-### 4. Heater Status
+### 4. Heater Status ⚠️
 
 Reports whether the heater is on or off.
 
@@ -151,7 +153,7 @@ Reports whether the heater is on or off.
 - Byte 12: Unknown (maybe bitmask or interlock?)
 ---
 
-### 5. Configuration
+### 5. Configuration ⚠️
 
 System configuration including temperature scale.
 
@@ -214,7 +216,7 @@ Reports which channels are currently active.
 
 ---
 
-### 7. Channel Status
+### 7. Channel Status ✅⚠️
 
 Detailed status for all configured channels.
 
@@ -242,7 +244,7 @@ Detailed status for all configured channels.
 
 **Channel Types:**
 
-- `0x00`: Unknown
+- `0x00`: Unused
 - `0x01`: Filter
 - `0x02`: Cleaning
 - `0x03`: Heater Pump
@@ -261,8 +263,8 @@ Detailed status for all configured channels.
 - `0x11`: Hot Seat
 - `0x12`: Heater Power
 - `0x13`: Custom Name
-- `0xFE`: Unused channel (disabled)
-- `0xFD`: End marker (no more channels beyond this)
+- `0xFE`: Unused channel (disabled) (Light channel)
+- `0xFD`: End marker (no more channels beyond this) (Controlled heater power)
 
 **Channel States:**
 
@@ -272,7 +274,7 @@ Detailed status for all configured channels.
 
 ---
 
-### 8. Register Messages (Universal Register System)
+### 8. Register Messages (Universal Register System) ⚠️
 
 The controller uses a unified register-based system for configuration and state. All register messages follow the same pattern with a register ID and slot (data type) to distinguish different aspects of the same register.
 
@@ -421,7 +423,7 @@ The dispatcher:
 
 ---
 
-### 9. Register Labels
+### 9. Register Labels ✅
 
 Generic register label assignments.
 
@@ -478,7 +480,7 @@ Assigns custom names to lighting zones or valve registers (0xD0-0xD3 range).
 
 ---
 
-### 10. Lighting Zone Configuration
+### 10. Lighting Zone Configuration ⚠️
 
 Indicates which lighting zones are installed.
 
@@ -499,7 +501,7 @@ Indicates which lighting zones are installed.
 
 ---
 
-### 11. Chlorinator pH Setpoint
+### 11. Chlorinator pH Setpoint ✅
 
 Target pH level for the chlorinator.
 
@@ -521,7 +523,7 @@ Target pH level for the chlorinator.
 
 ---
 
-### 12. Chlorinator pH Reading
+### 12. Chlorinator pH Reading ✅
 
 Current pH reading from the sensor.
 
@@ -543,7 +545,7 @@ Current pH reading from the sensor.
 
 ---
 
-### 13. Chlorinator ORP Setpoint
+### 13. Chlorinator ORP Setpoint ✅
 
 Target ORP (oxidation-reduction potential) level.
 
@@ -565,7 +567,7 @@ Target ORP (oxidation-reduction potential) level.
 
 ---
 
-### 14. Chlorinator ORP Reading
+### 14. Chlorinator ORP Reading ✅
 
 Current ORP reading from the sensor.
 
@@ -587,7 +589,7 @@ Current ORP reading from the sensor.
 
 ---
 
-### 15. Internet Gateway Serial Number
+### 15. Internet Gateway Serial Number ⚠️
 
 Serial number of the internet gateway module.
 
@@ -604,12 +606,12 @@ Serial number of the internet gateway module.
 
 **Data Fields:**
 
-- Byte 10 
+- Byte 10  (Maybe a type 04)
 - Bytes 11-14: Serial number (32-bit little endian)
 
 ---
 
-### 16. Internet Gateway IP Address
+### 16. Internet Gateway Network Config ⚠️
 
 IP address and signal strength of the gateway.
 
@@ -644,7 +646,7 @@ With IP address (wifi connected)
 
 ---
 
-### 17. Internet Gateway Communications Status
+### 17. Internet Gateway Communications Status ⚠️
 
 Status of the gateway's internet connection.
 
@@ -660,7 +662,7 @@ Status of the gateway's internet connection.
 ```
 
 **Data Fields:**
-- Byte 10: Unknown (observed as always 0x02)
+- Byte 10: Unknown (observed as always 0x02) 
 - Bytes 11-12: Communications status code (little endian)
 
 **Status Codes:**

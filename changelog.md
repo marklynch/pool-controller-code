@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 ### Changed
 - Improved the clarity of the LED states and restore state after RX/TX
+- Reworked the message decoder for channels now that we know channels are also for lights/heater.
 
 ### Fixed
 - Improved security of mqtt credentials password (don't send back)

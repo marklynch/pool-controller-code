@@ -314,9 +314,9 @@ void app_main(void)
     esp_log_level_set("POOL_BUS_BRIDGE", ESP_LOG_INFO);    // Main application
     esp_log_level_set("MSG_DECODER", ESP_LOG_INFO);        // Message decoder
     esp_log_level_set("TCP_BRIDGE", ESP_LOG_INFO);         // TCP bridge server
-    esp_log_level_set("MQTT_CLIENT", ESP_LOG_INFO);        // MQTT client
-    esp_log_level_set("MQTT_PUBLISH", ESP_LOG_INFO);       // MQTT publishing
-    esp_log_level_set("MQTT_DISCOVERY", ESP_LOG_INFO);     // MQTT discovery
+    esp_log_level_set("MQTT_CLIENT", ESP_LOG_WARN);        // MQTT client
+    esp_log_level_set("MQTT_PUBLISH", ESP_LOG_WARN);       // MQTT publishing
+    esp_log_level_set("MQTT_DISCOVERY", ESP_LOG_WARN);     // MQTT discovery
     esp_log_level_set("MQTT_COMMANDS", ESP_LOG_INFO);      // MQTT commands
     esp_log_level_set("WEB_HANDLERS", ESP_LOG_INFO);       // HTTP handlers
     esp_log_level_set("WIFI_PROV", ESP_LOG_INFO);          // WiFi provisioning
