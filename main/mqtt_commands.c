@@ -1,6 +1,7 @@
 #include "mqtt_commands.h"
 #include "config.h"
 #include "mqtt_poolclient.h"
+#include "pool_state.h"
 #include "esp_log.h"
 #include "driver/uart.h"
 #include <string.h>
@@ -31,18 +32,39 @@ static void handle_channel_command(int channel_id, const char *payload, int payl
 {
     ESP_LOGI(TAG, "Channel %d command: %.*s", channel_id, payload_len, payload);
 
-    // Determine ON/OFF
-    bool turn_on = (strncmp(payload, "ON", payload_len) == 0);
+    // Channel index is 0-based in the toggle command
+    uint8_t channel_idx = channel_id - 1;
 
-    // TODO: Build UART message to toggle channel
-    // This requires reverse-engineering the pool controller's command protocol
-    // For now, just log the command
-    ESP_LOGW(TAG, "Channel control not yet implemented - need UART command bytes");
-    ESP_LOGI(TAG, "Would %s channel %d", turn_on ? "turn ON" : "turn OFF", channel_id);
+    // Validate channel exists and is configured in pool state
+    char channel_name[32] = {0};
+    if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        if (channel_idx < 8 && s_pool_state.channels[channel_idx].configured) {
+            strncpy(channel_name, s_pool_state.channels[channel_idx].name, sizeof(channel_name) - 1);
+        }
+        xSemaphoreGive(s_pool_state_mutex);
+    }
 
-    // Example placeholder (replace with actual command bytes):
-    // uint8_t cmd[] = {0x02, 0x00, 0x6F, 0x00, 0x50, 0x80, 0x00, 0x0C, 0x0D, channel_byte, state_byte, checksum, 0x03};
-    // send_uart_command(cmd, sizeof(cmd));
+    if (channel_name[0] == '\0') {
+        ESP_LOGW(TAG, "Channel %d is not configured - ignoring command", channel_id);
+        return;
+    }
+
+    // Build toggle command
+    // Pattern: 02 00 F0 FF FF 80 00 10 0D 8D [CHANNEL_IDX] [CHECKSUM] 03
+    // Checksum = channel_idx (only data byte)
+    uint8_t cmd[] = {
+        0x02,       // START
+        0x00, 0xF0, // SOURCE: Internet Gateway
+        0xFF, 0xFF, // DEST: Broadcast
+        0x80, 0x00, // CONTROL
+        0x10, 0x0D, 0x8D, // Command pattern
+        channel_idx,       // Channel index (0-based)
+        channel_idx,       // Checksum (= channel index)
+        0x03               // END
+    };
+
+    ESP_LOGI(TAG, "Toggling channel %d (%s)", channel_id, channel_name);
+    send_uart_command(cmd, sizeof(cmd));
 }
 
 // ======================================================

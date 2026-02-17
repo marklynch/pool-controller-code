@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for turning lights on and off via MQTT
 - Added support for switching between pool/spa via MQTT
 - Added new messages for changing lights and pool spa mode to protocol doc.
+- Added support for toggling channel state
 
 ### Removed
 

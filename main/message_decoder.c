@@ -90,6 +90,7 @@ static const char *MSG_TYPE_GATEWAY_COMMS =           "02 00 F0 FF FF 80 00 37 0
 static const char *MSG_TYPE_REGISTER_READ_REQUEST =   "02 00 F0 FF FF 80 00 39 0E B7";
 
 // F0 Gateway Control Commands (Gateway -> Controller)
+static const char *MSG_TYPE_CHANNEL_TOGGLE_CMD =      "02 00 F0 FF FF 80 00 10 0D 8D";
 static const char *MSG_TYPE_LIGHT_CONTROL_CMD =       "02 00 F0 FF FF 80 00 3A 0F B9";
 static const char *MSG_TYPE_MODE_CONTROL_CMD =        "02 00 F0 00 50 80 00 2A 0D F9";
 
@@ -827,6 +828,43 @@ static bool handle_register_read_request(
     ESP_LOGI(TAG, "%s Register read request - Reg=0x%02X, Slot=0x%02X", addr_info, reg_id, slot_id);
 
     // No state update needed - this is just a request message
+    return true;
+}
+
+/**
+ * Handler: Channel toggle command (Gateway -> Controller)
+ * Pattern: "02 00 F0 FF FF 80 00 10 0D 8D"
+ */
+static bool handle_channel_toggle_cmd(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 1) return false;
+
+    uint8_t channel_idx = payload[0];
+    uint8_t channel_num = channel_idx + 1;  // Convert to 1-based
+
+    // Look up channel name from pool state
+    char channel_name[32] = {0};
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        if (channel_idx < 8 && ctx->pool_state->channels[channel_idx].configured) {
+            strncpy(channel_name, ctx->pool_state->channels[channel_idx].name, sizeof(channel_name) - 1);
+        }
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    if (channel_name[0] != '\0') {
+        ESP_LOGI(TAG, "%s Gateway channel toggle command - Channel %d (%s)",
+                 addr_info, channel_num, channel_name);
+    } else {
+        ESP_LOGI(TAG, "%s Gateway channel toggle command - Channel %d (index 0x%02X, name unknown)",
+                 addr_info, channel_num, channel_idx);
+    }
+
+    // No state update needed - this is a command message, not status
+    // The controller will respond with an updated Channel Status message
     return true;
 }
 
@@ -1647,6 +1685,10 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Gateway control commands
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHANNEL_TOGGLE_CMD)) {
+        return handle_channel_toggle_cmd(data, len, payload, payload_len, addr_info, ctx);
+    }
+
     if (len >= 13 && match_pattern(data, len, MSG_TYPE_LIGHT_CONTROL_CMD)) {
         return handle_light_control_cmd(data, len, payload, payload_len, addr_info, ctx);
     }

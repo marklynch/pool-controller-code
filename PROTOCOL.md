@@ -1,6 +1,6 @@
 # Connect 10 Pool Controller Protocol Documentation
 
-This document describes the serial protocol used by the Astral Connect 10 pool controller and has been clean-room developed by sniffing the messages on the RS-232 like bus that is used for communications.
+This document describes the proprietary serial protocol used by the Astral Connect 10 pool controller and has been clean-room developed by sniffing the messages on the RS-232 like bus that is used for communications.
 
 ## Message Structure
 
@@ -918,7 +918,59 @@ Command to set light zone state (On/Off/Auto).
 
 ---
 
-### 24. Mode Control Command (Pool/Spa) ✅
+### 24. Channel Toggle Command ✅
+
+Command to cycle a channel through its available states (Auto → On → Off, or On → Off depending on channel type).
+
+**Pattern:** `02 00 F0 FF FF 80 00 10 0D 8D`
+
+**Examples:**
+
+| Channel    | Index | Command                                   | States        |
+| ---------- | ----- | ----------------------------------------- | ------------- |
+| Filter     | 0x00  | `02 00 F0 FF FF 80 00 10 0D 8D 00 00 03`  | Auto, On, Off |
+| Cleaning   | 0x01  | `02 00 F0 FF FF 80 00 10 0D 8D 01 01 03`  | Auto, On, Off |
+| Pool Light | 0x02  | `02 00 F0 FF FF 80 00 10 0D 8D 02 02 03`  | Auto, On, Off |
+| Spa Light  | 0x03  | `02 00 F0 FF FF 80 00 10 0D 8D 03 03 03`  | Auto, On, Off |
+| Jets       | 0x04  | `02 00 F0 FF FF 80 00 10 0D 8D 04 04 03`  | On, Off       |
+| Blower     | 0x05  | `02 00 F0 FF FF 80 00 10 0D 8D 05 05 03`  | On, Off       |
+
+**Message Structure:**
+
+- Bytes 0-1: `02 00` - Start + Source High
+- Byte 2: `F0` - Source Low (Internet Gateway = 0x00F0)
+- Bytes 3-4: `FF FF` - Destination (Broadcast)
+- Bytes 5-6: `80 00` - Control bytes
+- Bytes 7-9: `10 0D 8D` - Command pattern for channel toggle
+- Byte 10: Channel index (0-based)
+- Byte 11: Checksum (equals channel index, as that is the only data byte)
+- Byte 12: `03` - End byte
+
+**Channel Index Mapping:**
+
+- `0x00`: Channel 1 (Filter)
+- `0x01`: Channel 2 (Cleaning)
+- `0x02`: Channel 3 (Pool Light)
+- `0x03`: Channel 4 (Spa Light)
+- `0x04`: Channel 5 (Jets)
+- `0x05`: Channel 6 (Blower)
+
+**Behaviour:**
+
+- Each send **cycles** the channel to its next state; it does not set a specific state
+- Channels with Auto support cycle: Auto → On → Off → Auto → ...
+- Channels without Auto cycle: On → Off → On → ...
+- The controller broadcasts the new channel state after processing the toggle
+
+**Notes:**
+
+- Sending this command always advances the state - there is no direct way to set a specific state
+- The controller will respond with an updated Channel Status message (type 7)
+- Channel index is 0-based and corresponds to the channel's position in the controller configuration
+
+---
+
+### 25. Mode Control Command (Pool/Spa) ✅
 
 Command to switch between Pool and Spa operating modes.
 
