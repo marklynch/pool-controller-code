@@ -91,6 +91,7 @@ static const char *MSG_TYPE_REGISTER_READ_REQUEST =   "02 00 F0 FF FF 80 00 39 0
 
 // F0 Gateway Control Commands (Gateway -> Controller)
 static const char *MSG_TYPE_CHANNEL_TOGGLE_CMD =      "02 00 F0 FF FF 80 00 10 0D 8D";
+static const char *MSG_TYPE_TEMP_SET_CMD =            "02 00 F0 FF FF 80 00 19 0F 98";
 static const char *MSG_TYPE_LIGHT_CONTROL_CMD =       "02 00 F0 FF FF 80 00 3A 0F B9";
 static const char *MSG_TYPE_MODE_CONTROL_CMD =        "02 00 F0 00 50 80 00 2A 0D F9";
 
@@ -865,6 +866,29 @@ static bool handle_channel_toggle_cmd(
 
     // No state update needed - this is a command message, not status
     // The controller will respond with an updated Channel Status message
+    return true;
+}
+
+/**
+ * Handler: Temperature setpoint command (Gateway -> Controller)
+ * Pattern: "02 00 F0 FF FF 80 00 19 0F 98"
+ */
+static bool handle_temp_set_cmd(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t target = payload[0];
+    uint8_t temp_c = payload[1];  // Repeated at payload[2], only need one
+
+    const char *target_name = (target == 0x01) ? "Pool" : (target == 0x02) ? "Spa" : "Unknown";
+    ESP_LOGI(TAG, "%s Gateway temperature set command - %s setpoint -> %d°C",
+             addr_info, target_name, temp_c);
+
+    // No state update needed - the controller will broadcast the new setpoint
     return true;
 }
 
@@ -1691,6 +1715,10 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     // Gateway control commands
     if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHANNEL_TOGGLE_CMD)) {
         return handle_channel_toggle_cmd(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    if (len >= 15 && match_pattern(data, len, MSG_TYPE_TEMP_SET_CMD)) {
+        return handle_temp_set_cmd(data, len, payload, payload_len, addr_info, ctx);
     }
 
     if (len >= 13 && match_pattern(data, len, MSG_TYPE_LIGHT_CONTROL_CMD)) {

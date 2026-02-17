@@ -970,7 +970,47 @@ Command to cycle a channel through its available states (Auto → On → Off, or
 
 ---
 
-### 25. Heater Control Command ✅
+### 25. Temperature Setpoint Command ✅
+
+Command to set the pool or spa temperature setpoint. The temperature byte is repeated twice within the payload.
+
+**Pattern:** `02 00 F0 FF FF 80 00 19 0F 98`
+
+**Example - Set Pool to 30°C:**
+
+```
+02 00 F0 FF FF 80 00 19 0F 98 01 1E 1E 3D 03
+                              ^^ Target (0x01 = Pool)
+                                 ^^ Temperature °C (0x1E = 30)
+                                    ^^ Temperature °C (repeated)
+                                       ^^ Checksum (0x01 + 0x1E + 0x1E = 0x3D)
+```
+
+**Example - Set Spa to 37°C:**
+
+```
+02 00 F0 FF FF 80 00 19 0F 98 02 25 25 4C 03
+                              ^^ Target (0x02 = Spa)
+                                 ^^ Temperature °C (0x25 = 37)
+                                    ^^ Temperature °C (repeated)
+                                       ^^ Checksum (0x02 + 0x25 + 0x25 = 0x4C)
+```
+
+**Data Fields:**
+
+- Byte 10: Target (`0x01` = Pool, `0x02` = Spa)
+- Byte 11: Temperature in °C
+- Byte 12: Temperature in °C (repeated)
+- Byte 13: Checksum (sum of bytes 10-12)
+
+**Notes:**
+
+- The temperature value is repeated at bytes 11 and 12 — this is part of the message format, not two separate sends
+- The controller will respond with an updated Temperature Settings message (type 2)
+
+---
+
+### 26. Heater Control Command ✅
 
 Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern as the Light Zone Control Command (Section 23), but with a different register ID and slot.
 

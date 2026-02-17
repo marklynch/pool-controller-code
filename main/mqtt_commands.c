@@ -198,7 +198,7 @@ static void handle_mode_command(const char *payload, int payload_len)
 
 static void handle_temperature_command(bool is_pool, const char *payload, int payload_len)
 {
-    // Parse temperature value
+    // Parse temperature value (Celsius)
     char temp_str[16];
     if (payload_len >= sizeof(temp_str)) {
         ESP_LOGE(TAG, "Temperature payload too long");
@@ -207,22 +207,39 @@ static void handle_temperature_command(bool is_pool, const char *payload, int pa
     memcpy(temp_str, payload, payload_len);
     temp_str[payload_len] = '\0';
 
-    int temp = atoi(temp_str);
-    ESP_LOGI(TAG, "%s setpoint command: %d", is_pool ? "Pool" : "Spa", temp);
+    int temp_c = atoi(temp_str);
+    ESP_LOGI(TAG, "%s setpoint command: %d°C", is_pool ? "Pool" : "Spa", temp_c);
 
-    // Validate temperature range
-    if (temp < 50 || temp > 104) {
-        ESP_LOGE(TAG, "Temperature out of range: %d", temp);
+    // Validate temperature range (Celsius)
+    if (temp_c < 15 || temp_c > 42) {
+        ESP_LOGE(TAG, "Temperature out of range: %d°C (valid: 15-42)", temp_c);
         return;
     }
 
-    // TODO: Build UART message to set temperature
-    ESP_LOGW(TAG, "Temperature control not yet implemented - need UART command bytes");
-    ESP_LOGI(TAG, "Would set %s setpoint to %d°F", is_pool ? "pool" : "spa", temp);
+    // Build UART command
+    // Pattern: 02 00 F0 FF FF 80 00 19 0F 98 [TARGET] [TEMP_C] [TEMP_C] [CHECKSUM] 03
+    // TARGET: 0x01=Pool, 0x02=Spa
+    // Temperature byte is repeated as part of the message format
+    // Checksum = TARGET + TEMP_C + TEMP_C
+    uint8_t target = is_pool ? 0x01 : 0x02;
+    uint8_t temp_byte = (uint8_t)temp_c;
+    uint8_t checksum = (target + temp_byte + temp_byte) & 0xFF;
 
-    // Example placeholder:
-    // uint8_t cmd[] = {..., (uint8_t)temp, ...};
-    // send_uart_command(cmd, sizeof(cmd));
+    uint8_t cmd[] = {
+        0x02,             // START
+        0x00, 0xF0,       // SOURCE: Internet Gateway
+        0xFF, 0xFF,       // DEST: Broadcast
+        0x80, 0x00,       // CONTROL
+        0x19, 0x0F, 0x98, // Command pattern
+        target,           // Target (0x01=Pool, 0x02=Spa)
+        temp_byte,        // Temperature °C
+        temp_byte,        // Temperature °C (repeated)
+        checksum,         // Checksum
+        0x03              // END
+    };
+
+    ESP_LOGI(TAG, "Setting %s setpoint to %d°C", is_pool ? "pool" : "spa", temp_c);
+    send_uart_command(cmd, sizeof(cmd));
 }
 
 // ======================================================
