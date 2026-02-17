@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for toggling channel state
 - Added support for Heater on/off command
 - Added support for setting pool and spa setpoints
+- Added favicon.ico because the 404 errors were annoying me
 
 ### Removed
 
