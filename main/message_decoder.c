@@ -884,15 +884,19 @@ static bool handle_light_control_cmd(
     uint8_t slot = payload[1];
     uint8_t state = payload[2];
 
-    // Calculate zone number from register ID (0xC0 = Zone 1, 0xC1 = Zone 2, etc.)
+    // Dispatch based on register ID and slot
     if (reg_id >= 0xC0 && reg_id <= 0xC7 && slot == 0x01) {
+        // Light zone state control (0xC0-0xC7, slot 0x01)
         uint8_t zone_num = reg_id - 0xC0 + 1;
         const char *state_name = (state == 0x00) ? "Off" : (state == 0x01) ? "Auto" : (state == 0x02) ? "On" : "Unknown";
-
         ESP_LOGI(TAG, "%s Gateway light control command - Zone %d -> %s (0x%02X)",
                  addr_info, zone_num, state_name, state);
+    } else if (reg_id == 0xE6 && slot == 0x00) {
+        // Heater on/off control (0xE6, slot 0x00)
+        ESP_LOGI(TAG, "%s Gateway heater control command - Heater -> %s",
+                 addr_info, state ? "On" : "Off");
     } else {
-        ESP_LOGW(TAG, "%s Gateway light control command - Unknown Reg=0x%02X, Slot=0x%02X, State=0x%02X",
+        ESP_LOGW(TAG, "%s Gateway register write command - Unknown Reg=0x%02X, Slot=0x%02X, State=0x%02X",
                  addr_info, reg_id, slot, state);
     }
 

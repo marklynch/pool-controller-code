@@ -970,7 +970,48 @@ Command to cycle a channel through its available states (Auto → On → Off, or
 
 ---
 
-### 25. Mode Control Command (Pool/Spa) ✅
+### 25. Heater Control Command ✅
+
+Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern as the Light Zone Control Command (Section 23), but with a different register ID and slot.
+
+**Pattern:** `02 00 F0 FF FF 80 00 3A 0F B9`
+
+**Example - Turn Heater On:**
+
+```
+02 00 F0 FF FF 80 00 3A 0F B9 E6 00 01 E7 03
+                              ^^ Register ID (0xE6 = Heater)
+                                 ^^ Slot (0x00)
+                                    ^^ State (0x01 = On)
+                                       ^^ Checksum (0xE6 + 0x00 + 0x01 = 0xE7)
+```
+
+**Example - Turn Heater Off:**
+
+```
+02 00 F0 FF FF 80 00 3A 0F B9 E6 00 00 E6 03
+                              ^^ Register ID (0xE6 = Heater)
+                                 ^^ Slot (0x00)
+                                    ^^ State (0x00 = Off)
+                                       ^^ Checksum (0xE6 + 0x00 + 0x00 = 0xE6)
+```
+
+**Data Fields:**
+
+- Byte 10: Register ID `0xE6` (Heater)
+- Byte 11: Slot `0x00`
+- Byte 12: State (`0x00` = Off, `0x01` = On)
+- Byte 13: Checksum (sum of bytes 10-12)
+
+**Notes:**
+
+- This command uses the same pattern as Light Zone Control (`3A 0F B9`) but register `0xE6` with slot `0x00` identifies it as the heater
+- Unlike light zones (slot `0x01`), the heater uses slot `0x00`
+- The controller will respond with an updated Heater Status message (type 4)
+
+---
+
+### 26. Mode Control Command (Pool/Spa) ✅
 
 Command to switch between Pool and Spa operating modes.
 

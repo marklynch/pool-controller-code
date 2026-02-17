@@ -115,6 +115,44 @@ static void handle_light_command(int zone, const char *payload, int payload_len)
 }
 
 // ======================================================
+// Heater Control
+// ======================================================
+
+static void handle_heater_command(const char *payload, int payload_len)
+{
+    ESP_LOGI(TAG, "Heater command: %.*s", payload_len, payload);
+
+    uint8_t state;
+    if (strncmp(payload, "ON", payload_len) == 0) {
+        state = 0x01;
+    } else if (strncmp(payload, "OFF", payload_len) == 0) {
+        state = 0x00;
+    } else {
+        ESP_LOGE(TAG, "Invalid heater command: %.*s (expected ON/OFF)", payload_len, payload);
+        return;
+    }
+
+    // Build UART command
+    // Pattern: 02 00 F0 FF FF 80 00 3A 0F B9 E6 00 [STATE] [CHECKSUM] 03
+    // Checksum = 0xE6 + 0x00 + state
+    uint8_t cmd[] = {
+        0x02,             // START
+        0x00, 0xF0,       // SOURCE: Internet Gateway
+        0xFF, 0xFF,       // DEST: Broadcast
+        0x80, 0x00,       // CONTROL
+        0x3A, 0x0F, 0xB9, // Command pattern
+        0xE6,             // Register ID (heater)
+        0x00,             // Slot
+        state,            // State (0x00=Off, 0x01=On)
+        (0xE6 + 0x00 + state) & 0xFF, // Checksum
+        0x03              // END
+    };
+
+    ESP_LOGI(TAG, "Sending heater %s command", state ? "ON" : "OFF");
+    send_uart_command(cmd, sizeof(cmd));
+}
+
+// ======================================================
 // Mode Control
 // ======================================================
 
@@ -230,6 +268,9 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
         } else {
             ESP_LOGE(TAG, "Invalid light zone: %d", zone);
         }
+    }
+    else if (strncmp(cmd_topic, "heater/set", 10) == 0) {
+        handle_heater_command(data, data_len);
     }
     else if (strncmp(cmd_topic, "mode/set", 8) == 0) {
         handle_mode_command(data, data_len);
