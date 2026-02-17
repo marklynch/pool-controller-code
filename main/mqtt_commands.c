@@ -53,16 +53,43 @@ static void handle_light_command(int zone, const char *payload, int payload_len)
 {
     ESP_LOGI(TAG, "Light zone %d command: %.*s", zone, payload_len, payload);
 
-    // Determine ON/OFF
-    bool turn_on = (strncmp(payload, "ON", payload_len) == 0);
+    // Determine state: OFF=0x00, AUTO=0x01, ON=0x02
+    uint8_t state;
+    if (strncmp(payload, "ON", payload_len) == 0) {
+        state = 0x02;
+    } else if (strncmp(payload, "OFF", payload_len) == 0) {
+        state = 0x00;
+    } else if (strncmp(payload, "AUTO", payload_len) == 0) {
+        state = 0x01;
+    } else {
+        ESP_LOGE(TAG, "Invalid light command: %.*s (expected ON/OFF/AUTO)", payload_len, payload);
+        return;
+    }
 
-    // TODO: Build UART message to toggle light
-    ESP_LOGW(TAG, "Light control not yet implemented - need UART command bytes");
-    ESP_LOGI(TAG, "Would %s light zone %d", turn_on ? "turn ON" : "turn OFF", zone);
+    // Calculate register ID (0xC0 for zone 1, 0xC1 for zone 2, etc.)
+    uint8_t reg_id = 0xC0 + (zone - 1);
 
-    // Example placeholder:
-    // uint8_t cmd[] = {...};
-    // send_uart_command(cmd, sizeof(cmd));
+    // Build UART command
+    // Pattern: 02 00 F0 FF FF 80 00 3A 0F B9 [REG_ID] 01 [STATE] [CHECKSUM] 03
+    uint8_t cmd[] = {
+        0x02,       // START
+        0x00, 0xF0, // SOURCE: Internet Gateway
+        0xFF, 0xFF, // DEST: Broadcast
+        0x80, 0x00, // CONTROL
+        0x3A, 0x0F, 0xB9, // Command pattern
+        reg_id,     // Register ID (light zone)
+        0x01,       // Slot ID (state)
+        state,      // State value (OFF/AUTO/ON)
+        0x00,       // Checksum (calculated below)
+        0x03        // END
+    };
+
+    // Calculate checksum (sum of bytes 10-12)
+    cmd[13] = (reg_id + 0x01 + state) & 0xFF;
+
+    ESP_LOGI(TAG, "Sending light zone %d %s command", zone,
+             state == 0x02 ? "ON" : (state == 0x00 ? "OFF" : "AUTO"));
+    send_uart_command(cmd, sizeof(cmd));
 }
 
 // ======================================================
@@ -73,16 +100,36 @@ static void handle_mode_command(const char *payload, int payload_len)
 {
     ESP_LOGI(TAG, "Mode command: %.*s", payload_len, payload);
 
-    // Determine Pool/Spa
-    bool set_pool = (strncmp(payload, "Pool", payload_len) == 0);
+    // Determine mode value
+    // Note: Command values are inverted from status values
+    // Status: Spa=0x00, Pool=0x01
+    // Command: Spa=0x01, Pool=0x00
+    uint8_t mode_value;
+    if (strncmp(payload, "Pool", payload_len) == 0) {
+        mode_value = 0x00;  // Switch to Pool mode
+    } else if (strncmp(payload, "Spa", payload_len) == 0) {
+        mode_value = 0x01;  // Switch to Spa mode
+    } else {
+        ESP_LOGE(TAG, "Invalid mode command: %.*s (expected Pool/Spa)", payload_len, payload);
+        return;
+    }
 
-    // TODO: Build UART message to switch mode
-    ESP_LOGW(TAG, "Mode control not yet implemented - need UART command bytes");
-    ESP_LOGI(TAG, "Would switch to %s mode", set_pool ? "Pool" : "Spa");
+    // Build UART command
+    // Pattern: 02 00 F0 00 50 80 00 2A 0D F9 [MODE] [CHECKSUM] 03
+    // Note: Destination is Touch Screen (0x0050), not broadcast
+    uint8_t cmd[] = {
+        0x02,       // START
+        0x00, 0xF0, // SOURCE: Internet Gateway
+        0x00, 0x50, // DEST: Touch Screen (not broadcast!)
+        0x80, 0x00, // CONTROL
+        0x2A, 0x0D, 0xF9, // Command pattern
+        mode_value, // Mode value (Pool=0x00, Spa=0x01)
+        mode_value, // Checksum (just the mode value)
+        0x03        // END
+    };
 
-    // Example placeholder:
-    // uint8_t cmd[] = {...};
-    // send_uart_command(cmd, sizeof(cmd));
+    ESP_LOGI(TAG, "Sending mode switch to %s", mode_value == 0x01 ? "Spa" : "Pool");
+    send_uart_command(cmd, sizeof(cmd));
 }
 
 // ======================================================

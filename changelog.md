@@ -14,8 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Added DNS for captive portal initial setup
+- Added support for turning lights on and off via MQTT
+- Added support for switching between pool/spa via MQTT
+- Added new messages for changing lights and pool spa mode to protocol doc.
 
 ### Removed
+
 ### Changed
 - Improved the clarity of the LED states and restore state after RX/TX
 - Reworked the message decoder for channels now that we know channels are also for lights/heater.

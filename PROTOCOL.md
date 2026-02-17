@@ -1,6 +1,6 @@
-# Astral Pool Controller Protocol Documentation
+# Connect 10 Pool Controller Protocol Documentation
 
-This document describes the proprietary serial protocol used by the Astral Connect 10 pool controller.
+This document describes the serial protocol used by the Astral Connect 10 pool controller and has been clean-room developed by sniffing the messages on the RS-232 like bus that is used for communications.
 
 ## Message Structure
 
@@ -848,6 +848,122 @@ appears to always have the data value `00 00`
 
 - This message is broadcast by the controller as part of the regular system status sequence
 
+---
+
+## Control Commands (Gateway to Controller)
+
+The following commands can be sent from the Internet Gateway (or emulated gateway) to control pool equipment.
+
+### 23. Light Zone Control Command ✅
+
+Command to set light zone state (On/Off/Auto).
+
+**Pattern:** `02 00 F0 FF FF 80 00 3A 0F B9`
+
+**Example - Turn ON spa light (Zone 2):**
+
+```
+02 00 F0 FF FF 80 00 3A 0F B9 C1 01 02 C4 03
+                              ^^ Register ID (0xC1 = Zone 2)
+                                 ^^ Slot ID (0x01 = State)
+                                    ^^ State value (0x02 = On)
+                                       ^^ Checksum (0xC1 + 0x01 + 0x02 = 0xC4)
+```
+
+**Example - Turn OFF spa light (Zone 2):**
+
+```
+02 00 F0 FF FF 80 00 3A 0F B9 C1 01 00 C2 03
+                              ^^ Register ID (0xC1 = Zone 2)
+                                 ^^ Slot ID (0x01 = State)
+                                    ^^ State value (0x00 = Off)
+                                       ^^ Checksum (0xC1 + 0x01 + 0x00 = 0xC2)
+```
+
+**Message Structure:**
+
+- Bytes 0-1: `02 00` - Start
+- Bytes 2: `00 F0` - Source (Internet Gateway = 0x00F0)
+- Bytes 3-4: `FF FF` - Destination (Broadcast)
+- Bytes 5-6: `80 00` - Control bytes
+- Bytes 7-9: `3A 0F B9` - Command pattern for register control
+- Byte 10: Register ID (0xC0-0xC7 for zones 1-8)
+- Byte 11: Slot ID (0x01 = State)
+- Byte 12: State value (0x00 = Off, 0x01 = Auto, 0x02 = On)
+- Byte 13: Checksum (sum of bytes 10-12)
+- Byte 14: `03` - End byte
+
+**Register IDs:**
+
+- `0xC0`: Light Zone 1
+- `0xC1`: Light Zone 2 (Spa)
+- `0xC2`: Light Zone 3
+- `0xC3`: Light Zone 4
+- `0xC4`: Light Zone 5
+- `0xC5`: Light Zone 6
+- `0xC6`: Light Zone 7
+- `0xC7`: Light Zone 8
+
+**State Values:**
+
+- `0x00`: Off
+- `0x01`: Auto
+- `0x02`: On
+
+**Notes:**
+
+- This command requires the sender to impersonate the Internet Gateway (source address 0x00F0)
+- The controller will process the command and update the light zone state accordingly
+- The command pattern `3A 0F B9` distinguishes gateway control commands from status broadcasts (`38 0F 17`)
+
+---
+
+### 24. Mode Control Command (Pool/Spa) ✅
+
+Command to switch between Pool and Spa operating modes.
+
+**Pattern:** `02 00 F0 00 50 80 00 2A 0D F9`
+
+**Example - Switch to Spa mode:**
+
+```
+02 00 F0 00 50 80 00 2A 0D F9 01 01 03
+                              ^^ Mode value (0x01 = Switch to Spa)
+                                 ^^ Checksum (0x01)
+```
+
+**Example - Switch to Pool mode:**
+
+```
+02 00 F0 00 50 80 00 2A 0D F9 00 00 03
+                              ^^ Mode value (0x00 = Switch to Pool)
+                                 ^^ Checksum (0x00)
+```
+
+**Message Structure:**
+
+- Bytes 0: `02 00` - Start
+- Bytes 1-2: `00 F0` - Source (Internet Gateway = 0x00F0)
+- Bytes 3-4: `00 50` - Destination (Touch Screen = 0x0050) - **Not broadcast!**
+- Bytes 5-6: `80 00` - Control bytes
+- Bytes 7-9: `2A 0D F9` - Command pattern for mode control
+- Byte 10: Mode value (0x00 = Pool, 0x01 = Spa)
+- Byte 11: Checksum (byte 10)
+- Byte 12: `03` - End byte
+
+**Mode Values:**
+
+- `0x00`: Switch to Pool mode
+- `0x01`: Switch to Spa mode
+
+**Important Notes:**
+
+- **Destination is Touch Screen (0x0050), not broadcast** - Unlike light commands, this is addressed specifically to the touch screen controller
+- **Command values are inverted from status values** - In status messages (Message Type 1), Spa=0x00 and Pool=0x01, but in control commands, Spa=0x01 and Pool=0x00
+- This command requires the sender to impersonate the Internet Gateway (source address 0x00F0)
+- The controller will switch modes and broadcast the new mode status to all devices
+
+---
 
 ## Implementation Notes
 

@@ -89,6 +89,10 @@ static const char *MSG_TYPE_GATEWAY_IP =              "02 00 F0 FF FF 80 00 37 1
 static const char *MSG_TYPE_GATEWAY_COMMS =           "02 00 F0 FF FF 80 00 37 0F B6";
 static const char *MSG_TYPE_REGISTER_READ_REQUEST =   "02 00 F0 FF FF 80 00 39 0E B7";
 
+// F0 Gateway Control Commands (Gateway -> Controller)
+static const char *MSG_TYPE_LIGHT_CONTROL_CMD =       "02 00 F0 FF FF 80 00 3A 0F B9";
+static const char *MSG_TYPE_MODE_CONTROL_CMD =        "02 00 F0 00 50 80 00 2A 0D F9";
+
 // ======================================================
 // Lookup tables and constants
 // ======================================================
@@ -827,6 +831,62 @@ static bool handle_register_read_request(
 }
 
 /**
+ * Handler: Light zone control command (Gateway -> Controller)
+ * Pattern: "02 00 F0 FF FF 80 00 3A 0F B9"
+ */
+static bool handle_light_control_cmd(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    uint8_t slot = payload[1];
+    uint8_t state = payload[2];
+
+    // Calculate zone number from register ID (0xC0 = Zone 1, 0xC1 = Zone 2, etc.)
+    if (reg_id >= 0xC0 && reg_id <= 0xC7 && slot == 0x01) {
+        uint8_t zone_num = reg_id - 0xC0 + 1;
+        const char *state_name = (state == 0x00) ? "Off" : (state == 0x01) ? "Auto" : (state == 0x02) ? "On" : "Unknown";
+
+        ESP_LOGI(TAG, "%s Gateway light control command - Zone %d -> %s (0x%02X)",
+                 addr_info, zone_num, state_name, state);
+    } else {
+        ESP_LOGW(TAG, "%s Gateway light control command - Unknown Reg=0x%02X, Slot=0x%02X, State=0x%02X",
+                 addr_info, reg_id, slot, state);
+    }
+
+    // No state update needed - this is a command message, not status
+    // The controller will respond with a register status update
+    return true;
+}
+
+/**
+ * Handler: Mode control command (Gateway -> Controller)
+ * Pattern: "02 00 F0 00 50 80 00 2A 0D F9"
+ */
+static bool handle_mode_control_cmd(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 1) return false;
+
+    uint8_t mode_value = payload[0];
+    const char *mode_name = (mode_value == 0x00) ? "Pool" : (mode_value == 0x01) ? "Spa" : "Unknown";
+
+    ESP_LOGI(TAG, "%s Gateway mode control command - Switch to %s mode (0x%02X)",
+             addr_info, mode_name, mode_value);
+
+    // No state update needed - this is a command message, not status
+    // The controller will respond with a mode status update
+    return true;
+}
+
+/**
  * Handler: Chlorinator pH setpoint message
  * Pattern: "02 00 90 FF FF 80 00" + sub-type "1D 0F 3C 01"
  */
@@ -1402,6 +1462,15 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         return false;
     }
 
+    // Log full message before decoding
+    char full_msg[3 * len + 1];
+    int msg_pos = 0;
+    for (int i = 0; i < len && msg_pos < (int)sizeof(full_msg) - 4; i++) {
+        msg_pos += snprintf(&full_msg[msg_pos], sizeof(full_msg) - msg_pos, "%02X ", data[i]);
+    }
+    full_msg[msg_pos] = '\0';
+    ESP_LOGI(TAG, "RX MSG: %s", full_msg);
+
     // Verify checksum if message is long enough
     if (len >= 13) {
         if (!verify_message_checksum(data, len)) {
@@ -1575,6 +1644,15 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     if (len >= 12 && match_pattern(data, len, MSG_TYPE_REGISTER_READ_REQUEST)) {
         return handle_register_read_request(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    // Gateway control commands
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_LIGHT_CONTROL_CMD)) {
+        return handle_light_control_cmd(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    if (len >= 13 && match_pattern(data, len, MSG_TYPE_MODE_CONTROL_CMD)) {
+        return handle_mode_control_cmd(data, len, payload, payload_len, addr_info, ctx);
     }
 
     // Controller info messages
