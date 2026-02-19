@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed race condition on LED state
 - Fixed -  s_mqtt_connected not marked as volatile
 - Security - Improve malformed MQTT message for setting temperature
+- Fixed abort on tx timeout - doesn't need to crash
 
 ## [0.0.6] - 2026-02-09
 ### Added

@@ -147,7 +147,11 @@ static int bus_send_message(const char *hex_string)
     }
 
     // Wait for TX to complete
-    ESP_ERROR_CHECK(uart_wait_tx_done(BUS_UART_NUM, pdMS_TO_TICKS(UART_TX_TIMEOUT_MS)));
+    esp_err_t tx_err = uart_wait_tx_done(BUS_UART_NUM, pdMS_TO_TICKS(UART_TX_TIMEOUT_MS));
+    if (tx_err != ESP_OK) {
+        ESP_LOGE(TAG, "uart_wait_tx_done failed: %s", esp_err_to_name(tx_err));
+        return -1;
+    }
 
     ESP_LOGI(TAG, "TX complete: %d bytes written and transmitted", written);
 
