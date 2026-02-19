@@ -288,7 +288,7 @@ static void tcp_bridge_task(void *pvParameters)
     while (1) {
         // Check for new client connection (non-blocking)
         if (client_sock < 0) {
-            struct sockaddr_in client_addr;
+            struct sockaddr_in client_addr = {0};
             socklen_t addr_len = sizeof(client_addr);
             client_sock = accept(listen_sock,
                                  (struct sockaddr *)&client_addr,
