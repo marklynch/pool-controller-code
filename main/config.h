@@ -19,6 +19,15 @@
 // TCP Bridge
 #define TCP_BRIDGE_PORT                7373
 
+// MQTT
+#define MQTT_DEFAULT_PORT              1883    // Default MQTT broker port
+
+// DNS Server (captive portal)
+#define DNS_PORT                       53      // DNS server port
+#define DNS_MAX_PACKET_SIZE            512     // Maximum DNS packet size
+#define DNS_TASK_STACK_SIZE            4096    // DNS server task stack size
+#define DNS_TASK_PRIORITY              5       // DNS server task priority
+
 // WiFi Provisioning
 #define WIFI_PROV_SOFTAP_IP            "192.168.4.1"
 #define WIFI_PROV_SOFTAP_PASSWORD      "poolsetup"     // Default password for provisioning AP
@@ -34,6 +43,13 @@
 #define WIFI_SCAN_TIME_MIN_MS          100     // Minimum scan time per channel
 #define WIFI_SCAN_TIME_MAX_MS          300     // Maximum scan time per channel
 #define WIFI_SCAN_MAX_RESULTS          20      // Maximum number of scan results to return
+
+// ======================================================
+// Pool Hardware Limits
+// ======================================================
+
+#define MAX_CHANNELS                   8       // Maximum number of controllable channels
+#define MAX_LIGHT_ZONES                4       // Maximum number of light zones
 
 // ======================================================
 // UART/Bus Configuration
@@ -92,6 +108,7 @@
 // General Timeouts
 #define MUTEX_TIMEOUT_MS               100     // Timeout for acquiring mutexes
 #define TASK_DELAY_MS                  1000    // Standard task delay
+#define LOOPBACK_DETECTION_MS          500     // Window to detect echo of own TX messages on the bus
 
 // OTA Update
 #define OTA_REBOOT_DELAY_MS            2000    // Delay before reboot after OTA

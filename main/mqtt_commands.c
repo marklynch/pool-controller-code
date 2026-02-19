@@ -38,7 +38,7 @@ static void handle_channel_command(int channel_id, const char *payload, int payl
     // Validate channel exists and is configured in pool state
     char channel_name[32] = {0};
     if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-        if (channel_idx < 8 && s_pool_state.channels[channel_idx].configured) {
+        if (channel_idx < MAX_CHANNELS && s_pool_state.channels[channel_idx].configured) {
             strncpy(channel_name, s_pool_state.channels[channel_idx].name, sizeof(channel_name) - 1);
         }
         xSemaphoreGive(s_pool_state_mutex);
@@ -271,7 +271,7 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
     if (strncmp(cmd_topic, "channel/", 8) == 0 && cmd_topic_len > 12) {
         // Extract channel number (format: "channel/N/set")
         int channel = cmd_topic[8] - '0';
-        if (channel >= 1 && channel <= 8) {
+        if (channel >= 1 && channel <= MAX_CHANNELS) {
             handle_channel_command(channel, data, data_len);
         } else {
             ESP_LOGE(TAG, "Invalid channel number: %d", channel);
@@ -280,7 +280,7 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
     else if (strncmp(cmd_topic, "light/", 6) == 0 && cmd_topic_len > 10) {
         // Extract zone number (format: "light/N/set")
         int zone = cmd_topic[6] - '0';
-        if (zone >= 1 && zone <= 4) {
+        if (zone >= 1 && zone <= MAX_LIGHT_ZONES) {
             handle_light_command(zone, data, data_len);
         } else {
             ESP_LOGE(TAG, "Invalid light zone: %d", zone);

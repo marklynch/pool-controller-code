@@ -117,7 +117,7 @@ void mqtt_publish_mode(const pool_state_t *current_state)
 
 void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
 {
-    if (channel_id < 1 || channel_id > 8) {
+    if (channel_id < 1 || channel_id > MAX_CHANNELS) {
         return;
     }
 
@@ -180,7 +180,7 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
 
 void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
 {
-    if (zone < 1 || zone > 4) {
+    if (zone < 1 || zone > MAX_LIGHT_ZONES) {
         return;
     }
 

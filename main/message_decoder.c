@@ -853,7 +853,7 @@ static bool handle_channel_toggle_cmd(
     // Look up channel name from pool state
     char channel_name[32] = {0};
     if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-        if (channel_idx < 8 && ctx->pool_state->channels[channel_idx].configured) {
+        if (channel_idx < MAX_CHANNELS && ctx->pool_state->channels[channel_idx].configured) {
             strncpy(channel_name, ctx->pool_state->channels[channel_idx].name, sizeof(channel_name) - 1);
         }
         xSemaphoreGive(ctx->state_mutex);
@@ -1187,7 +1187,7 @@ static bool handle_channel_name(
 
         // Update pool state
         if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-            if (ch_num <= 8) {
+            if (ch_num <= MAX_CHANNELS) {
                 strncpy(ctx->pool_state->channels[ch_num - 1].name, name, sizeof(ctx->pool_state->channels[ch_num - 1].name) - 1);
                 ctx->pool_state->channels[ch_num - 1].id = ch_num;
                 ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;

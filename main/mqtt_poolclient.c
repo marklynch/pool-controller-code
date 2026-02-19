@@ -1,4 +1,5 @@
 #include "mqtt_poolclient.h"
+#include "config.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
@@ -84,7 +85,7 @@ bool mqtt_load_config(mqtt_config_t *config)
     // Load port
     err = nvs_get_u16(nvs_handle, NVS_KEY_PORT, &config->port);
     if (err != ESP_OK) {
-        config->port = 1883;  // Default port
+        config->port = MQTT_DEFAULT_PORT;
     }
 
     // Load username (optional)
@@ -169,14 +170,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         mqtt_get_device_id(device_id, sizeof(device_id));
 
         char topic[128];
-        // Subscribe to channel commands (channels 1-8)
-        for (int i = 1; i <= 8; i++) {
+        // Subscribe to channel commands (channels 1-MAX_CHANNELS)
+        for (int i = 1; i <= MAX_CHANNELS; i++) {
             snprintf(topic, sizeof(topic), "pool/%s/channel/%d/set", device_id, i);
             esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
         }
 
-        // Subscribe to light commands (zones 1-4)
-        for (int i = 1; i <= 4; i++) {
+        // Subscribe to light commands (zones 1-MAX_LIGHT_ZONES)
+        for (int i = 1; i <= MAX_LIGHT_ZONES; i++) {
             snprintf(topic, sizeof(topic), "pool/%s/light/%d/set", device_id, i);
             esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
         }

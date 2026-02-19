@@ -1,6 +1,7 @@
 #ifndef POOL_STATE_H
 #define POOL_STATE_H
 
+#include "config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <stdint.h>
@@ -61,12 +62,12 @@ typedef struct {
     uint8_t mode;  // 0=Spa, 1=Pool
     bool mode_valid;
 
-    // Channels (up to 8)
-    channel_state_t channels[8];
+    // Channels (up to MAX_CHANNELS)
+    channel_state_t channels[MAX_CHANNELS];
     uint8_t num_channels;
 
-    // Lighting (up to 4 zones)
-    lighting_state_t lighting[4];
+    // Lighting (up to MAX_LIGHT_ZONES)
+    lighting_state_t lighting[MAX_LIGHT_ZONES];
 
     // Register labels (general storage for register names like favourites, etc.)
     register_label_t register_labels[32];  // Support up to 32 different register labels

@@ -403,7 +403,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         // Channels section
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"channels\":[");
         bool first_channel = true;
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < MAX_CHANNELS; i++) {
             if (s_pool_state.channels[i].configured) {
                 if (!first_channel) {
                     len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
@@ -427,7 +427,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         // Lighting section
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"lighting\":[");
         bool first_light = true;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < MAX_LIGHT_ZONES; i++) {
             if (s_pool_state.lighting[i].configured) {
                 if (!first_light) {
                     len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
@@ -639,8 +639,8 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         strncpy(checkbox_checked, " checked", sizeof(checkbox_checked) - 1);
     }
 
-    // Default port to 1883 if not set
-    int display_port = config.port > 0 ? config.port : 1883;
+    // Default port to MQTT_DEFAULT_PORT if not set
+    int display_port = config.port > 0 ? config.port : MQTT_DEFAULT_PORT;
 
     char html_mid[1024];
     snprintf(html_mid, sizeof(html_mid),
@@ -711,9 +711,9 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
     mqtt_config_t config = {0};
     mqtt_load_config(&config);
 
-    // If no existing port, default to 1883
+    // If no existing port, default to MQTT_DEFAULT_PORT
     if (config.port == 0) {
-        config.port = 1883;
+        config.port = MQTT_DEFAULT_PORT;
     }
 
     char *enabled_start = strstr(content, "\"enabled\":");

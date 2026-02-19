@@ -71,7 +71,7 @@ static int tcp_bridge_vprintf(const char *fmt, va_list args)
  */
 static void tcp_bridge_set_log_client(int sock)
 {
-    if (s_log_mutex && xSemaphoreTake(s_log_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (s_log_mutex && xSemaphoreTake(s_log_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
         s_log_client_sock = sock;
         xSemaphoreGive(s_log_mutex);
     }
@@ -174,7 +174,7 @@ static bool extract_and_process_message(int client_sock)
             bool is_loopback = false;
             if (s_last_tx_len > 0 && msg_len == s_last_tx_len) {
                 TickType_t time_since_tx = xTaskGetTickCount() - s_last_tx_time;
-                if (time_since_tx < pdMS_TO_TICKS(500)) {
+                if (time_since_tx < pdMS_TO_TICKS(LOOPBACK_DETECTION_MS)) {
                     if (memcmp(s_msg_buffer, s_last_tx_msg, msg_len) == 0) {
                         is_loopback = true;
                         ESP_LOGI(TAG, "RX LOOPBACK (our TX echoed): %s", hexLine);
@@ -251,7 +251,7 @@ static void tcp_bridge_task(void *pvParameters)
         listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
         if (listen_sock < 0) {
             ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
             continue;
         }
 
@@ -263,7 +263,7 @@ static void tcp_bridge_task(void *pvParameters)
             ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
             close(listen_sock);
             listen_sock = -1;
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
             continue;
         }
 
@@ -271,7 +271,7 @@ static void tcp_bridge_task(void *pvParameters)
             ESP_LOGE(TAG, "Error during listen: errno %d", errno);
             close(listen_sock);
             listen_sock = -1;
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
             continue;
         }
 

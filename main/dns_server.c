@@ -10,11 +10,6 @@
 
 static const char *TAG = "DNS_SERVER";
 
-#define DNS_PORT 53
-#define DNS_MAX_PACKET_SIZE 512
-#define DNS_TASK_STACK_SIZE 4096
-#define DNS_TASK_PRIORITY 5
-
 // DNS header structure
 typedef struct {
     uint16_t id;
