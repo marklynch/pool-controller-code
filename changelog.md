@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added default port for MQTT
 - Moved the logging earlier in the startup process to be more effective.
 - Reduced used of heap for logging messages to avoid potential heap overflow.
+- Security - Channel count not bounds-checked before array write
 
 
 ## [0.0.6] - 2026-02-09

@@ -1456,6 +1456,11 @@ static bool handle_channel_status(
     if (payload_len < 1) return false;
 
     uint8_t num_channels = payload[0];
+    if (num_channels > MAX_CHANNELS) {
+        ESP_LOGW(TAG, "%s Channel count %d exceeds MAX_CHANNELS (%d), clamping",
+                 addr_info, num_channels, MAX_CHANNELS);
+        num_channels = MAX_CHANNELS;
+    }
     ESP_LOGI(TAG, "%s Channel status (%d channels):", addr_info, num_channels);
 
     int payload_idx = 1;  // Channel data starts at payload[1]
