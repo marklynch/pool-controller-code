@@ -208,12 +208,17 @@ static void handle_temperature_command(bool is_pool, const char *payload, int pa
     memcpy(temp_str, payload, payload_len);
     temp_str[payload_len] = '\0';
 
-    int temp_c = atoi(temp_str);
-    ESP_LOGI(TAG, "%s setpoint command: %d°C", is_pool ? "Pool" : "Spa", temp_c);
+    char *endptr;
+    long temp_c = strtol(temp_str, &endptr, 10);
+    if (endptr == temp_str || *endptr != '\0') {
+        ESP_LOGE(TAG, "Invalid temperature value: \"%s\"", temp_str);
+        return;
+    }
+    ESP_LOGI(TAG, "%s setpoint command: %ld°C", is_pool ? "Pool" : "Spa", temp_c);
 
     // Validate temperature range (Celsius)
     if (temp_c < 15 || temp_c > 42) {
-        ESP_LOGE(TAG, "Temperature out of range: %d°C (valid: 15-42)", temp_c);
+        ESP_LOGE(TAG, "Temperature out of range: %ld°C (valid: 15-42)", temp_c);
         return;
     }
 

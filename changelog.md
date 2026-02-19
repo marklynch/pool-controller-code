@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security -  Fix missing DNS response building lacks bounds check
 - Fixed race condition on LED state
 - Fixed -  s_mqtt_connected not marked as volatile
+- Security - Improve malformed MQTT message for setting temperature
 
 ## [0.0.6] - 2026-02-09
 ### Added
