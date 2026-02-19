@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security - fix potential non-null-terminated string extraction from payload
 - Security - fix potential parsing issue in MQTT channel publishing logic
 - Security -  Fix missing DNS response building lacks bounds check
-
+- Fixed race condition on LED state
 
 ## [0.0.6] - 2026-02-09
 ### Added

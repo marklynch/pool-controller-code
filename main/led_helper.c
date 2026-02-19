@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 static const char *TAG = "LED_HELPER";
 static led_strip_handle_t s_led_strip = NULL;
@@ -17,24 +18,33 @@ typedef struct {
 
 static led_rgb_t s_current_state = {0, 0, 0};
 static led_persistent_state_t s_persistent_state = LED_STATE_STARTUP;
+static SemaphoreHandle_t s_led_mutex = NULL;
 
 // Helper function to set LED and save state
 static void set_led_state(uint8_t green, uint8_t red, uint8_t blue, led_persistent_state_t state)
 {
     if (s_led_strip == NULL) return;
 
-    s_current_state.green = green;
-    s_current_state.red = red;
-    s_current_state.blue = blue;
-    s_persistent_state = state;
-
-    led_strip_set_pixel(s_led_strip, 0, green, red, blue);
-    led_strip_refresh(s_led_strip);
+    if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        s_current_state.green = green;
+        s_current_state.red = red;
+        s_current_state.blue = blue;
+        s_persistent_state = state;
+        led_strip_set_pixel(s_led_strip, 0, green, red, blue);
+        led_strip_refresh(s_led_strip);
+        xSemaphoreGive(s_led_mutex);
+    }
 }
 
 // Initialize the LED strip
 esp_err_t led_init(void)
 {
+    s_led_mutex = xSemaphoreCreateMutex();
+    if (s_led_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create LED mutex");
+        return ESP_ERR_NO_MEM;
+    }
+
     led_strip_config_t strip_config = {
         .strip_gpio_num = LED_GPIO,
         .max_leds = 1,
@@ -73,17 +83,21 @@ void led_flash_rx(void)
 {
     if (s_led_strip == NULL) return;
 
-    // Save current state
-    led_rgb_t saved = s_current_state;
+    if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        led_strip_set_pixel(s_led_strip, 0, 32, 0, 32);  // Cyan (G=32, R=0, B=32)
+        led_strip_refresh(s_led_strip);
+        xSemaphoreGive(s_led_mutex);
+    }
 
-    // Flash cyan (cool color = incoming data)
-    led_strip_set_pixel(s_led_strip, 0, 32, 0, 32);  // Cyan (G=32, R=0, B=32)
-    led_strip_refresh(s_led_strip);
     vTaskDelay(pdMS_TO_TICKS(LED_FLASH_DURATION_MS));
 
-    // Restore previous state
-    led_strip_set_pixel(s_led_strip, 0, saved.green, saved.red, saved.blue);
-    led_strip_refresh(s_led_strip);
+    // Restore current state — read after the delay so we pick up any set_led_state()
+    // call that happened during the flash, rather than overwriting it with a stale snapshot
+    if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        led_strip_set_pixel(s_led_strip, 0, s_current_state.green, s_current_state.red, s_current_state.blue);
+        led_strip_refresh(s_led_strip);
+        xSemaphoreGive(s_led_mutex);
+    }
 }
 
 // Flash LED when transmitting to UART (magenta flash)
@@ -91,17 +105,21 @@ void led_flash_tx(void)
 {
     if (s_led_strip == NULL) return;
 
-    // Save current state
-    led_rgb_t saved = s_current_state;
+    if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        led_strip_set_pixel(s_led_strip, 0, 0, 32, 32);  // Magenta (G=0, R=32, B=32)
+        led_strip_refresh(s_led_strip);
+        xSemaphoreGive(s_led_mutex);
+    }
 
-    // Flash magenta (warm color = outgoing data)
-    led_strip_set_pixel(s_led_strip, 0, 0, 32, 32);  // Magenta (G=0, R=32, B=32)
-    led_strip_refresh(s_led_strip);
     vTaskDelay(pdMS_TO_TICKS(LED_FLASH_DURATION_MS));
 
-    // Restore previous state
-    led_strip_set_pixel(s_led_strip, 0, saved.green, saved.red, saved.blue);
-    led_strip_refresh(s_led_strip);
+    // Restore current state — read after the delay so we pick up any set_led_state()
+    // call that happened during the flash, rather than overwriting it with a stale snapshot
+    if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        led_strip_set_pixel(s_led_strip, 0, s_current_state.green, s_current_state.red, s_current_state.blue);
+        led_strip_refresh(s_led_strip);
+        xSemaphoreGive(s_led_mutex);
+    }
 }
 
 // Set LED to unconfigured state (purple)
