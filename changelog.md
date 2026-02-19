@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved the logging earlier in the startup process to be more effective.
 - Reduced used of heap for logging messages to avoid potential heap overflow.
 - Security - Channel count not bounds-checked before array write
+- Security - fix potential non-null-terminated string extraction from payload
 
 
 ## [0.0.6] - 2026-02-09

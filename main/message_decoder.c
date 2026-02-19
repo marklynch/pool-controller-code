@@ -1177,10 +1177,15 @@ static bool handle_channel_name(
 
     uint8_t reg_id = payload[0];
     uint8_t ch_num = reg_id - 0x7C + 1;
-    const char *name = (const char *)&payload[2];
+
+    // Safely copy string from payload — protocol does not guarantee null termination
+    char name[32] = {0};
+    int str_len = payload_len - 2;
+    if (str_len > (int)sizeof(name) - 1) str_len = (int)sizeof(name) - 1;
+    memcpy(name, &payload[2], str_len);
 
     // Check if it's an empty/unused channel (first byte is 0x00)
-    if (payload[2] == 0x00) {
+    if (name[0] == '\0') {
         ESP_LOGI(TAG, "%s Channel %d name - (empty)", addr_info, ch_num);
     } else {
         ESP_LOGI(TAG, "%s Channel %d name - \"%s\"", addr_info, ch_num, name);
@@ -1341,8 +1346,13 @@ static bool handle_valve_label(
     if (payload_len < 3) return false;
 
     uint8_t reg_id = payload[0];
-    const char *label = (const char *)&payload[2];
     uint8_t zone_num = reg_id - 0xD0 + 1;
+
+    // Safely copy string from payload — protocol does not guarantee null termination
+    char label[32] = {0};
+    int str_len = payload_len - 2;
+    if (str_len > (int)sizeof(label) - 1) str_len = (int)sizeof(label) - 1;
+    memcpy(label, &payload[2], str_len);
 
     ESP_LOGI(TAG, "%s Valve zone %d label (0x%02X) - \"%s\"", addr_info, zone_num, reg_id, label);
 
@@ -1385,7 +1395,12 @@ static bool handle_register_label_generic(
     if (payload_len < 3) return false;
 
     uint8_t reg_id = payload[0];
-    const char *label = (const char *)&payload[2];
+
+    // Safely copy string from payload — protocol does not guarantee null termination
+    char label[32] = {0};
+    int str_len = payload_len - 2;
+    if (str_len > (int)sizeof(label) - 1) str_len = (int)sizeof(label) - 1;
+    memcpy(label, &payload[2], str_len);
 
     ESP_LOGI(TAG, "%s Register 0x%02X label - \"%s\"", addr_info, reg_id, label);
 
