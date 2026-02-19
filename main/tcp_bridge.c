@@ -51,16 +51,18 @@ static int tcp_bridge_vprintf(const char *fmt, va_list args)
         va_end(args_copy);
     }
 
-    // Also send to TCP client if connected
-    if (s_log_mutex && xSemaphoreTake(s_log_mutex, 0) == pdTRUE) {
-        if (s_log_client_sock >= 0) {
-            char log_buf[256];
-            int tcp_len = vsnprintf(log_buf, sizeof(log_buf), fmt, args);
-            if (tcp_len > 0) {
+    // Format for TCP outside the mutex — vsnprintf is CPU-only, no reason to hold the lock for it
+    if (s_log_mutex) {
+        char log_buf[256];
+        int tcp_len = vsnprintf(log_buf, sizeof(log_buf), fmt, args);
+
+        // Lock only for the socket read + send
+        if (tcp_len > 0 && xSemaphoreTake(s_log_mutex, 0) == pdTRUE) {
+            if (s_log_client_sock >= 0) {
                 send(s_log_client_sock, log_buf, tcp_len, MSG_DONTWAIT);
             }
+            xSemaphoreGive(s_log_mutex);
         }
-        xSemaphoreGive(s_log_mutex);
     }
 
     return len;

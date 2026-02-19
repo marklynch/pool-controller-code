@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved the clarity of the LED states and restore state after RX/TX
 - Reworked the message decoder for channels now that we know channels are also for lights/heater.
 - Pulled out more constants that were hidden or duplicated into `config.h`
+- Improved mutex handling in tcp_bridge.c
 
 ### Fixed
 - Improved security of mqtt credentials password (don't send back)
