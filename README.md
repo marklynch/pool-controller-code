@@ -180,3 +180,26 @@ This project uses ESP-IDF v5.5+. See `CLAUDE.md` for build commands and architec
 idf.py build          # Build the project
 idf.py flash monitor  # Flash to device and monitor output
 ```
+
+## Documentation
+
+### [PROTOCOL.md](PROTOCOL.md) — Bus Protocol Reference
+
+Documents the proprietary serial protocol used by the Astral Connect 10, reverse-engineered by sniffing bus traffic. Covers:
+
+- **Message framing** — `START (0x02) | SRC | DST | CTRL | CMD | DATA | CHECKSUM | END (0x03)`
+- **Device addresses** — Touch screen (`0x0050`), controller (`0x006F`), chlorinator (`0x0090`), internet gateway (`0x00F0`)
+- **22 decoded message types** — temperatures, channel states, lighting zones, chlorinator pH/ORP, controller clock, firmware version, gateway network status, and more
+- **Register system** — A unified register/slot dispatch mechanism used for channel names, types, lighting colors, and labels
+- **Control commands** — How to toggle channels, set temperature setpoints, control lighting zones, switch pool/spa mode, and control the heater (all by impersonating the internet gateway address `0x00F0`)
+- **Checksum algorithm** and message validation rules
+
+### [OTA_UPDATE.md](OTA_UPDATE.md) — Over-The-Air Firmware Updates
+
+Describes the web-based OTA update system. Covers:
+
+- **How to update** — Build the `.bin`, navigate to `http://<device-ip>/update`, upload via the web form
+- **Dual-partition layout** — Updates alternate between `ota_0` and `ota_1`, with automatic rollback if the new firmware fails to boot
+- **Safety** — Image validation before write, boot confirmation required by new firmware, rollback after 3 failed boots
+- **Version information** — Version string generated from `git describe` (e.g. `v1.0.0-5-g870d65b`)
+- **Security notes** — No authentication on `/update` currently; see the doc for recommended production hardening
