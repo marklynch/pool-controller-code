@@ -26,7 +26,7 @@ const char* get_gateway_comms_status_text(uint16_t code);
 // Dynamic functions for page header, navigation, and footer
 char *get_page_header(const char *title) {
     const char *fmt = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<link rel='icon' type='image/svg+xml' href='/favicon.ico'>"
+        "<link rel='icon' type='image/svg+xml' href='/static/favicon.ico'>"
         "<style>body{font-family:Arial;margin:40px;background:#f0f0f0}"
         "h1{color:#333}.container{background:white;padding:30px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);max-width:500px}"
         "label{display:block;margin:15px 0 5px;font-weight:bold;color:#555}"
@@ -1182,38 +1182,87 @@ static const httpd_uri_t test_decode_uri = {
     .handler = test_decode_post_handler
 };
 
-// Custom 404 error handler for captive portal
-// ======================================================
-// Favicon Handler
-// ======================================================
 
-// Simple embedded SVG favicon to avoid 404 errors in browser console
-// From material design icons - pool icon
-// https://raw.githubusercontent.com/Templarian/MaterialDesign/master/svg/pool.svg
-static const char FAVICON_SVG[] =
-    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>"
-    "<path fill='#1565C0' d='M2,15C3.67,14.25 5.33,13.5 7,13.17V5A3,3 0 0,1 10,2C11.31,2 12.42,2.83 "
-    "12.83,4H10A1,1 0 0,0 9,5V6H14V5A3,3 0 0,1 17,2C18.31,2 19.42,2.83 19.83,4H17A1,1 0 0,0 16,5V14.94"
-    "C18,14.62 20,13 22,13V15C19.78,15 17.56,17 15.33,17C13.11,17 10.89,15 8.67,15C6.44,15 4.22,16 2,17V15"
-    "M14,8H9V10H14V8M14,12H9V13C10.67,13.16 12.33,14.31 14,14.79V12"
-    "M2,19C4.22,18 6.44,17 8.67,17C10.89,17 13.11,19 15.33,19C17.56,19 19.78,17 22,17V19"
-    "C19.78,19 17.56,21 15.33,21C13.11,21 10.89,19 8.67,19C6.44,19 4.22,20 2,21V19Z'/>"
-    "</svg>";
 
-static esp_err_t favicon_get_handler(httpd_req_t *req)
+// ======================================================
+// Static File Table
+// ======================================================
+// To add a new static file:
+//   1. Define its content as a static const char[] below
+//   2. Add an entry to STATIC_FILES[]
+// No other changes needed - registration is automatic.
+
+typedef struct {
+    const char *uri;
+    const char *content;
+    const char *content_type;
+    const char *cache_control;  // NULL for no caching
+} static_file_t;
+
+// --- Embedded static file content (loaded from main/static/ at compile time) ---
+// Symbol names are derived from the file path: slashes and dots become underscores.
+// EMBED_TXTFILES adds a null terminator so the symbols can be used as C strings.
+
+// main/static/favicon.svg  (mdi:pool, https://github.com/Templarian/MaterialDesign)
+// Note: ESP-IDF derives the symbol name from the filename only, not the full path.
+extern const char _binary_favicon_svg_start[];
+
+// --- File table ---
+
+static const static_file_t STATIC_FILES[] = {
+    {
+        .uri           = "/static/favicon.ico",
+        .content       = _binary_favicon_svg_start,
+        .content_type  = "image/svg+xml",
+        .cache_control = "max-age=86400",
+    },
+};
+#define STATIC_FILES_COUNT (sizeof(STATIC_FILES) / sizeof(STATIC_FILES[0]))
+
+// --- Generic handler (shared by all static files via /static/* wildcard) ---
+
+static esp_err_t static_file_handler(httpd_req_t *req)
 {
-    httpd_resp_set_type(req, "image/svg+xml");
-    httpd_resp_set_hdr(req, "Cache-Control", "max-age=86400");
-    httpd_resp_send(req, FAVICON_SVG, HTTPD_RESP_USE_STRLEN);
+    for (int i = 0; i < STATIC_FILES_COUNT; i++) {
+        if (strcmp(req->uri, STATIC_FILES[i].uri) == 0) {
+            httpd_resp_set_type(req, STATIC_FILES[i].content_type);
+            if (STATIC_FILES[i].cache_control) {
+                httpd_resp_set_hdr(req, "Cache-Control", STATIC_FILES[i].cache_control);
+            }
+            httpd_resp_send(req, STATIC_FILES[i].content, HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+    }
+    httpd_resp_send_404(req);
+    return ESP_FAIL;
+}
+
+static const httpd_uri_t static_files_uri = {
+    .uri     = "/static/*",
+    .method  = HTTP_GET,
+    .handler = static_file_handler,
+};
+
+// Redirect /favicon.ico (browser convention - requested without a <link> tag)
+// to the canonical location under /static/
+static esp_err_t favicon_redirect_handler(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "301 Moved Permanently");
+    httpd_resp_set_hdr(req, "Location", "/static/favicon.ico");
+    httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
 
-static const httpd_uri_t favicon_uri = {
-    .uri      = "/favicon.ico",
-    .method   = HTTP_GET,
-    .handler  = favicon_get_handler,
+// ======================================================
+// Favicon Handler
+// ======================================================
+static const httpd_uri_t favicon_redirect_uri = {
+    .uri     = "/favicon.ico",
+    .method  = HTTP_GET,
+    .handler = favicon_redirect_handler,
 };
 
+// Custom 404 error handler for captive portal
 // Redirects all unmatched requests to the provisioning page
 static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
 {
@@ -1240,7 +1289,8 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &update_get_uri);
     httpd_register_uri_handler(server, &update_post_uri);
     httpd_register_uri_handler(server, &test_decode_uri);
-    httpd_register_uri_handler(server, &favicon_uri);
+    httpd_register_uri_handler(server, &static_files_uri);   // /static/* wildcard
+    httpd_register_uri_handler(server, &favicon_redirect_uri); // /favicon.ico -> /static/favicon.ico
 
     // Register custom 404 error handler for captive portal
     // This catches all unmatched URIs and redirects to the provisioning page

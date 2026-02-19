@@ -250,6 +250,7 @@ static esp_err_t start_http_server(const char *ip_address)
     httpd_config.recv_wait_timeout = HTTP_RECV_TIMEOUT_SEC;
     httpd_config.send_wait_timeout = HTTP_SEND_TIMEOUT_SEC;
     httpd_config.stack_size = HTTP_STACK_SIZE;
+    httpd_config.uri_match_fn = httpd_uri_match_wildcard;
 
     esp_err_t err = httpd_start(&s_httpd_handle, &httpd_config);
     if (err == ESP_OK) {

@@ -13,6 +13,8 @@ idf_component_register(
         "dns_server.c"
     INCLUDE_DIRS
          "."
+    EMBED_TXTFILES
+        "static/favicon.svg"
     REQUIRES
         esp_app_format
         app_update
