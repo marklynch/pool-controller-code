@@ -683,14 +683,17 @@ static bool handle_unknown(
     message_decoder_context_t *ctx)
 {
     // Format message as hex string
-    char hex_str[3 * len + 1];
+    int hex_str_size = 3 * len + 1;
+    char *hex_str = malloc(hex_str_size);
+    if (!hex_str) return false;
     int pos = 0;
     for (int i = 0; i < len; i++) {
-        pos += snprintf(&hex_str[pos], sizeof(hex_str) - pos, "%02X ", data[i]);
+        pos += snprintf(&hex_str[pos], hex_str_size - pos, "%02X ", data[i]);
     }
     hex_str[pos] = '\0';
 
     ESP_LOGW(TAG, "Unhandled: %s", hex_str);
+    free(hex_str);
 
     return false;  // Not decoded
 }
@@ -1529,13 +1532,16 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Log full message before decoding
-    char full_msg[3 * len + 1];
+    int full_msg_size = 3 * len + 1;
+    char *full_msg = malloc(full_msg_size);
+    if (!full_msg) return false;
     int msg_pos = 0;
-    for (int i = 0; i < len && msg_pos < (int)sizeof(full_msg) - 4; i++) {
-        msg_pos += snprintf(&full_msg[msg_pos], sizeof(full_msg) - msg_pos, "%02X ", data[i]);
+    for (int i = 0; i < len && msg_pos < full_msg_size - 4; i++) {
+        msg_pos += snprintf(&full_msg[msg_pos], full_msg_size - msg_pos, "%02X ", data[i]);
     }
     full_msg[msg_pos] = '\0';
     ESP_LOGI(TAG, "RX MSG: %s", full_msg);
+    free(full_msg);
 
     // Verify checksum if message is long enough
     if (len >= 13) {
@@ -1626,10 +1632,12 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         ESP_LOGI(TAG, "  -> No handler matched, logging as unhandled");
 
         // Format all payload bytes as hex for debugging (e.g., "7F 02 00 81")
-        char payload_hex[payload_len * 3 + 1];
+        int payload_hex_size = payload_len * 3 + 1;
+        char *payload_hex = malloc(payload_hex_size);
+        if (!payload_hex) return false;
         int pos = 0;
         for (int i = 0; i < payload_len; i++) {
-            pos += snprintf(&payload_hex[pos], sizeof(payload_hex) - pos, "%02X ", payload[i]);
+            pos += snprintf(&payload_hex[pos], payload_hex_size - pos, "%02X ", payload[i]);
         }
         // Remove trailing space
         if (pos > 0 && payload_hex[pos - 1] == ' ') {
@@ -1638,6 +1646,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
         ESP_LOGW(TAG, "%s Unhandled register - Reg=0x%02X, Slot=0x%02X, Payload[%d]: %s",
                  addr_info, reg_id, slot, payload_len, payload_hex);
+        free(payload_hex);
         return false;
     }
 
