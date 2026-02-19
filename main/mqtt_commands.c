@@ -6,6 +6,7 @@
 #include "driver/uart.h"
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 static const char *TAG = "MQTT_COMMANDS";
 
@@ -270,6 +271,10 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
     // Parse command type
     if (strncmp(cmd_topic, "channel/", 8) == 0 && cmd_topic_len > 12) {
         // Extract channel number (format: "channel/N/set")
+        if (!isdigit((unsigned char)cmd_topic[8])) {
+            ESP_LOGE(TAG, "Invalid channel topic format: %s", cmd_topic);
+            return;
+        }
         int channel = cmd_topic[8] - '0';
         if (channel >= 1 && channel <= MAX_CHANNELS) {
             handle_channel_command(channel, data, data_len);
@@ -279,6 +284,10 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
     }
     else if (strncmp(cmd_topic, "light/", 6) == 0 && cmd_topic_len > 10) {
         // Extract zone number (format: "light/N/set")
+        if (!isdigit((unsigned char)cmd_topic[6])) {
+            ESP_LOGE(TAG, "Invalid light topic format: %s", cmd_topic);
+            return;
+        }
         int zone = cmd_topic[6] - '0';
         if (zone >= 1 && zone <= MAX_LIGHT_ZONES) {
             handle_light_command(zone, data, data_len);

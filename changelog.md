@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduced used of heap for logging messages to avoid potential heap overflow.
 - Security - Channel count not bounds-checked before array write
 - Security - fix potential non-null-terminated string extraction from payload
+- Security - fix potential parsing issue in MQTT channel publishing logic
 
 
 ## [0.0.6] - 2026-02-09
