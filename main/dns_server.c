@@ -31,10 +31,20 @@ static uint32_t ip_string_to_uint32(const char *ip_str)
     return (ip[0] << 24) | (ip[1] << 16) | (ip[2] << 8) | ip[3];
 }
 
+// Bytes appended after the query copy: name ptr(2) + type(2) + class(2) + TTL(4) + rdlength(2) + rdata(4)
+#define DNS_ANSWER_SIZE 16
+
 // Build DNS response packet
-static int build_dns_response(const uint8_t *query, int query_len, uint8_t *response, const char *ip_addr)
+static int build_dns_response(const uint8_t *query, int query_len,
+                              uint8_t *response, int response_size,
+                              const char *ip_addr)
 {
-    if (query_len < sizeof(dns_header_t)) {
+    if (query_len < (int)sizeof(dns_header_t)) {
+        return 0;
+    }
+
+    if (query_len + DNS_ANSWER_SIZE > response_size) {
+        ESP_LOGW(TAG, "Query too large (%d bytes) to fit DNS response in buffer", query_len);
         return 0;
     }
 
@@ -145,7 +155,7 @@ static void dns_server_task(void *pvParameters)
         }
 
         // Build response
-        int response_len = build_dns_response(rx_buffer, len, tx_buffer, WIFI_PROV_SOFTAP_IP);
+        int response_len = build_dns_response(rx_buffer, len, tx_buffer, sizeof(tx_buffer), WIFI_PROV_SOFTAP_IP);
         if (response_len > 0) {
             // Send response
             int sent = sendto(s_dns_socket, tx_buffer, response_len, 0,
