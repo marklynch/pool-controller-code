@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_ota_ops.h"
+#include "esp_netif_sntp.h"
 
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -342,6 +343,12 @@ void app_main(void)
     wifi_wait_for_connection();
 
     // If we get here, WiFi is connected and HTTP server is running
+
+    // Start NTP time sync
+    esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG(NTP_SERVER);
+    esp_netif_sntp_init(&sntp_config);
+    ESP_LOGI(TAG, "NTP sync started with server: %s", NTP_SERVER);
+
     ESP_LOGI(TAG, "Starting TCP bridge server...");
 
     // Start TCP bridge server

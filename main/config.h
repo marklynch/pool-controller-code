@@ -22,6 +22,9 @@
 // MQTT
 #define MQTT_DEFAULT_PORT              1883    // Default MQTT broker port
 
+// NTP Time Sync
+#define NTP_SERVER                     "pool.ntp.org"  // NTP server for time synchronization
+
 // DNS Server (captive portal)
 #define DNS_PORT                       53      // DNS server port
 #define DNS_MAX_PACKET_SIZE            512     // Maximum DNS packet size

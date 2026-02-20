@@ -21,11 +21,13 @@ static const char *TAG = "WIFI_PROV";
 
 // WiFi event bits
 #define WIFI_CONNECTED_BIT  BIT0
+#define WIFI_FAIL_BIT       BIT1
 
 // State variables
 static EventGroupHandle_t s_wifi_event_group = NULL;
 static bool s_provisioning_active = false;
 static bool s_wifi_connected = false;
+static bool s_wifi_ever_connected = false;
 static httpd_handle_t s_httpd_handle = NULL;
 static int s_wifi_retry_count = 0;
 static TimerHandle_t s_wifi_retry_timer = NULL;
@@ -182,11 +184,19 @@ static void wifi_event_handler(void *arg,
                      s_wifi_retry_count, WIFI_MAX_RETRY_ATTEMPTS);
 
             if (s_wifi_retry_count >= WIFI_MAX_RETRY_ATTEMPTS) {
-                ESP_LOGE(TAG, "WiFi connection failed after %d attempts - clearing credentials and restarting",
-                         WIFI_MAX_RETRY_ATTEMPTS);
-                wifi_credentials_clear();
-                vTaskDelay(pdMS_TO_TICKS(WIFI_RESTART_DELAY_MS));
-                esp_restart();
+                if (!s_wifi_ever_connected) {
+                    // Initial connection failed - signal to start provisioning mode
+                    ESP_LOGW(TAG, "Initial WiFi connection failed after %d attempts - starting provisioning",
+                             WIFI_MAX_RETRY_ATTEMPTS);
+                    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+                } else {
+                    // Re-connection failed after being previously connected - clear and restart
+                    ESP_LOGE(TAG, "WiFi re-connection failed after %d attempts - clearing credentials and restarting",
+                             WIFI_MAX_RETRY_ATTEMPTS);
+                    wifi_credentials_clear();
+                    vTaskDelay(pdMS_TO_TICKS(WIFI_RESTART_DELAY_MS));
+                    esp_restart();
+                }
             } else {
                 ESP_LOGI(TAG, "Will retry connection in %d seconds...", WIFI_RETRY_DELAY_MS / 1000);
                 if (s_wifi_retry_timer != NULL) {
@@ -203,6 +213,7 @@ static void wifi_event_handler(void *arg,
 
         ESP_LOGI(TAG, "Got IP: %s", s_device_ip_address);
         s_wifi_connected = true;
+        s_wifi_ever_connected = true;
         s_wifi_retry_count = 0;
 
         // If we were in provisioning mode, stop it now
@@ -279,46 +290,11 @@ static void get_device_service_name(char *service_name, size_t max)
              WIFI_PROV_SOFTAP_SSID_PREFIX, eth_mac[3], eth_mac[4], eth_mac[5]);
 }
 
-static esp_err_t start_provisioning(void)
+static esp_err_t start_softap_provisioning(void)
 {
-    // Check if WiFi credentials exist in NVS
-    if (wifi_credentials_exist()) {
-        ESP_LOGI(TAG, "WiFi credentials found in NVS, connecting...");
-
-        // Load credentials from NVS
-        char ssid[33] = {0};
-        char password[64] = {0};
-        esp_err_t err = wifi_credentials_load(ssid, sizeof(ssid), password, sizeof(password));
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to load credentials from NVS: %s", esp_err_to_name(err));
-            return err;
-        }
-
-        // Configure WiFi with loaded credentials
-        wifi_config_t wifi_cfg = {0};
-        memcpy(wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid));
-        memcpy(wifi_cfg.sta.password, password, sizeof(wifi_cfg.sta.password));
-
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
-        ESP_ERROR_CHECK(esp_wifi_start());
-
-        ESP_LOGI(TAG, "Connecting to WiFi SSID: %s", ssid);
-        return ESP_OK;
-    }
-
-    // No credentials found - start provisioning mode
-    ESP_LOGI(TAG, "No WiFi credentials found, starting provisioning mode");
-    s_provisioning_active = true;
-
-    // Set purple LED for unconfigured WiFi
-    led_set_unconfigured();
-
-    // Generate AP SSID
     char ap_ssid[32];
     get_device_service_name(ap_ssid, sizeof(ap_ssid));
 
-    // Configure SoftAP with WPA2 security
     wifi_config_t wifi_config = {
         .ap = {
             .ssid_len = strlen(ap_ssid),
@@ -331,16 +307,16 @@ static esp_err_t start_provisioning(void)
         },
     };
     memcpy(wifi_config.ap.ssid, ap_ssid, sizeof(wifi_config.ap.ssid));
-    // Set default password for SoftAP (users must enter this to connect)
     memcpy(wifi_config.ap.password, WIFI_PROV_SOFTAP_PASSWORD, strlen(WIFI_PROV_SOFTAP_PASSWORD));
 
+    // Stop WiFi, switch to APSTA mode, restart
+    esp_wifi_stop();
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "SoftAP started - SSID: %s, Password: %s", ap_ssid, WIFI_PROV_SOFTAP_PASSWORD);
 
-    // Start DNS server for captive portal
     esp_err_t dns_err = dns_server_start();
     if (dns_err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to start DNS server: %s", esp_err_to_name(dns_err));
@@ -348,8 +324,33 @@ static esp_err_t start_provisioning(void)
         ESP_LOGI(TAG, "Captive portal DNS server started");
     }
 
-    // Start HTTP server for web provisioning
     return start_http_server(WIFI_PROV_SOFTAP_IP);
+}
+
+static esp_err_t start_provisioning(void)
+{
+    // Load credentials from NVS if available and configure STA
+    if (wifi_credentials_exist()) {
+        char ssid[33] = {0};
+        char password[64] = {0};
+        esp_err_t err = wifi_credentials_load(ssid, sizeof(ssid), password, sizeof(password));
+        if (err == ESP_OK) {
+            wifi_config_t wifi_cfg = {0};
+            memcpy(wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid));
+            memcpy(wifi_cfg.sta.password, password, sizeof(wifi_cfg.sta.password));
+            ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
+            ESP_LOGI(TAG, "WiFi credentials found, connecting to SSID: %s", ssid);
+        } else {
+            ESP_LOGW(TAG, "Failed to load credentials from NVS: %s", esp_err_to_name(err));
+        }
+    } else {
+        ESP_LOGI(TAG, "No WiFi credentials in NVS, trying with driver's saved config...");
+    }
+
+    // Always start in STA mode - SoftAP provisioning only starts if connection fails
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    return ESP_OK;
 }
 
 // ======================================================
@@ -416,22 +417,34 @@ const char* wifi_get_device_ip(void)
 
 void wifi_wait_for_connection(void)
 {
-    if (s_provisioning_active) {
-        ESP_LOGI(TAG, "Provisioning mode active - waiting for configuration...");
-        ESP_LOGI(TAG, "Connect to WiFi SSID (password: '%s') and navigate to http://%s", WIFI_PROV_SOFTAP_PASSWORD, WIFI_PROV_SOFTAP_IP);
-        // Wait indefinitely in provisioning mode
-        while (1) {
-            vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
-        }
-    } else {
-        ESP_LOGI(TAG, "Waiting for WiFi connection...");
-        xEventGroupWaitBits(s_wifi_event_group,
-                            WIFI_CONNECTED_BIT,
-                            pdFALSE, pdFALSE,
-                            portMAX_DELAY);
-        ESP_LOGI(TAG, "WiFi connected");
+    ESP_LOGI(TAG, "Waiting for WiFi connection...");
 
-        // Start HTTP server in normal mode
+    // Wait for either a successful connection or all retries exhausted
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+                                           WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                                           pdFALSE, pdFALSE,
+                                           portMAX_DELAY);
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "WiFi connected");
         start_http_server(s_device_ip_address);
+        return;
     }
+
+    // Connection failed after all retries - start SoftAP provisioning mode
+    ESP_LOGW(TAG, "WiFi unavailable, starting provisioning mode");
+    s_provisioning_active = true;
+    s_wifi_retry_count = 0;
+    led_set_unconfigured();
+
+    start_softap_provisioning();
+
+    char ap_ssid[32];
+    get_device_service_name(ap_ssid, sizeof(ap_ssid));
+    ESP_LOGI(TAG, "Provisioning mode active - connect to '%s' (password: '%s') and navigate to http://%s",
+             ap_ssid, WIFI_PROV_SOFTAP_PASSWORD, WIFI_PROV_SOFTAP_IP);
+
+    // Wait indefinitely until the user provisions credentials (device will restart after save)
+    xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT,
+                        pdFALSE, pdFALSE, portMAX_DELAY);
 }

@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for setting pool and spa setpoints
 - Added favicon.ico because the 404 errors were annoying me
 - Added support for static files such as css/js etc.
+- Added NTP support to set real time clock correctly.
 
 ### Removed
 
@@ -45,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security - Improve malformed MQTT message for setting temperature
 - Fixed abort on tx timeout - doesn't need to crash
 - Fixed uninitialized struct sockaddr_in client_addr
+- Fixed provisioning AP was being setup every time - even when configured.
 
 ## [0.0.6] - 2026-02-09
 ### Added

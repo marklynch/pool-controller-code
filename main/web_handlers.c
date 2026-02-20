@@ -13,6 +13,7 @@
 #include "nvs_flash.h"
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 static const char *TAG = "WEB_HANDLERS";
 
@@ -537,6 +538,33 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         uint64_t current_tick_count = xTaskGetTickCount() * portTICK_PERIOD_MS;
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",\"current_ms\":%lu",
                        (unsigned long)current_tick_count);
+
+        // Current wall-clock time as a human-readable string
+        time_t now = time(NULL);
+        char time_str[32];
+        if (now < 1000000000) {
+            snprintf(time_str, sizeof(time_str), "NTP not synced");
+        } else {
+            struct tm *tm_info = gmtime(&now);
+            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S UTC", tm_info);
+        }
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",\"current_time\":\"%s\"", time_str);
+
+        // Time since last update
+        char age_str[32];
+        if (s_pool_state.last_update_ms == 0) {
+            snprintf(age_str, sizeof(age_str), "Never");
+        } else {
+            uint32_t elapsed_sec = (uint32_t)((current_tick_count - s_pool_state.last_update_ms) / 1000);
+            if (elapsed_sec < 60) {
+                snprintf(age_str, sizeof(age_str), "%lus ago", (unsigned long)elapsed_sec);
+            } else if (elapsed_sec < 3600) {
+                snprintf(age_str, sizeof(age_str), "%lum %lus ago", (unsigned long)(elapsed_sec / 60), (unsigned long)(elapsed_sec % 60));
+            } else {
+                snprintf(age_str, sizeof(age_str), "%luh %lum ago", (unsigned long)(elapsed_sec / 3600), (unsigned long)((elapsed_sec % 3600) / 60));
+            }
+        }
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",\"time_since_last_update\":\"%s\"", age_str);
 
         // Close JSON object
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "}");
