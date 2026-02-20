@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for static files such as css/js etc.
 - Added NTP support to set real time clock correctly.
 - Added local timezone from browser at bottom of status page.
+- Added oat.ink styling for better consistency, performance and accessibility
 
 ### Removed
 
