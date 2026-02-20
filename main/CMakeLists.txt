@@ -15,6 +15,8 @@ idf_component_register(
          "."
     EMBED_TXTFILES
         "static/favicon.svg"
+        "static/oat.min.css"
+        "static/oat.min.js"
     REQUIRES
         esp_app_format
         app_update

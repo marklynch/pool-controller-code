@@ -26,25 +26,14 @@ const char* get_gateway_comms_status_text(uint16_t code);
 
 // Dynamic functions for page header, navigation, and footer
 char *get_page_header(const char *title) {
-    const char *fmt = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+    const char *fmt = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<link rel='icon' type='image/svg+xml' href='/static/favicon.ico'>"
-        "<style>body{font-family:Arial;margin:40px;background:#f0f0f0}"
-        "h1{color:#333}.container{background:white;padding:30px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);max-width:500px}"
-        "label{display:block;margin:15px 0 5px;font-weight:bold;color:#555}"
-        "input[type=text],input[type=number],input[type=password]{width:100%%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box}"
-        "input[type=checkbox]{margin-right:10px}"
-        ".checkbox-label{display:inline;font-weight:normal}"
-        "button{background:#4CAF50;color:white;padding:12px 30px;border:none;border-radius:4px;cursor:pointer;font-size:16px;margin-top:20px}"
-        "button:hover{background:#45a049}"
-        ".status{margin-top:15px;padding:10px;border-radius:4px;display:none}"
-        ".success{background:#d4edda;color:#155724;border:1px solid #c3e6cb}"
-        ".error{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}"
-        "</style><title>%s</title></head><body>";
-    // calculate the required size
+        "<link rel='stylesheet' href='/static/oat.min.css'>"
+        "<script src='/static/oat.min.js' defer></script>"
+        "<title>%s</title></head><body><div data-sidebar-layout>";
     int n = snprintf(NULL, 0, fmt, title);
     if (n < 0) return NULL;
 
-    // allocate memory for the header
     char *header = malloc((size_t)n + 1);
     if (!header) return NULL;
 
@@ -53,41 +42,50 @@ char *get_page_header(const char *title) {
 }
 
 char *get_page_nav(const char page) {
-    // TODO - Make 'page' indicate current page for highlighting
-    const char *fmt = "<div class='nav'><a href='/'>WiFi Scan</a> | "
-        "<a href='/mqtt_config'>MQTT Config</a> | "
-        "<a href='/status_view'>Status</a> | "
-        "<a href='/update'>Update</a>"
-        "</div><hr>";
-    // calculate the required size
-    int n = snprintf(NULL, 0, fmt, page);
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    const char *fmt =
+        "<nav data-topnav>"
+        "<button data-sidebar-toggle aria-label='Toggle menu' class='outline'>☰</button>"
+        "<img src='/static/favicon.ico' alt='Logo' style='height:1.6em;'>"
+        "<span>Pool Controller</span>"
+        "</nav>"
+        "<aside data-sidebar>"
+        "<nav><ul>"
+        "<li><a href='/'" "%s" ">WiFi Config</a></li>"
+        "<li><a href='/mqtt_config'" "%s" ">MQTT Config</a></li>"
+        "<li><a href='/status_view'" "%s" ">Status</a></li>"
+        "<li><a href='/update'" "%s" ">Firmware Update</a></li>"
+        "</ul></nav>"
+        "<footer><small>%s</small></footer>"
+        "</aside>"
+        "<main class='p-4'>";
+    const char *cur = " aria-current='page'";
+    const char *none = "";
+    int n = snprintf(NULL, 0, fmt,
+        page == 'w' ? cur : none,
+        page == 'm' ? cur : none,
+        page == 's' ? cur : none,
+        page == 'u' ? cur : none,
+        app_desc->version);
     if (n < 0) return NULL;
 
-    // allocate memory for the header
-    char *header = malloc((size_t)n + 1);
-    if (!header) return NULL;
+    char *nav = malloc((size_t)n + 1);
+    if (!nav) return NULL;
 
-    snprintf(header, (size_t)n + 1, fmt, page);
-    return header;
+    snprintf(nav, (size_t)n + 1, fmt,
+        page == 'w' ? cur : none,
+        page == 'm' ? cur : none,
+        page == 's' ? cur : none,
+        page == 'u' ? cur : none,
+        app_desc->version);
+    return nav;
 }
 
 char *get_page_footer(void) {
-    const esp_app_desc_t *app_desc = esp_app_get_description();
-    const char *fmt = "<hr><div style='text-align:center;color:#666;font-size:12px;margin-top:30px'>"
-        "Firmware: %s | Project: %s | Built: %s %s"
-        "</div></body></html>";
-
-    // Calculate required size
-    int n = snprintf(NULL, 0, fmt, app_desc->version, app_desc->project_name,
-                     app_desc->date, app_desc->time);
-    if (n < 0) return NULL;
-
-    // Allocate memory
-    char *footer = malloc((size_t)n + 1);
+    const char *str = "</main></div></body></html>";
+    char *footer = malloc(strlen(str) + 1);
     if (!footer) return NULL;
-
-    snprintf(footer, (size_t)n + 1, fmt, app_desc->version, app_desc->project_name,
-             app_desc->date, app_desc->time);
+    strcpy(footer, str);
     return footer;
 }
 
@@ -96,37 +94,53 @@ char *get_page_footer(void) {
 // ======================================================
 
 // HTML page for WiFi provisioning
-const char WIFI_PAGE[] = "<div class='container'><h1>WiFi Configuration</h1>"
-"<div id='status'></div>"
-"<form id='wifiForm'><label>WiFi Network:</label>"
-"<select id='ssid' name='ssid' required><option value=''>Scanning...</option></select>"
-"<label>Password:</label><input type='password' id='password' name='password' placeholder='Enter network password' required>"
-"<button type='submit'>Connect</button></form></div>"
-"<script>"
-"function showStatus(msg,isError){const d=document.getElementById('status');"
-"d.innerHTML='<div class=\"status '+(isError?'error':'success')+'\">'+msg+'</div>';}"
-"function scanWiFi(){fetch('/scan').then(r=>r.json()).then(data=>{"
-"const s=document.getElementById('ssid');s.innerHTML='';"
-"data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
-"o.text=n.ssid+' ('+n.rssi+' dBm)'+(n.current?' - Current':'');"
-"if(n.current)o.selected=true;s.appendChild(o);});}).catch(e=>{"
-"showStatus('Scan failed: '+e,true);});}"
-"document.getElementById('wifiForm').onsubmit=function(e){"
-"e.preventDefault();const ssid=document.getElementById('ssid').value;"
-"const pass=document.getElementById('password').value;"
-"showStatus('Connecting to '+ssid+'...',false);"
-"fetch('/provision',{method:'POST',headers:{'Content-Type':'application/json'},"
-"body:JSON.stringify({ssid:ssid,password:pass})}).then(r=>r.json()).then(data=>{"
-"if(data.success){showStatus('Connected! Device will restart.',false);"
-"}else{showStatus('Failed: '+data.message,true);}}).catch(e=>{"
-"showStatus('Error: '+e,true);});return false;};"
-"scanWiFi();</script>";
+const char WIFI_PAGE[] =
+    "<div class='container'>"
+    "<h1>WiFi Configuration</h1>"
+    "<form id='wifiForm'>"
+    "<div data-field>"
+        "<label for='ssid'>WiFi Network</label>"
+        "<select id='ssid' name='ssid' required>"
+            "<option value=''>Scanning...</option>"
+        "</select>"
+    "</div>"
+    "<div data-field>"
+        "<label for='password'>Password</label>"
+        "<input type='password' id='password' name='password' placeholder='Enter network password' required>"
+    "</div>"
+    "<button type='submit'>Connect</button>"
+    "<div id='status' role='alert' hidden class='mt-4'></div>"
+    "</form>"
+    "</div>"
+    "<script>"
+    "function showStatus(msg,isError){"
+        "const s=document.getElementById('status');"
+        "s.textContent=msg;"
+        "s.setAttribute('data-variant',isError?'danger':'success');"
+        "s.removeAttribute('hidden');}"
+    "function scanWiFi(){fetch('/scan').then(r=>r.json()).then(data=>{"
+        "const s=document.getElementById('ssid');s.innerHTML='';"
+        "data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
+        "o.text=n.ssid+' ('+n.rssi+' dBm)'+(n.current?' - Current':'');"
+        "if(n.current)o.selected=true;s.appendChild(o);});}).catch(e=>{"
+        "showStatus('Scan failed: '+e,true);});}"
+    "document.getElementById('wifiForm').onsubmit=function(e){"
+        "e.preventDefault();const ssid=document.getElementById('ssid').value;"
+        "const pass=document.getElementById('password').value;"
+        "showStatus('Connecting to '+ssid+'...',false);"
+        "fetch('/provision',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({ssid:ssid,password:pass})}).then(r=>r.json()).then(data=>{"
+        "if(data.success){showStatus('Connected! Device will restart.',false);}"
+        "else{showStatus('Failed: '+data.message,true);}}).catch(e=>{"
+        "showStatus('Error: '+e,true);});return false;};"
+    "scanWiFi();"
+    "</script>";
 
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
     char page_title[] = "WiFi Configuration";
     char *header = get_page_header(page_title);
-    char *nav = get_page_nav('/');
+    char *nav = get_page_nav('w');
     char *footer = get_page_footer();
     httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
@@ -593,37 +607,34 @@ static esp_err_t status_view_get_handler(httpd_req_t *req)
     const char *status_view_page =
         "<div class='container'>"
         "<h1>Pool Controller Status</h1>"
-        "<p style='text-align:right'><a href='/status' style='font-size:14px'>View raw JSON</a></p>"
-        "<div id='status-content' style='font-family:monospace;white-space:pre-wrap;background:#f8f8f8;padding:15px;border-radius:4px;overflow-x:auto'>"
-        "Loading status..."
-        "</div>"
-        "<div id='time-info' style='margin-top:12px;padding:10px 15px;background:#e8f4f8;border-radius:4px;font-size:13px;color:#555'>"
-        "Loading..."
-        "</div>"
+        "<p class='text-right'><small><a href='/status'>View raw JSON</a></small></p>"
+        "<div id='status-error' role='alert' data-variant='danger' hidden></div>"
+        "<pre><code id='status-content'>Loading status...</code></pre>"
+        "<p id='time-info' class='text-lighter mt-4' hidden></p>"
         "</div>"
         "<script>"
         "fetch('/status').then(r=>r.json()).then(data=>{"
         "const fmt=(obj,indent=0)=>{"
         "const pad=' '.repeat(indent);"
-        "let html='';"
+        "let out='';"
         "for(const[k,v]of Object.entries(obj)){"
-        "if(v===null){html+=pad+k+': null\\n';}"
+        "if(v===null){out+=pad+k+': null\\n';}"
         "else if(Array.isArray(v)){"
-        "html+=pad+k+': [\\n';"
+        "out+=pad+k+': [\\n';"
         "v.forEach(item=>{"
-        "if(typeof item==='object'){html+=fmt(item,indent+2)+',\\n';}"
-        "else{html+=pad+'  '+JSON.stringify(item)+',\\n';}"
+        "if(typeof item==='object'){out+=fmt(item,indent+2)+',\\n';}"
+        "else{out+=pad+'  '+JSON.stringify(item)+',\\n';}"
         "});"
-        "html+=pad+']\\n';"
+        "out+=pad+']\\n';"
         "}else if(typeof v==='object'){"
-        "html+=pad+k+': {\\n'+fmt(v,indent+2)+pad+'}\\n';"
+        "out+=pad+k+': {\\n'+fmt(v,indent+2)+pad+'}\\n';"
         "}else if(typeof v==='string'){"
-        "html+=pad+k+': \"'+v+'\"\\n';"
+        "out+=pad+k+': \"'+v+'\"\\n';"
         "}else{"
-        "html+=pad+k+': '+v+'\\n';"
+        "out+=pad+k+': '+v+'\\n';"
         "}"
         "}"
-        "return html;"
+        "return out;"
         "};"
         "document.getElementById('status-content').textContent=fmt(data);"
         "const ti=document.getElementById('time-info');"
@@ -638,10 +649,13 @@ static esp_err_t status_view_get_handler(httpd_req_t *req)
         "if(s<60)ageStr=s+'s ago';"
         "else if(s<3600)ageStr=Math.floor(s/60)+'m '+(s%60)+'s ago';"
         "else ageStr=Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m ago';}"
-        "ti.innerHTML='Time: <strong>'+localTime+'</strong>&nbsp;&nbsp;|&nbsp;&nbsp;Last update: <strong>'+ageStr+'</strong>';"
+        "ti.innerHTML='Time: <strong>'+localTime+'</strong> &nbsp;|&nbsp; Last update: <strong>'+ageStr+'</strong>';"
+        "ti.removeAttribute('hidden');"
         "}).catch(e=>{"
-        "document.getElementById('status-content').innerHTML='<span style=\"color:red\">Error loading status: '+e+'</span>';"
-        "document.getElementById('time-info').textContent='';"
+        "const err=document.getElementById('status-error');"
+        "err.textContent='Error loading status: '+e;"
+        "err.removeAttribute('hidden');"
+        "document.getElementById('status-content').textContent='';"
         "});"
         "</script>";
 
@@ -669,37 +683,45 @@ static esp_err_t status_view_get_handler(httpd_req_t *req)
 
 static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
 {
-    // Load current config
     mqtt_config_t config = {0};
     mqtt_load_config(&config);
+
+    int display_port = config.port > 0 ? config.port : MQTT_DEFAULT_PORT;
 
     const char *html_start =
         "<div class='container'>"
         "<h1>MQTT Configuration</h1>"
-        "<form id='mqttForm'>"
-        "<label><input type='checkbox' id='enabled' name='enabled'";
+        "<form id='mqttForm'>";
 
-    char checkbox_checked[16] = "";
-    if (config.enabled) {
-        strncpy(checkbox_checked, " checked", sizeof(checkbox_checked) - 1);
-    }
-
-    // Default port to MQTT_DEFAULT_PORT if not set
-    int display_port = config.port > 0 ? config.port : MQTT_DEFAULT_PORT;
-
-    char html_mid[1024];
-    snprintf(html_mid, sizeof(html_mid),
-        "%s><span class='checkbox-label'>Enable MQTT</span></label>"
-        "<label>Broker Host/IP:<input type='text' id='broker' name='broker' value='%s' placeholder='mqtt.example.com'></label>"
-        "<label>Port:<input type='number' id='port' name='port' value='%d' min='1' max='65535' placeholder='1883'></label>"
-        "<label>Username (optional):<input type='text' id='username' name='username' value='%s' placeholder='Leave empty if not required'></label>"
-        "<label>Password (optional):<input type='password' id='password' name='password' value='' placeholder='%s'></label>"
-        "<button type='submit'>Save Configuration</button>"
-        "<div id='status' class='status'></div></form>",
-        checkbox_checked, config.broker, display_port, config.username,
+    char html_fields[1536];
+    snprintf(html_fields, sizeof(html_fields),
+        "<div data-field>"
+            "<label><input type='checkbox' id='enabled' role='switch' name='enabled'%s> Enable MQTT</label>"
+        "</div>"
+        "<div data-field>"
+            "<label for='broker'>Broker Host/IP</label>"
+            "<input type='text' id='broker' name='broker' value='%s' placeholder='mqtt.example.com'>"
+        "</div>"
+        "<div data-field>"
+            "<label for='port'>Port</label>"
+            "<input type='number' id='port' name='port' value='%d' min='1' max='65535'>"
+        "</div>"
+        "<div data-field>"
+            "<label for='username'>Username <small>(optional)</small></label>"
+            "<input type='text' id='username' name='username' value='%s' placeholder='Leave empty if not required'>"
+        "</div>"
+        "<div data-field>"
+            "<label for='password'>Password <small>(optional)</small></label>"
+            "<input type='password' id='password' name='password' placeholder='%s'>"
+        "</div>",
+        config.enabled ? " checked" : "",
+        config.broker, display_port, config.username,
         strlen(config.password) > 0 ? "Leave empty to keep current password" : "Leave empty if not required");
 
     const char *html_end =
+        "<button type='submit'>Save Configuration</button>"
+        "<div id='status' role='alert' hidden class='mt-4'></div>"
+        "</form></div>"
         "<script>"
         "document.getElementById('mqttForm').addEventListener('submit',function(e){"
         "e.preventDefault();"
@@ -712,26 +734,26 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         ".then(r=>r.json()).then(d=>{"
         "const s=document.getElementById('status');"
         "s.textContent=d.message;"
-        "s.className='status '+(d.success?'success':'error');"
-        "s.style.display='block';"
+        "s.setAttribute('data-variant',d.success?'success':'danger');"
+        "s.removeAttribute('hidden');"
         "if(d.success)setTimeout(()=>window.location.reload(),2000);"
         "}).catch(()=>{"
         "const s=document.getElementById('status');"
         "s.textContent='Failed to save configuration';"
-        "s.className='status error';s.style.display='block';});"
+        "s.setAttribute('data-variant','danger');"
+        "s.removeAttribute('hidden');});"
         "});"
-        "</script></div>";
-
+        "</script>";
 
     char page_title[] = "MQTT Configuration";
     char *header = get_page_header(page_title);
-    char *nav = get_page_nav('/');
+    char *nav = get_page_nav('m');
     char *footer = get_page_footer();
     httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, html_mid, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, html_fields, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_end, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
@@ -858,25 +880,23 @@ static esp_err_t update_get_handler(httpd_req_t *req)
     const char *html_start =
         "<div class='container'>"
         "<h1>Firmware Update</h1>"
-        "<div style='background:#e7f3ff;padding:15px;border-radius:4px;margin-bottom:20px'>"
+        "<div role='alert'>"
         "<strong>Current Version:</strong> ";
 
     const char *html_mid =
         "</div>"
-        "<div style='background:#fff3cd;padding:15px;border-radius:4px;margin-bottom:20px'>"
-        "<strong>⚠️ Warning:</strong> Do not power off the device during update!"
+        "<div role='alert' data-variant='warning' class='mt-4'>"
+        "<strong>Warning:</strong> Do not power off the device during update!"
         "</div>"
-        "<form id='updateForm' enctype='multipart/form-data'>"
-        "<label>Select Firmware File (.bin):</label>"
-        "<input type='file' id='firmware' name='firmware' accept='.bin' required>"
+        "<form id='updateForm' class='mt-4'>"
+        "<div data-field>"
+            "<label for='firmware'>Firmware File (.bin)</label>"
+            "<input type='file' id='firmware' name='firmware' accept='.bin' required>"
+        "</div>"
         "<button type='submit'>Upload and Update</button>"
-        "<div id='status' class='status'></div>"
-        "<div id='progress' style='display:none;margin-top:20px'>"
-        "<div style='background:#e0e0e0;border-radius:4px;overflow:hidden'>"
-        "<div id='progressBar' style='background:#4CAF50;height:30px;width:0%;transition:width 0.3s'></div>"
-        "</div>"
-        "<div id='progressText' style='text-align:center;margin-top:10px'></div>"
-        "</div>"
+        "<div id='status' role='alert' hidden class='mt-4'></div>"
+        "<progress id='progressBar' value='0' max='100' hidden class='mt-4'></progress>"
+        "<p id='progressText' hidden class='text-center mt-2'></p>"
         "</form></div>"
         "<script>"
         "document.getElementById('updateForm').addEventListener('submit',function(e){"
@@ -884,23 +904,27 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "const file=document.getElementById('firmware').files[0];"
         "if(!file){alert('Please select a file');return;}"
         "const status=document.getElementById('status');"
-        "const progress=document.getElementById('progress');"
         "const progressBar=document.getElementById('progressBar');"
         "const progressText=document.getElementById('progressText');"
-        "status.textContent='Uploading firmware ('+Math.round(file.size/1024)+'KB)...';status.className='status';status.style.display='block';"
-        "progress.style.display='block';"
+        "status.textContent='Uploading firmware ('+Math.round(file.size/1024)+'KB)...';"
+        "status.removeAttribute('data-variant');"
+        "status.removeAttribute('hidden');"
+        "progressBar.value=0;"
+        "progressBar.removeAttribute('hidden');"
+        "progressText.removeAttribute('hidden');"
         "const xhr=new XMLHttpRequest();"
         "xhr.upload.addEventListener('progress',function(e){"
         "if(e.lengthComputable){"
         "const percent=Math.round((e.loaded/e.total)*100);"
-        "progressBar.style.width=percent+'%';"
+        "progressBar.value=percent;"
         "progressText.textContent=percent+'% ('+Math.round(e.loaded/1024)+'KB / '+Math.round(e.total/1024)+'KB)';"
         "}});"
         "xhr.addEventListener('load',function(){"
         "if(xhr.status===200){"
         "const resp=JSON.parse(xhr.responseText);"
         "if(resp.success){"
-        "status.className='status success';"
+        "progressBar.setAttribute('hidden','');progressText.setAttribute('hidden','');"
+        "status.setAttribute('data-variant','success');"
         "let countdown=15;"
         "status.textContent='Update successful! Rebooting... reload in '+countdown+' seconds';"
         "const timer=setInterval(function(){"
@@ -913,14 +937,18 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "window.location.reload();"
         "}},1000);"
         "}else{"
-        "status.textContent='Error: '+resp.message;status.className='status error';"
+        "status.textContent='Error: '+resp.message;"
+        "status.setAttribute('data-variant','danger');"
         "}}else{"
-        "status.textContent='Upload failed (HTTP '+xhr.status+')';status.className='status error';"
+        "status.textContent='Upload failed (HTTP '+xhr.status+')';"
+        "status.setAttribute('data-variant','danger');"
         "}});"
         "xhr.addEventListener('error',function(){"
-        "status.textContent='Network error during upload';status.className='status error';});"
+        "status.textContent='Network error during upload';"
+        "status.setAttribute('data-variant','danger');});"
         "xhr.addEventListener('timeout',function(){"
-        "status.textContent='Upload timeout - try again';status.className='status error';});"
+        "status.textContent='Upload timeout - try again';"
+        "status.setAttribute('data-variant','danger');});"
         "xhr.open('POST','/update',true);"
         "xhr.timeout=120000;"
         "xhr.setRequestHeader('Content-Type','application/octet-stream');"
@@ -930,7 +958,7 @@ static esp_err_t update_get_handler(httpd_req_t *req)
 
     char page_title[] = "Firmware Update";
     char *header = get_page_header(page_title);
-    char *nav = get_page_nav('/');
+    char *nav = get_page_nav('u');
     char *footer = get_page_footer();
     httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
@@ -1251,6 +1279,9 @@ typedef struct {
 // main/static/favicon.svg  (mdi:pool, https://github.com/Templarian/MaterialDesign)
 // Note: ESP-IDF derives the symbol name from the filename only, not the full path.
 extern const char _binary_favicon_svg_start[];
+// main/static/oat.min.css + oat.min.js  (https://oat.ink, MIT license)
+extern const char _binary_oat_min_css_start[];
+extern const char _binary_oat_min_js_start[];
 
 // --- File table ---
 
@@ -1259,6 +1290,18 @@ static const static_file_t STATIC_FILES[] = {
         .uri           = "/static/favicon.ico",
         .content       = _binary_favicon_svg_start,
         .content_type  = "image/svg+xml",
+        .cache_control = "max-age=86400",
+    },
+    {
+        .uri           = "/static/oat.min.css",
+        .content       = _binary_oat_min_css_start,
+        .content_type  = "text/css",
+        .cache_control = "max-age=86400",
+    },
+    {
+        .uri           = "/static/oat.min.js",
+        .content       = _binary_oat_min_js_start,
+        .content_type  = "application/javascript",
         .cache_control = "max-age=86400",
     },
 };
