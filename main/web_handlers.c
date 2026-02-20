@@ -51,7 +51,8 @@ char *get_page_nav(const char page) {
         "</nav>"
         "<aside data-sidebar>"
         "<nav><ul>"
-        "<li><a href='/'" "%s" ">WiFi Config</a></li>"
+        "<li><a href='/'" "%s" ">Home</a></li>"
+        "<li><a href='/wifi'" "%s" ">WiFi Config</a></li>"
         "<li><a href='/mqtt_config'" "%s" ">MQTT Config</a></li>"
         "<li><a href='/status_view'" "%s" ">Status</a></li>"
         "<li><a href='/update'" "%s" ">Firmware Update</a></li>"
@@ -62,6 +63,7 @@ char *get_page_nav(const char page) {
     const char *cur = " aria-current='page'";
     const char *none = "";
     int n = snprintf(NULL, 0, fmt,
+        page == 'h' ? cur : none,
         page == 'w' ? cur : none,
         page == 'm' ? cur : none,
         page == 's' ? cur : none,
@@ -73,6 +75,7 @@ char *get_page_nav(const char page) {
     if (!nav) return NULL;
 
     snprintf(nav, (size_t)n + 1, fmt,
+        page == 'h' ? cur : none,
         page == 'w' ? cur : none,
         page == 'm' ? cur : none,
         page == 's' ? cur : none,
@@ -90,7 +93,130 @@ char *get_page_footer(void) {
 }
 
 // ======================================================
-// Root Page Handler
+// Home Page Handler
+// ======================================================
+
+static esp_err_t home_get_handler(httpd_req_t *req)
+{
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+
+    // WiFi AP info (SSID, RSSI)
+    wifi_ap_record_t ap_info = {0};
+    bool wifi_info_ok = (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
+
+    // MQTT status
+    bool mqtt_connected = mqtt_client_is_connected();
+    mqtt_config_t mqtt_config = {0};
+    bool mqtt_enabled = mqtt_load_config(&mqtt_config) && mqtt_config.enabled;
+
+    // Uptime
+    uint32_t uptime_s = (uint32_t)((uint64_t)xTaskGetTickCount() * portTICK_PERIOD_MS / 1000);
+    char uptime_str[32];
+    uint32_t d = uptime_s / 86400, h = (uptime_s % 86400) / 3600;
+    uint32_t m = (uptime_s % 3600) / 60, s = uptime_s % 60;
+    if (d > 0)      snprintf(uptime_str, sizeof(uptime_str), "%lud %luh %lum", (unsigned long)d, (unsigned long)h, (unsigned long)m);
+    else if (h > 0) snprintf(uptime_str, sizeof(uptime_str), "%luh %lum %lus", (unsigned long)h, (unsigned long)m, (unsigned long)s);
+    else            snprintf(uptime_str, sizeof(uptime_str), "%lum %lus", (unsigned long)m, (unsigned long)s);
+
+    // System info table
+    char sys_table[512];
+    snprintf(sys_table, sizeof(sys_table),
+        "<h1>Pool Controller</h1>"
+        "<h2>System</h2>"
+        "<table><tbody>"
+        "<tr><th>Firmware</th><td>%s</td></tr>"
+        "<tr><th>Project</th><td>%s</td></tr>"
+        "<tr><th>Built</th><td>%s %s</td></tr>"
+        "<tr><th>Uptime</th><td>%s</td></tr>"
+        "<tr><th>IP Address</th><td>%s</td></tr>",
+        app_desc->version, app_desc->project_name,
+        app_desc->date, app_desc->time,
+        uptime_str, wifi_get_device_ip());
+
+    // WiFi row
+    char wifi_row[96];
+    if (wifi_info_ok) {
+        snprintf(wifi_row, sizeof(wifi_row),
+            "<tr><th>WiFi</th><td>%s (%d dBm)</td></tr>",
+            (char *)ap_info.ssid, ap_info.rssi);
+    } else {
+        snprintf(wifi_row, sizeof(wifi_row), "<tr><th>WiFi</th><td>Not connected</td></tr>");
+    }
+
+    // MQTT row
+    char mqtt_row[256];
+    if (!mqtt_enabled) {
+        snprintf(mqtt_row, sizeof(mqtt_row), "<tr><th>MQTT</th><td>Disabled</td></tr></tbody></table>");
+    } else if (mqtt_connected) {
+        snprintf(mqtt_row, sizeof(mqtt_row),
+            "<tr><th>MQTT</th><td>Connected (%s)</td></tr></tbody></table>", mqtt_config.broker);
+    } else {
+        snprintf(mqtt_row, sizeof(mqtt_row),
+            "<tr><th>MQTT</th><td>Disconnected (%s)</td></tr></tbody></table>", mqtt_config.broker);
+    }
+
+    // Pool summary — loaded from /status via JS
+    static const char pool_section[] =
+        "<h2>Pool</h2>"
+        "<p id='pool-loading' class='text-lighter'>Loading...</p>"
+        "<table id='pool-table' hidden><tbody id='pool-body'></tbody></table>"
+        "<p id='time-info' class='text-lighter mt-2' hidden></p>"
+        "<div id='pool-error' role='alert' data-variant='danger' hidden></div>"
+        "<script>"
+        "fetch('/status').then(r=>r.json()).then(data=>{"
+        "const rows=[];"
+        "if(data.mode!==null)rows.push(['Mode',data.mode]);"
+        "const t=data.temperature;"
+        "if(t.current!==null)rows.push(['Temperature',t.current+'\u00b0'+(t.scale==='Fahrenheit'?'F':'C')]);"
+        "if(data.heater.state!==null)rows.push(['Heater',data.heater.state]);"
+        "data.channels.forEach(ch=>rows.push([ch.name||ch.type,ch.state]));"
+        "data.lighting.forEach(lt=>{"
+        "let s=lt.state;if(lt.active&&lt.color)s+=': '+lt.color;"
+        "rows.push(['Lighting zone '+lt.zone,s]);});"
+        "const c=data.chlorinator;"
+        "if(c.ph_reading!==null)rows.push(['pH',c.ph_reading+' (setpoint '+c.ph_setpoint+')']);"
+        "if(c.orp_reading!==null)rows.push(['ORP',c.orp_reading+'mV (setpoint '+c.orp_setpoint+'mV)']);"
+        "const tb=document.getElementById('pool-body');"
+        "rows.forEach(([k,v])=>{"
+        "const tr=document.createElement('tr');"
+        "tr.innerHTML='<th>'+k+'</th><td>'+v+'</td>';"
+        "tb.appendChild(tr);});"
+        "document.getElementById('pool-loading').hidden=true;"
+        "document.getElementById('pool-table').removeAttribute('hidden');"
+        "if(data.time_since_last_update){"
+        "const ti=document.getElementById('time-info');"
+        "ti.textContent='Last update: '+data.time_since_last_update;"
+        "ti.removeAttribute('hidden');}"
+        "}).catch(e=>{"
+        "document.getElementById('pool-loading').hidden=true;"
+        "const err=document.getElementById('pool-error');"
+        "err.textContent='Failed to load pool status: '+e;"
+        "err.removeAttribute('hidden');});"
+        "</script>";
+
+    char page_title[] = "Home";
+    char *header = get_page_header(page_title);
+    char *nav = get_page_nav('h');
+    char *footer = get_page_footer();
+
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, sys_table, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, wifi_row, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, mqtt_row, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, pool_section, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+
+    free(footer);
+    free(nav);
+    free(header);
+    return ESP_OK;
+}
+
+// ======================================================
+// WiFi Config Page Handler
 // ======================================================
 
 // HTML page for WiFi provisioning
@@ -136,7 +262,7 @@ const char WIFI_PAGE[] =
     "scanWiFi();"
     "</script>";
 
-static esp_err_t root_get_handler(httpd_req_t *req)
+static esp_err_t wifi_get_handler(httpd_req_t *req)
 {
     char page_title[] = "WiFi Configuration";
     char *header = get_page_header(page_title);
@@ -1198,7 +1324,13 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
 static const httpd_uri_t root_uri = {
     .uri = "/",
     .method = HTTP_GET,
-    .handler = root_get_handler
+    .handler = home_get_handler
+};
+
+static const httpd_uri_t wifi_uri = {
+    .uri = "/wifi",
+    .method = HTTP_GET,
+    .handler = wifi_get_handler
 };
 
 static const httpd_uri_t scan_uri = {
@@ -1342,6 +1474,22 @@ static esp_err_t favicon_redirect_handler(httpd_req_t *req)
 }
 
 // ======================================================
+// robots.txt Handler
+// ======================================================
+static esp_err_t robots_txt_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_sendstr(req, "User-agent: *\r\nDisallow: /\r\n");
+    return ESP_OK;
+}
+
+static const httpd_uri_t robots_txt_uri = {
+    .uri     = "/robots.txt",
+    .method  = HTTP_GET,
+    .handler = robots_txt_handler,
+};
+
+// ======================================================
 // Favicon Handler
 // ======================================================
 static const httpd_uri_t favicon_redirect_uri = {
@@ -1350,14 +1498,19 @@ static const httpd_uri_t favicon_redirect_uri = {
     .handler = favicon_redirect_handler,
 };
 
-// Custom 404 error handler for captive portal
-// Redirects all unmatched requests to the provisioning page
+// Custom 404 error handler
+// In provisioning mode: serves the WiFi config page for captive portal detection
+// Otherwise: returns a standard 404
 static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
 {
-    ESP_LOGI(TAG, "Captive portal: redirecting %s to root", req->uri);
+    if (wifi_is_provisioning_active()) {
+        ESP_LOGI(TAG, "Captive portal: redirecting %s to WiFi config", req->uri);
+        return wifi_get_handler(req);
+    }
 
-    // Serve the root page content for any 404
-    return root_get_handler(req);
+    ESP_LOGI(TAG, "404: %s", req->uri);
+    httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "404 Not found");
+    return ESP_FAIL;
 }
 
 // ======================================================
@@ -1368,6 +1521,7 @@ esp_err_t web_handlers_register(httpd_handle_t server)
 {
     // Register main application handlers
     httpd_register_uri_handler(server, &root_uri);
+    httpd_register_uri_handler(server, &wifi_uri);
     httpd_register_uri_handler(server, &scan_uri);
     httpd_register_uri_handler(server, &provision_uri);
     httpd_register_uri_handler(server, &status_uri);
@@ -1379,6 +1533,7 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &test_decode_uri);
     httpd_register_uri_handler(server, &static_files_uri);   // /static/* wildcard
     httpd_register_uri_handler(server, &favicon_redirect_uri); // /favicon.ico -> /static/favicon.ico
+    httpd_register_uri_handler(server, &robots_txt_uri);
 
     // Register custom 404 error handler for captive portal
     // This catches all unmatched URIs and redirects to the provisioning page

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [TODO]
 - Don't publish to MQTT after every change - add small debounce to it (verify frequency)
-- 
+
 
 ## [Unreleased]
 ### Added
@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added NTP support to set real time clock correctly.
 - Added local timezone from browser at bottom of status page.
 - Added oat.ink styling for better consistency, performance and accessibility
+- Added new home page which gives status info
+- Added robots.txt to disallow indexing
 
 ### Removed
 
@@ -49,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed abort on tx timeout - doesn't need to crash
 - Fixed uninitialized struct sockaddr_in client_addr
 - Fixed provisioning AP was being setup every time - even when configured.
+- 404 handler only redirects in captive portal mode - otherwise proper 404.
+
 
 ## [0.0.6] - 2026-02-09
 ### Added
