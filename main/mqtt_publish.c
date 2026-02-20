@@ -130,9 +130,9 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
         return;
     }
 
-    // Skip light zone channels — published separately via mqtt_publish_light()
-    if (channel->type == CHANNEL_TYPE_LIGHT_ZONE) {
-        ESP_LOGD(TAG, "Skipping light zone channel %d", channel_id);
+    // Skip heater and light zone channels — handled by their own publish functions
+    if (channel->type == CHANNEL_TYPE_HEATER || channel->type == CHANNEL_TYPE_LIGHT_ZONE) {
+        ESP_LOGD(TAG, "Skipping heater/light channel %d (type 0x%02X)", channel_id, channel->type);
         return;
     }
 

@@ -81,6 +81,7 @@ const char* get_channel_type_name(uint8_t type_code);
 
 // Special channel type markers
 #define CHANNEL_UNUSED          0x00  // Unused/unconfigured channel
+#define CHANNEL_TYPE_HEATER     0xFD  // Channel is a heater (handled separately)
 #define CHANNEL_TYPE_LIGHT_ZONE 0xFE  // Channel is a lighting zone (handled separately)
 
 #endif // MESSAGE_DECODER_H
