@@ -130,6 +130,12 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
         return;
     }
 
+    // Skip light zone channels — published separately via mqtt_publish_light()
+    if (channel->type == CHANNEL_TYPE_LIGHT_ZONE) {
+        ESP_LOGD(TAG, "Skipping light zone channel %d", channel_id);
+        return;
+    }
+
     // Use channel name if set, otherwise fall back to type name
     const char *type_name = get_channel_type_name(channel->type);
     const char *display_name = (channel->name[0] != '\0') ? channel->name : type_name;

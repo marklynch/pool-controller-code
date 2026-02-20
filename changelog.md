@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed uninitialized struct sockaddr_in client_addr
 - Fixed provisioning AP was being setup every time - even when configured.
 - 404 handler only redirects in captive portal mode - otherwise proper 404.
+- Fixed - don't show lights in the channels section
 
 
 ## [0.0.6] - 2026-02-09

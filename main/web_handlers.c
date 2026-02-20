@@ -541,11 +541,12 @@ static esp_err_t status_get_handler(httpd_req_t *req)
             len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
         }
 
-        // Channels section
+        // Channels section (excludes light zone channels — those appear under "lighting")
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"channels\":[");
         bool first_channel = true;
         for (int i = 0; i < MAX_CHANNELS; i++) {
-            if (s_pool_state.channels[i].configured) {
+            if (s_pool_state.channels[i].configured &&
+                s_pool_state.channels[i].type != CHANNEL_TYPE_LIGHT_ZONE) {
                 if (!first_channel) {
                     len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
                 }
