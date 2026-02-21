@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Fixed
 - Fixed MSG_DECODER: RX MSG: which was truncating the last byte
-
+- Fixed incorrect config for Valve labels
 
 ## [0.5.0] - 2026-02-20
 ### Added

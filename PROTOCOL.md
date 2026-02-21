@@ -319,7 +319,7 @@ The register ID and slot together determine the message meaning. The slot distin
 | 0x6C-0x73 | 0x02 | Channel Types | 1-byte type code (see channel types) |
 | 0x7C-0x83 | 0x02 | Channel Names | Null-terminated ASCII string |
 | 0xC0-0xC7 | 0x01 | Light Zone State | 1-byte value (0=Off, 1=Auto, 2=On) |
-| 0xD0-0xD1 | 0x03 | Valve Labels | Null-terminated ASCII string |
+| 0xD0-0xD1 | 0x02 | Valve Labels | Null-terminated ASCII string |
 | 0xD0-0xD7 | 0x01 | Light Zone Color | 1-byte color code |
 | 0xE0-0xE7 | 0x01 | Light Zone Active | 1-byte binary (0x00=Inactive, 0x01=Active) |
 
@@ -362,17 +362,17 @@ The register ID and slot together determine the message meaning. The slot distin
                                     ^^ Color code: 0x05 = Blue
 ```
 
-**Valve Label (0xD0-0xD1, Slot 0x03):**
+**Valve Label (0xD0-0xD1, Slot 0x02):**
 ```
-02 00 50 FF FF 80 00 38 16 1E D0 03 56 61 6C 76 65 20 31 00 21 03
+02 00 50 FF FF 80 00 38 16 1E D0 02 56 61 6C 76 65 20 31 00 21 03
                               ^^ Valve 1 (0xD0) - same register as Light Zone 1!
-                                 ^^ Slot 0x03 (Label) - different slot
+                                 ^^ Slot 0x02 (Label)
                                     V  a  l  v  e     1  \0
 ```
 
 **Note:** Register 0xD0 serves dual purpose:
 - With slot 0x01: Light zone 1 color (numeric)
-- With slot 0x03: Valve 1 label (text)
+- With slot 0x02: Valve 1 label (text)
 
 **Light Zone Active (0xE0-0xE7, Slot 0x01):**
 ```
@@ -410,8 +410,8 @@ static const register_handler_t REGISTER_HANDLERS[] = {
     {0xC0, 0xC7, 0x01, handle_light_zone_state,   "Light Zone State"},
     {0xD0, 0xD7, 0x01, handle_light_zone_color,   "Light Zone Color"},
     {0xE0, 0xE7, 0x01, handle_light_zone_active,  "Light Zone Active"},
-    {0xD0, 0xD1, 0x03, handle_valve_label,        "Valve Label"},
-    {0x00, 0xFF, 0x03, handle_register_label_generic, "Register Label"},
+    {0xD0, 0xD1, 0x02, handle_valve_label,        "Valve Label"},
+    {0x31, 0x38, 0x03, handle_register_label_generic, "Favourite Label"},
 };
 ```
 

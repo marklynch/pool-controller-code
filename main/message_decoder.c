@@ -416,9 +416,11 @@ static const register_handler_t REGISTER_HANDLERS[] = {
     {0xD0, 0xD7, 0x01, handle_light_zone_color,   "Light Zone Color"},
     {0xE0, 0xE7, 0x01, handle_light_zone_active,  "Light Zone Active"},
 
+    // Valve labels (slot 0x02)
+    {0xD0, 0xD1, 0x02, handle_valve_label,        "Valve Label"},
+
     // Labels (slot 0x03) - only specific ranges we've observed
     {0x31, 0x38, 0x03, handle_register_label_generic, "Favourite Label"},
-    {0xD0, 0xD1, 0x03, handle_valve_label,        "Valve Label"},
 };
 
 #define REGISTER_HANDLER_COUNT (sizeof(REGISTER_HANDLERS) / sizeof(REGISTER_HANDLERS[0]))
