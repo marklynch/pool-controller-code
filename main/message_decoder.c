@@ -393,6 +393,7 @@ typedef struct {
 } register_handler_t;
 
 // Forward declarations for register handlers
+static bool handle_timer(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_channel_type(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_channel_name(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_light_zone_state(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
@@ -407,6 +408,9 @@ static bool handle_register_label_generic(const uint8_t *data, int len, const ui
  * Only includes register ranges with confirmed behavior
  */
 static const register_handler_t REGISTER_HANDLERS[] = {
+    // Timers (slot 0x04, registers 0x08-0x17 = timers 1-16)
+    {0x08, 0x17, 0x04, handle_timer,              "Timer"},
+
     // Channel configuration
     {0x6C, 0x73, 0x02, handle_channel_type,       "Channel Type"},
     {0x7C, 0x83, 0x02, handle_channel_name,       "Channel Name"},
@@ -1131,6 +1135,85 @@ static bool handle_light_config(
 // ======================================================
 // Register message handlers (dispatched by register range and slot)
 // ======================================================
+
+/**
+ * Handler: Timer configuration
+ * Register range: 0x08-0x17 (timers 1-16), Slot: 0x04
+ *
+ * Payload layout (bytes within payload[], offset from byte 10):
+ *   [0] reg_id       - register (0x08=timer1 .. 0x17=timer16)
+ *   [1] slot         - always 0x04
+ *   [2] start_hour   - 24h start hour
+ *   [3] start_minute - start minute
+ *   [4] stop_hour    - 24h stop hour
+ *   [5] stop_minute  - stop minute
+ *   [6] days         - bitmask (assumed: bit0=Mon..bit6=Sun; 0x7F=every day, 0x00=disabled)
+ */
+static bool handle_timer(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 7) return false;
+
+    uint8_t reg_id       = payload[0];
+    // payload[1] = slot (0x04) - not needed
+    uint8_t start_hour   = payload[2];
+    uint8_t start_minute = payload[3];
+    uint8_t stop_hour    = payload[4];
+    uint8_t stop_minute  = payload[5];
+    uint8_t days         = payload[6];
+
+    uint8_t timer_num = reg_id - 0x08 + 1;
+
+    // Build compact day string: MTWTFSS where '-' means not set
+    // Assumed mapping: bit0=Mon, bit1=Tue, bit2=Wed, bit3=Thu, bit4=Fri, bit5=Sat, bit6=Sun
+    char days_str[8];
+    const char day_chars[] = "MTWTFSS";
+    for (int i = 0; i < 7; i++) {
+        days_str[i] = (days & (1 << i)) ? day_chars[i] : '-';
+    }
+    days_str[7] = '\0';
+
+    if (days == 0x00 && start_hour == 0 && start_minute == 0 && stop_hour == 0 && stop_minute == 0) {
+        ESP_LOGI(TAG, "%s Timer %d - not configured", addr_info, timer_num);
+    } else {
+        ESP_LOGI(TAG, "%s Timer %d - start=%02d:%02d stop=%02d:%02d days=0x%02X [%s]",
+                 addr_info, timer_num,
+                 start_hour, start_minute, stop_hour, stop_minute,
+                 days, days_str);
+    }
+
+    // Log any extra bytes beyond the 7 known bytes (for future decoding)
+    if (payload_len > 7) {
+        int extra = payload_len - 7;
+        char extra_hex[64] = {0};
+        int pos = 0;
+        for (int i = 7; i < payload_len && pos < (int)sizeof(extra_hex) - 4; i++) {
+            pos += snprintf(&extra_hex[pos], sizeof(extra_hex) - pos, "%02X ", payload[i]);
+        }
+        ESP_LOGW(TAG, "%s Timer %d - %d extra unknown byte(s): %s", addr_info, timer_num, extra, extra_hex);
+    }
+
+    // Update state
+    if (timer_num >= 1 && timer_num <= MAX_TIMERS) {
+        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+            int idx = timer_num - 1;
+            ctx->pool_state->timers[idx].timer_num    = timer_num;
+            ctx->pool_state->timers[idx].start_hour   = start_hour;
+            ctx->pool_state->timers[idx].start_minute = start_minute;
+            ctx->pool_state->timers[idx].stop_hour    = stop_hour;
+            ctx->pool_state->timers[idx].stop_minute  = stop_minute;
+            ctx->pool_state->timers[idx].days         = days;
+            ctx->pool_state->timers[idx].valid        = true;
+            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            xSemaphoreGive(ctx->state_mutex);
+        }
+    }
+
+    return true;
+}
 
 /**
  * Handler: Channel type configuration

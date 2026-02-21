@@ -37,6 +37,16 @@ typedef struct {
     bool configured;
 } lighting_state_t;
 
+typedef struct {
+    uint8_t timer_num;      // 1-based timer number
+    uint8_t start_hour;
+    uint8_t start_minute;
+    uint8_t stop_hour;
+    uint8_t stop_minute;
+    uint8_t days;           // Bitmask: bit0=Mon, bit1=Tue, ..., bit6=Sun; 0x7F=every day
+    bool valid;
+} timer_state_t;
+
 // Register label storage entry
 typedef struct {
     uint8_t reg_id;      // Register identifier (byte 10 from message)
@@ -103,6 +113,9 @@ typedef struct {
     uint8_t touchscreen_version_major;
     uint8_t touchscreen_version_minor;
     bool touchscreen_version_valid;
+
+    // Timers (up to MAX_TIMERS)
+    timer_state_t timers[MAX_TIMERS];
 
     // Last update timestamp (milliseconds since boot)
     uint32_t last_update_ms;

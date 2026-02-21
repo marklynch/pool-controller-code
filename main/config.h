@@ -53,6 +53,7 @@
 
 #define MAX_CHANNELS                   8       // Maximum number of controllable channels
 #define MAX_LIGHT_ZONES                4       // Maximum number of light zones
+#define MAX_TIMERS                     16      // Maximum number of timers (registers 0x08-0x17)
 
 // ======================================================
 // UART/Bus Configuration

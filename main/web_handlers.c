@@ -176,6 +176,8 @@ static esp_err_t home_get_handler(httpd_req_t *req)
         "const c=data.chlorinator;"
         "if(c.ph_reading!==null)rows.push(['pH',c.ph_reading+' (setpoint '+c.ph_setpoint+')']);"
         "if(c.orp_reading!==null)rows.push(['ORP',c.orp_reading+'mV (setpoint '+c.orp_setpoint+'mV)']);"
+        "if(data.timers&&data.timers.length>0){"
+        "data.timers.forEach(t=>rows.push(['Timer '+t.num,t.start+' \u2013 '+t.stop+' ['+t.days+']']));}"
         "const tb=document.getElementById('pool-body');"
         "rows.forEach(([k,v])=>{"
         "const tr=document.createElement('tr');"
@@ -671,6 +673,31 @@ static esp_err_t status_get_handler(httpd_req_t *req)
             len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null");
         }
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
+
+        // Timers section (only configured timers)
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"timers\":[");
+        bool first_timer = true;
+        for (int i = 0; i < MAX_TIMERS; i++) {
+            timer_state_t *t = &s_pool_state.timers[i];
+            if (!t->valid) continue;
+            if (t->days == 0 && t->start_hour == 0 && t->start_minute == 0 &&
+                t->stop_hour == 0 && t->stop_minute == 0) continue;
+
+            if (!first_timer) len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
+            first_timer = false;
+
+            char days_str[8];
+            const char day_chars[] = "MTWTFSS";
+            for (int d = 0; d < 7; d++) {
+                days_str[d] = (t->days & (1 << d)) ? day_chars[d] : '-';
+            }
+            days_str[7] = '\0';
+
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
+                "{\"num\":%d,\"start\":\"%02d:%02d\",\"stop\":\"%02d:%02d\",\"days\":\"%s\"}",
+                t->timer_num, t->start_hour, t->start_minute, t->stop_hour, t->stop_minute, days_str);
+        }
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "],");
 
         // Last update timestamp
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"last_update_ms\":%lu",

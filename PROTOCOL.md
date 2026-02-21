@@ -315,6 +315,7 @@ The register ID and slot together determine the message meaning. The slot distin
 
 | Register Range | Slot | Purpose | Data Format |
 |---------------|------|---------|-------------|
+| 0x08-0x17 | 0x04 | Timers 1-16 | start/stop time + days bitmask (see Timer section) |
 | 0x31-0x38 | 0x03 | Favourite Labels | Null-terminated ASCII string |
 | 0x6C-0x73 | 0x02 | Channel Types | 1-byte type code (see channel types) |
 | 0x7C-0x83 | 0x02 | Channel Names | Null-terminated ASCII string |
@@ -408,6 +409,7 @@ static const register_handler_t REGISTER_HANDLERS[] = {
     {0x6C, 0x73, 0x02, handle_channel_type,       "Channel Type"},
     {0x7C, 0x83, 0x02, handle_channel_name,       "Channel Name"},
     {0xC0, 0xC7, 0x01, handle_light_zone_state,   "Light Zone State"},
+    {0x08, 0x17, 0x04, handle_timer,              "Timer"},
     {0xD0, 0xD7, 0x01, handle_light_zone_color,   "Light Zone Color"},
     {0xE0, 0xE7, 0x01, handle_light_zone_active,  "Light Zone Active"},
     {0xD0, 0xD1, 0x02, handle_valve_label,        "Valve Label"},
@@ -423,7 +425,66 @@ The dispatcher:
 
 ---
 
-### 9. Register Labels ✅
+### 9. Timers ⚠️
+
+Timer schedule configuration. Each timer has a start time, stop time, and a days-of-week bitmask. Up to 16 timers are supported (registers `0x08`–`0x17`).
+
+**Base Pattern:** `02 00 50 FF FF 80 00 38 13 1B` (Register message, CMD=0x13, SUB=0x1B, slot `0x04`)
+
+**Examples:**
+
+```
+02 00 50 FF FF 80 00 38 13 1B 08 04 08 00 0C 00 7F 9F 03
+                              ^^ Timer 1 (reg 0x08)
+                                 ^^ Slot 0x04
+                                    ^^ Start hour  (08 = 08:00)
+                                       ^^ Start minute
+                                          ^^ Stop hour  (0C = 12:00)
+                                             ^^ Stop minute
+                                                ^^ Days bitmask (0x7F = every day)
+
+02 00 50 FF FF 80 00 38 13 1B 09 04 0F 00 13 00 7F AE 03   # Timer 2: 15:00-19:00 every day
+02 00 50 FF FF 80 00 38 13 1B 0A 04 00 00 00 00 00 0E 03   # Timer 3: not configured
+```
+
+**Data Fields:**
+
+- Byte 10: Register ID (`0x08` = Timer 1, `0x09` = Timer 2, … `0x17` = Timer 16)
+- Byte 11: Slot (`0x04`)
+- Byte 12: Start hour (0–23, 24-hour format)
+- Byte 13: Start minute (0–59)
+- Byte 14: Stop hour (0–23, 24-hour format)
+- Byte 15: Stop minute (0–59)
+- Byte 16: Days bitmask
+  - Bit 0: Monday
+  - Bit 1: Tuesday
+  - Bit 2: Wednesday
+  - Bit 3: Thursday
+  - Bit 4: Friday
+  - Bit 5: Saturday
+  - Bit 6: Sunday
+  - `0x7F` = every day (all 7 bits set)
+  - `0x00` = disabled / not configured
+
+**Timer Register Mapping:**
+
+| Register | Timer |
+|----------|-------|
+| `0x08`   | 1     |
+| `0x09`   | 2     |
+| `0x0A`   | 3     |
+| …        | …     |
+| `0x17`   | 16    |
+
+**Notes:**
+
+- Timers with all-zero payload (`start=00:00 stop=00:00 days=0x00`) are not configured
+- The day bitmask mapping (bit0=Mon…bit6=Sun) is **assumed** based on 0x7F being observed as "every day" — should be confirmed by observing a timer set to a single specific day
+- All 16 timer registers are broadcast in sequence on startup
+
+---
+
+### 10. Register Labels ✅
 
 Generic register label assignments.
 

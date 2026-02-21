@@ -4,6 +4,19 @@ Code to listen on and control an Astral Connect 10 pool controller.
 
 This has been created by listening to the communications on the control bus, and decoding the instructions by trial and error.
 
+
+## Current Status
+
+Tested as working:
+- Lights now work fully ✅
+- Pool/Spa mode works ✅
+- Temperature set points for pool and spa work ✅
+- Heater on/off works ✅
+
+Not yet working
+- Toggling / switching of channels 
+
+
 ## Output
 To see the output, either monitor the device using the ESP monitor - or connect to the port exposed on the wifi network.
 
