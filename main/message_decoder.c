@@ -1556,7 +1556,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     char *full_msg = malloc(full_msg_size);
     if (!full_msg) return false;
     int msg_pos = 0;
-    for (int i = 0; i < len && msg_pos < full_msg_size - 4; i++) {
+    for (int i = 0; i < len && msg_pos < full_msg_size - 3; i++) {
         msg_pos += snprintf(&full_msg[msg_pos], full_msg_size - msg_pos, "%02X ", data[i]);
     }
     full_msg[msg_pos] = '\0';

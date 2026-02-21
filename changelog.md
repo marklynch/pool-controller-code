@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Removed
+### Changed
+### Fixed
+- Fixed MSG_DECODER: RX MSG: which was truncating the last byte
+
+
+## [0.5.0] - 2026-02-20
+### Added
 - Added DNS for captive portal initial setup
 - Added support for turning lights on and off via MQTT
 - Added support for switching between pool/spa via MQTT
