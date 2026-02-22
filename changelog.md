@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added support for reading timers
 - Added counting of known vs unknown messages on the bus
+- Added partial support for additional temperature message from heater `31 0E 21`
 ### Removed
 ### Changed
 ### Fixed
@@ -38,8 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added oat.ink styling for better consistency, performance and accessibility
 - Added new home page which gives status info
 - Added robots.txt to disallow indexing
-
-### Removed
 
 ### Changed
 - Improved the clarity of the LED states and restore state after RX/TX

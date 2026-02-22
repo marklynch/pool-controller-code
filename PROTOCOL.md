@@ -105,11 +105,9 @@ Reports the temperature setpoints for both spa and pool.
 
 ### 3. Temperature Reading ⚠️
 
-Current water temperature from the sensor.
+Current water temperature from the sensor. Two pattern variants have been observed — both carry the same temperature value in byte 10.
 
-**Pattern:** `02 00 62 FF FF 80 00 16 0E 06`
-
-**Example:**
+**Pattern A:** `02 00 62 FF FF 80 00 16 0E 06`
 
 ```
 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03
@@ -117,10 +115,24 @@ Current water temperature from the sensor.
                                  ^^ Unknown
 ```
 
+**Pattern B:** `02 00 62 FF FF 80 00 31 0E 21`
+
+```
+02 00 62 FF FF 80 00 31 0E 21 1E A6 C4 03
+                              ^^ Current temperature (30°C)
+                                 ^^ Unknown (always 0xA6 in observed samples)
+```
+
 **Data Fields:**
 
-- Byte 10: Current water temperature
-- Byte 11: Unknown - could be secondary temp sensor
+- Byte 10: Current water temperature in °C
+- Byte 11: Unknown — always `0x00` in pattern A, always `0xA6` in pattern B
+
+**Notes:**
+
+- Both patterns originate from device `0x0062` (temperature sensor)
+- The purpose of byte 11 is not yet understood; it may be a secondary sensor, a raw ADC value, or a fixed status byte
+- Pattern B has been observed decreasing as pool water cools (30→25°C), confirming byte 10 is the current temperature
 
 ---
 

@@ -72,6 +72,7 @@ static const char *MSG_TYPE_TOUCHSCREEN_UNKNOWN2 =  "02 00 50 FF FF 80 00 27 0D 
 
 // 62 Temperature sensor / Unknown subsystem
 static const char *MSG_TYPE_TEMP_READING =          "02 00 62 FF FF 80 00 16 0E 06";
+static const char *MSG_TYPE_TEMP_READING2 =         "02 00 62 FF FF 80 00 31 0E 21";
 static const char *MSG_TYPE_HEATER =                "02 00 62 FF FF 80 00 12 0F 03";
 
 // 90 Chlorinator (pH, ORP)
@@ -443,6 +444,42 @@ static bool handle_temp_reading(
 
     uint8_t current_temp = payload[0];
     ESP_LOGI(TAG, "%s Current temperature - %d", addr_info, current_temp);
+
+    // Update state and publish
+    pool_state_t snapshot;
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ctx->pool_state->current_temp = current_temp;
+        ctx->pool_state->temp_valid = true;
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        snapshot = *ctx->pool_state;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    if (ctx->enable_mqtt) {
+        mqtt_publish_temperature(&snapshot);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Temperature reading (variant 2) message
+ * Pattern: "02 00 62 FF FF 80 00 31 0E 21"
+ *
+ * Same temperature data as MSG_TYPE_TEMP_READING but a different command byte (0x31
+ * vs 0x16). Byte 11 is always 0xA6 in observed samples — purpose unknown.
+ */
+static bool handle_temp_reading2(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 2) return false;
+
+    uint8_t current_temp = payload[0];
+    uint8_t unknown      = payload[1];
+    ESP_LOGI(TAG, "%s Current temperature - %d°C (unknown byte: 0x%02X)", addr_info, current_temp, unknown);
 
     // Update state and publish
     pool_state_t snapshot;
@@ -1778,6 +1815,10 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     if (len >= 12 && match_pattern(data, len, MSG_TYPE_TEMP_READING)) {
         return handle_temp_reading(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    if (len >= 14 && match_pattern(data, len, MSG_TYPE_TEMP_READING2)) {
+        return handle_temp_reading2(data, len, payload, payload_len, addr_info, ctx);
     }
 
     if (len >= 12 && match_pattern(data, len, MSG_TYPE_HEATER)) {
