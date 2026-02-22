@@ -216,7 +216,7 @@ Reports which channels are currently active.
 
 ---
 
-### 7. Channel Status ✅⚠️
+### 7. Channel Status ✅
 
 Detailed status for all configured channels.
 
@@ -238,9 +238,9 @@ Detailed status for all configured channels.
 
 - Byte 10: Number of channels
 - Bytes 11+: For each channel (3 bytes):
-  - Byte 0: Channel type
-  - Byte 1: Channel state
-  - Byte 2: Additional data
+  - Byte 0: Channel type - see lookup table below
+  - Byte 1: Channel state (00 off, 01, Auto, 02 One)
+  - Byte 2: Currently active (eg if turned on by timer)
 
 **Channel Types:**
 
@@ -314,7 +314,7 @@ The controller uses a unified register-based system for configuration and state.
 The register ID and slot together determine the message meaning. The slot distinguishes different data aspects of the same register:
 
 | Register Range | Slot | Purpose | Data Format |
-|---------------|------|---------|-------------|
+|----------------|------|---------|-------------|
 | 0x08-0x17 | 0x04 | Timers 1-16 | start/stop time + days bitmask (see Timer section) |
 | 0x31-0x38 | 0x03 | Favourite Labels | Null-terminated ASCII string |
 | 0x6C-0x73 | 0x02 | Channel Types | 1-byte type code (see channel types) |
@@ -425,7 +425,7 @@ The dispatcher:
 
 ---
 
-### 9. Timers ⚠️
+### 9. Timers ✅
 
 Timer schedule configuration. Each timer has a start time, stop time, and a days-of-week bitmask. Up to 16 timers are supported (registers `0x08`–`0x17`).
 
@@ -479,7 +479,6 @@ Timer schedule configuration. Each timer has a start time, stop time, and a days
 **Notes:**
 
 - Timers with all-zero payload (`start=00:00 stop=00:00 days=0x00`) are not configured
-- The day bitmask mapping (bit0=Mon…bit6=Sun) is **assumed** based on 0x7F being observed as "every day" — should be confirmed by observing a timer set to a single specific day
 - All 16 timer registers are broadcast in sequence on startup
 
 ---
@@ -488,7 +487,7 @@ Timer schedule configuration. Each timer has a start time, stop time, and a days
 
 Generic register label assignments.
 
-**Pattern: Channels?** `02 00 50 FF FF 80 00 38 1A 22`
+**Pattern:** `02 00 50 FF FF 80 00 38 1A 22`
 
 **Example:**
 
@@ -541,24 +540,23 @@ Assigns custom names to lighting zones or valve registers (0xD0-0xD3 range).
 
 ---
 
-### 10. Lighting Zone Configuration ⚠️
+### 10. Lighting Zone Configuration ✅
 
-Indicates which lighting zones are installed.
+Indicates which lighting zones are installed and their current on/off state.
 
 **Pattern:** `02 00 50 FF FF 80 00 06 0E E4`
 
 **Example:**
-
 ```
 02 00 50 FF FF 80 00 06 0E E4 00 00 00 03
                               ^^ Zone index (0-3 for zones 1-4)
-                                 ^^ Unknown
+                                 ^^ Light status (00 off, 01 on)
 ```
 
 **Data Fields:**
 
 - Byte 10: Zone index (`0x00` to `0x03` for zones 1-4)
-- Byte 11: Unknown
+- Byte 11: Light status (00 off, 01 on)
 
 ---
 
@@ -795,7 +793,7 @@ The Internet Gateway periodically polls controller registers to sync state with 
 
 ---
 
-### 19. Controller Day/Time/Clock
+### 19. Controller Day/Time/Clock ✅
 
 Current time from the controller's internal clock. Broadcast periodically for synchronization.
 
@@ -832,7 +830,7 @@ Current time from the controller's internal clock. Broadcast periodically for sy
 
 ---
 
-### 20. Touchscreen Firmware Version
+### 20. Touchscreen Firmware Version ✅
 
 Touchscreen firmware version announcement. Broadcast periodically by the controller.
 

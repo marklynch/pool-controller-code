@@ -12,8 +12,15 @@ Tested as working:
 - Pool/Spa mode works ✅
 - Temperature set points for pool and spa work ✅
 - Heater on/off works ✅
+- Reading of timers ✅
+- Reading of ORP/PH settings ✅
+- Reading of water temperature ✅
+- Reading config for channels, lights and heater ✅
+- Reading of config/state for Internet Gateway
+- Reading of touchscreen firmware version
 
-Not yet working
+
+Not yet working / TODO
 - Toggling / switching of channels 
 
 

@@ -1098,33 +1098,27 @@ static bool handle_light_config(
     const char *addr_info,
     message_decoder_context_t *ctx)
 {
-    if (payload_len < 1) return false;
+    if (payload_len < 2) return false;
 
-    uint8_t zone_idx = payload[0];
+    uint8_t zone_idx  = payload[0];
+    uint8_t light_on  = payload[1];
+
     if (zone_idx <= 3) {
-        // Mark this zone as configured (only publish if this is the first time)
-        bool should_publish = false;
+        ESP_LOGI(TAG, "%s Lighting zone %d - %s", addr_info, zone_idx + 1, light_on ? "On" : "Off");
+
         pool_state_t state_snapshot;
 
         if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-            bool was_configured = ctx->pool_state->lighting[zone_idx].configured;
-
-            ctx->pool_state->lighting[zone_idx].zone = zone_idx + 1;
+            ctx->pool_state->lighting[zone_idx].zone       = zone_idx + 1;
             ctx->pool_state->lighting[zone_idx].configured = true;
+            ctx->pool_state->lighting[zone_idx].active     = (light_on != 0);
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
-            // Only log and publish if this is the first time
-            if (!was_configured) {
-                ESP_LOGI(TAG, "%s Lighting zone %d configured", addr_info, zone_idx + 1);
-                should_publish = true;
-            }
 
             state_snapshot = *ctx->pool_state;
             xSemaphoreGive(ctx->state_mutex);
         }
 
-        // Publish MQTT discovery for this zone (outside mutex)
-        if (should_publish && ctx->enable_mqtt) {
+        if (ctx->enable_mqtt) {
             mqtt_publish_light(&state_snapshot, zone_idx + 1);
         }
     }
