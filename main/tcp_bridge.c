@@ -29,6 +29,10 @@ static TaskHandle_t s_bridge_task_handle = NULL;
 static uint8_t s_msg_buffer[BUS_MESSAGE_MAX_SIZE];
 static int s_msg_buffer_len = 0;
 
+// Message decode counters
+static uint32_t s_messages_decoded = 0;
+static uint32_t s_messages_unknown = 0;
+
 // Global client socket for log forwarding
 static int s_log_client_sock = -1;
 static SemaphoreHandle_t s_log_mutex = NULL;
@@ -186,8 +190,13 @@ static bool extract_and_process_message(int client_sock)
             }
 
             // Decode message, log hex only if not decoded and not loopback
-            if (!is_loopback && !s_config.decode_message(s_msg_buffer, msg_len)) {
-                ESP_LOGI(TAG, "RX: %s", hexLine);
+            if (!is_loopback) {
+                if (s_config.decode_message(s_msg_buffer, msg_len)) {
+                    s_messages_decoded++;
+                } else {
+                    s_messages_unknown++;
+                    ESP_LOGI(TAG, "RX: %s", hexLine);
+                }
             }
 
             // Send to TCP client if connected
@@ -501,6 +510,9 @@ esp_err_t tcp_bridge_start(const tcp_bridge_config_t *config)
     ESP_LOGI(TAG, "TCP bridge started successfully");
     return ESP_OK;
 }
+
+uint32_t tcp_bridge_get_decoded_count(void)  { return s_messages_decoded; }
+uint32_t tcp_bridge_get_unknown_count(void)  { return s_messages_unknown; }
 
 esp_err_t tcp_bridge_stop(void)
 {

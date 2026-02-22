@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Added support for reading timers
+- Added counting of known vs unknown messages on the bus
 ### Removed
 ### Changed
 ### Fixed

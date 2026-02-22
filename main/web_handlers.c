@@ -4,6 +4,7 @@
 #include "pool_state.h"
 #include "mqtt_poolclient.h"
 #include "message_decoder.h"
+#include "tcp_bridge.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -178,6 +179,11 @@ static esp_err_t home_get_handler(httpd_req_t *req)
         "if(c.orp_reading!==null)rows.push(['ORP',c.orp_reading+'mV (setpoint '+c.orp_setpoint+'mV)']);"
         "if(data.timers&&data.timers.length>0){"
         "data.timers.forEach(t=>rows.push(['Timer '+t.num,t.start+' \u2013 '+t.stop+' ['+t.days+']']));}"
+        "const mc=data.message_counts;"
+        "if(mc){"
+        "const tot=mc.decoded+mc.unknown;"
+        "const pct=tot>0?(mc.decoded/tot*100).toFixed(1)+'%':'n/a';"
+        "rows.push(['Messages',mc.decoded+' decoded, '+mc.unknown+' unknown ('+pct+')']);}"
         "const tb=document.getElementById('pool-body');"
         "rows.forEach(([k,v])=>{"
         "const tr=document.createElement('tr');"
@@ -507,6 +513,12 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"compile_time\":\"%s %s\",", app_desc->date, app_desc->time);
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"idf_version\":\"%s\"", app_desc->idf_ver);
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
+
+        // Message decode counters
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
+            "\"message_counts\":{\"decoded\":%lu,\"unknown\":%lu},",
+            (unsigned long)tcp_bridge_get_decoded_count(),
+            (unsigned long)tcp_bridge_get_unknown_count());
 
         // Temperature section
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"temperature\":{");

@@ -56,4 +56,12 @@ esp_err_t tcp_bridge_start(const tcp_bridge_config_t *config);
  */
 esp_err_t tcp_bridge_stop(void);
 
+/**
+ * Get message decode counters
+ *
+ * Counts only inbound UART messages (loopback echoes of our own TX are excluded).
+ */
+uint32_t tcp_bridge_get_decoded_count(void);
+uint32_t tcp_bridge_get_unknown_count(void);
+
 #endif // TCP_BRIDGE_H
