@@ -200,14 +200,28 @@ static void publish_channel_discovery(const char *device_id, int channel_num, co
         return;
     }
 
+    // Sensor for state
     snprintf(config, MQTT_DISCOVERY_CONFIG_SIZE,
-             "{\"name\":\"%s\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
-             "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
-             "\"value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
+             "{\"name\":\"%s\",\"state_topic\":\"%s\","
+             "\"value_template\":\"{{ value_json.state }}\","
              "\"unique_id\":\"%s_ch%d\",\"availability_topic\":\"%s\",%s}",
-             formatted_name, state_topic, command_topic, device_id, channel_num, avail_topic, device_json);
+             formatted_name, state_topic, device_id, channel_num, avail_topic, device_json);
+    publish_discovery("sensor", object_id, config);
 
-    publish_discovery("switch", object_id, config);
+    // Button for toggle
+    char button_object_id[32];
+    snprintf(button_object_id, sizeof(button_object_id), "channel_%d_toggle", channel_num);
+
+    char button_name[64];
+    snprintf(button_name, sizeof(button_name), "Ch%d - %s Toggle", channel_num, channel_name);
+
+    snprintf(config, MQTT_DISCOVERY_CONFIG_SIZE,
+             "{\"name\":\"%s\",\"command_topic\":\"%s\","
+             "\"payload_press\":\"TOGGLE\","
+             "\"unique_id\":\"%s_ch%d_btn\",\"availability_topic\":\"%s\",%s}",
+             button_name, command_topic, device_id, channel_num, avail_topic, device_json);
+    publish_discovery("button", button_object_id, config);
+
     free(config);
 }
 

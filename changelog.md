@@ -16,8 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for reading timers
 - Added counting of known vs unknown messages on the bus
 - Added partial support for additional temperature message from heater `31 0E 21`
+- Added toggle buttons for channel  to switch modes
+
 ### Removed
+- Removed switches for channels as there isn't a clean interface for this
+
 ### Changed
+
 ### Fixed
 - Fixed MSG_DECODER: RX MSG: which was truncating the last byte
 - Fixed incorrect config for Valve labels

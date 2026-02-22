@@ -169,7 +169,7 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
              "{\"state\":\"%s\",\"name\":\"%s\"}",
              state_name, display_name);
 
-    mqtt_publish(topic, payload, 0, false);
+    mqtt_publish(topic, payload, 0, true);
 
     // Update last published state
     s_last_published_state.channels[idx].type = channel->type;

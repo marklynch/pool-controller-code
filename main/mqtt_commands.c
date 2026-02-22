@@ -33,20 +33,10 @@ static void handle_channel_command(int channel_id, const char *payload, int payl
 {
     ESP_LOGI(TAG, "Channel %d command: %.*s", channel_id, payload_len, payload);
 
-    // Channel index is 0-based in the toggle command
     uint8_t channel_idx = channel_id - 1;
 
-    // Validate channel exists and is configured in pool state
-    char channel_name[32] = {0};
-    if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-        if (channel_idx < MAX_CHANNELS && s_pool_state.channels[channel_idx].configured) {
-            strncpy(channel_name, s_pool_state.channels[channel_idx].name, sizeof(channel_name) - 1);
-        }
-        xSemaphoreGive(s_pool_state_mutex);
-    }
-
-    if (channel_name[0] == '\0') {
-        ESP_LOGW(TAG, "Channel %d is not configured - ignoring command", channel_id);
+    if (channel_idx >= MAX_CHANNELS) {
+        ESP_LOGE(TAG, "Channel %d out of range", channel_id);
         return;
     }
 
@@ -64,7 +54,7 @@ static void handle_channel_command(int channel_id, const char *payload, int payl
         0x03               // END
     };
 
-    ESP_LOGI(TAG, "Toggling channel %d (%s)", channel_id, channel_name);
+    ESP_LOGI(TAG, "Toggling channel %d", channel_id);
     send_uart_command(cmd, sizeof(cmd));
 }
 
