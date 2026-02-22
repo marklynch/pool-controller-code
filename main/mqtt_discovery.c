@@ -13,8 +13,8 @@ static const char *TAG = "MQTT_DISCOVERY";
 static void build_device_json(char *device_json, size_t max_len, const char *device_id)
 {
     snprintf(device_json, max_len,
-             "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"Astral Pool Controller\","
-             "\"model\":\"ESP32-C6 Bridge\",\"manufacturer\":\"Mark Lynch\"}",
+             "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"" DEVICE_NAME "\","
+             "\"model\":\"" DEVICE_MODEL "\",\"manufacturer\":\"" DEVICE_MANUFACTURER "\"}",
              device_id);
 }
 

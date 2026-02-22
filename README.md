@@ -1,6 +1,6 @@
-# Astral Pool Controller
+# Pool Controller
 
-Code to listen on and control an Astral Connect 10 pool controller.
+Code to listen on and control an Connect 10 pool controller.
 
 This has been created by listening to the communications on the control bus, and decoding the instructions by trial and error.
 
@@ -122,7 +122,7 @@ flowchart TD
 
     Pool[fa:fa-life-ring Pool Connect 10]
 
-    subgraph ESP32-C6[fa:fa-microchip ESP32-C6 Astral Pool Controller]
+    subgraph ESP32-C6[fa:fa-microchip ESP32-C6 Pool Controller]
         subgraph Transport[Transport Layer]
             UART[UART Interface<br/>9600 baud]
             TCP[TCP Bridge<br/>Port 7373]
@@ -202,7 +202,7 @@ idf.py flash monitor  # Flash to device and monitor output
 
 ### [PROTOCOL.md](PROTOCOL.md) — Bus Protocol Reference
 
-Documents the proprietary serial protocol used by the Astral Connect 10, reverse-engineered by sniffing bus traffic. Covers:
+Documents the proprietary serial protocol used by the Connect 10, reverse-engineered by sniffing bus traffic. Covers:
 
 - **Message framing** — `START (0x02) | SRC | DST | CTRL | CMD | DATA | CHECKSUM | END (0x03)`
 - **Device addresses** — Touch screen (`0x0050`), controller (`0x006F`), chlorinator (`0x0090`), internet gateway (`0x00F0`)

@@ -1,6 +1,6 @@
 # Connect 10 Pool Controller Protocol Documentation
 
-This document describes the proprietary serial protocol used by the Astral Connect 10 pool controller and has been clean-room developed by sniffing the messages on the RS-232 like bus that is used for communications.
+This document describes the proprietary serial protocol used by the Connect 10 pool controller and has been clean-room developed by sniffing the messages on the RS-232 like bus that is used for communications.
 
 ## Message Structure
 
@@ -1190,7 +1190,7 @@ When implementing a decoder:
 
 ### UART Configuration
 
-The Astral bus uses:
+The Connect 10 bus uses:
 
 - **Baud rate:** 9600
 - **Data bits:** 8

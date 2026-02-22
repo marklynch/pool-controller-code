@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ESP32-C6 firmware that bridges an Astral Connect 10 pool controller's serial bus to TCP/WiFi. The device listens to the control bus, decodes proprietary protocol messages, and exposes a TCP server for monitoring and control.
+ESP32-C6 firmware that bridges an Connect 10 pool controller's serial bus to TCP/WiFi. The device listens to the control bus, decodes proprietary protocol messages, and exposes a TCP server for monitoring and control.
 
 ## Build Commands
 
@@ -25,7 +25,7 @@ Requires ESP-IDF v5.5+ with environment sourced (`. $IDF_PATH/export.sh`).
 
 - **main.c**: Application entry point, WiFi management, provisioning, UART initialization, HTTP/TCP server startup
 - **tcp_bridge.c/.h**: TCP server (port 7373) that bridges UART data to/from network clients
-- **message_decoder.c/.h**: Pattern-matching decoder for Astral protocol messages
+- **message_decoder.c/.h**: Pattern-matching decoder for protocol messages
 - **pool_state.c/.h**: Global pool state structure and definitions
 - **mqtt_poolclient.c/.h**: MQTT client lifecycle and connection management
 - **mqtt_publish.c/.h**: MQTT publishing functions for pool state updates

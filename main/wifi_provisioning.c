@@ -151,7 +151,7 @@ static void start_mdns_service(void)
 
     // Advertise TCP bridge service (custom service type)
     mdns_txt_item_t tcp_bridge_txt[] = {
-        {"protocol", "astral-pool-bus"},
+        {"protocol", "pool-controller-bus"},
         {"version", "1.0"}
     };
     ESP_ERROR_CHECK(mdns_service_add(NULL, "_pool-bridge", "_tcp", TCP_BRIDGE_PORT,

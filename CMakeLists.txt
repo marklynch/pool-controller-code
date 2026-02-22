@@ -28,4 +28,4 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(astral-pool-controller)
+project(pool-controller)

@@ -9,6 +9,11 @@
 #define MDNS_HOSTNAME                  "poolcontrol"           // Hostname for mDNS (accessible as poolcontroller.local)
 #define MDNS_INSTANCE_NAME             "Pool Control"  // Friendly name for service discovery
 
+// Device Identity (used in MQTT discovery)
+#define DEVICE_NAME                    "Pool Controller"
+#define DEVICE_MODEL                   "ESP32-C6 Bridge"
+#define DEVICE_MANUFACTURER            "Mark Lynch"
+
 // HTTP Server
 #define HTTP_SERVER_PORT               80
 #define HTTP_MAX_URI_HANDLERS          14      // Number of endpoint handlers

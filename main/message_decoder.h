@@ -22,7 +22,7 @@ typedef struct {
 /**
  * Decode a pool bus message
  *
- * Parses and processes messages from the Astral pool controller bus.
+ * Parses and processes messages from the pool controller bus.
  * Updates pool state and optionally publishes to MQTT.
  *
  * @param data Message bytes (must start with 0x02, end with 0x03)
@@ -33,7 +33,7 @@ typedef struct {
 bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx);
 
 /**
- * Verify checksum for Astral protocol messages
+ * Verify checksum for protocol messages
  *
  * Checksum = sum of all data bytes from index 10 to (len-3), low byte only.
  * The checksum byte is at (len-2).

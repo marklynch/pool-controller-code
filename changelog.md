@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed switches for channels as there isn't a clean interface for this
 
 ### Changed
+- Tidy up naming across project
 
 ### Fixed
 - Fixed MSG_DECODER: RX MSG: which was truncating the last byte

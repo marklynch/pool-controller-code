@@ -27,7 +27,7 @@ Updates alternate between ota_0 and ota_1, providing automatic rollback protecti
 idf.py build
 ```
 
-The firmware binary will be at: `build/astral-pool-controller.bin`
+The firmware binary will be at: `build/pool-controller.bin`
 
 ### 2. Access Update Page
 
@@ -41,7 +41,7 @@ The firmware binary will be at: `build/astral-pool-controller.bin`
 ### 3. Upload Firmware
 
 1. Click "Select Firmware File (.bin)"
-2. Choose the `astral-pool-controller.bin` file from the build directory
+2. Choose the `pool-controller.bin` file from the build directory
 3. Click "Upload and Update"
 4. **DO NOT power off the device during update!**
 
