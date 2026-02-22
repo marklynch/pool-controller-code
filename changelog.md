@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Removed
+### Changed
+### Fixed
+
+## [0.6.0] - 2026-02-22
+### Added
 - Added support for reading timers
 - Added counting of known vs unknown messages on the bus
 - Added partial support for additional temperature message from heater `31 0E 21`
@@ -28,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed MSG_DECODER: RX MSG: which was truncating the last byte
 - Fixed incorrect config for Valve labels
 - Fixed handler for light configuration to show on/off state
+- Fixed favicon not working on iPad tabs - added png version
 
 ## [0.5.0] - 2026-02-20
 ### Added

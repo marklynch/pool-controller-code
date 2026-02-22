@@ -28,7 +28,9 @@ const char* get_gateway_comms_status_text(uint16_t code);
 // Dynamic functions for page header, navigation, and footer
 char *get_page_header(const char *title) {
     const char *fmt = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<link rel='icon' type='image/png' href='/static/favicon.png'>"
         "<link rel='icon' type='image/svg+xml' href='/static/favicon.ico'>"
+        "<link rel='apple-touch-icon' href='/static/favicon.png'>"
         "<link rel='stylesheet' href='/static/oat.min.css'>"
         "<script src='/static/oat.min.js' defer></script>"
         "<title>%s</title></head><body><div data-sidebar-layout>";
@@ -124,7 +126,7 @@ static esp_err_t home_get_handler(httpd_req_t *req)
     snprintf(sys_table, sizeof(sys_table),
         "<h1>Pool Controller</h1>"
         "<h2>System</h2>"
-        "<table><tbody>"
+        "<table><tbody id='sys-body'>"
         "<tr><th>Firmware</th><td>%s</td></tr>"
         "<tr><th>Project</th><td>%s</td></tr>"
         "<tr><th>Built</th><td>%s %s</td></tr>"
@@ -183,7 +185,9 @@ static esp_err_t home_get_handler(httpd_req_t *req)
         "if(mc){"
         "const tot=mc.decoded+mc.unknown;"
         "const pct=tot>0?(mc.decoded/tot*100).toFixed(1)+'%':'n/a';"
-        "rows.push(['Messages',mc.decoded+' decoded, '+mc.unknown+' unknown ('+pct+')']);}"
+        "const mtr=document.createElement('tr');"
+        "mtr.innerHTML='<th>Messages</th><td>'+mc.decoded+' decoded, '+mc.unknown+' unknown ('+pct+')</td>';"
+        "document.getElementById('sys-body').appendChild(mtr);}"
         "const tb=document.getElementById('pool-body');"
         "rows.forEach(([k,v])=>{"
         "const tr=document.createElement('tr');"
@@ -1441,6 +1445,7 @@ static const httpd_uri_t test_decode_uri = {
 typedef struct {
     const char *uri;
     const char *content;
+    const char *content_end;    // NULL for text (strlen), non-NULL for binary (exact length)
     const char *content_type;
     const char *cache_control;  // NULL for no caching
 } static_file_t;
@@ -1452,6 +1457,10 @@ typedef struct {
 // main/static/favicon.svg  (mdi:pool, https://github.com/Templarian/MaterialDesign)
 // Note: ESP-IDF derives the symbol name from the filename only, not the full path.
 extern const char _binary_favicon_svg_start[];
+// main/static/favicon.png  (PNG version for iOS/iPadOS, which doesn't support SVG favicons)
+// Embedded as binary (EMBED_FILES) — no null terminator added.
+extern const char _binary_favicon_png_start[];
+extern const char _binary_favicon_png_end[];  // used to compute exact byte length
 // main/static/oat.min.css + oat.min.js  (https://oat.ink, MIT license)
 extern const char _binary_oat_min_css_start[];
 extern const char _binary_oat_min_js_start[];
@@ -1460,20 +1469,30 @@ extern const char _binary_oat_min_js_start[];
 
 static const static_file_t STATIC_FILES[] = {
     {
+        .uri           = "/static/favicon.png",
+        .content       = _binary_favicon_png_start,
+        .content_end   = _binary_favicon_png_end,   // binary: use exact length
+        .content_type  = "image/png",
+        .cache_control = "max-age=86400",
+    },
+    {
         .uri           = "/static/favicon.ico",
         .content       = _binary_favicon_svg_start,
+        .content_end   = NULL,                      // text: use strlen
         .content_type  = "image/svg+xml",
         .cache_control = "max-age=86400",
     },
     {
         .uri           = "/static/oat.min.css",
         .content       = _binary_oat_min_css_start,
+        .content_end   = NULL,
         .content_type  = "text/css",
         .cache_control = "max-age=86400",
     },
     {
         .uri           = "/static/oat.min.js",
         .content       = _binary_oat_min_js_start,
+        .content_end   = NULL,
         .content_type  = "application/javascript",
         .cache_control = "max-age=86400",
     },
@@ -1490,7 +1509,10 @@ static esp_err_t static_file_handler(httpd_req_t *req)
             if (STATIC_FILES[i].cache_control) {
                 httpd_resp_set_hdr(req, "Cache-Control", STATIC_FILES[i].cache_control);
             }
-            httpd_resp_send(req, STATIC_FILES[i].content, HTTPD_RESP_USE_STRLEN);
+            ssize_t len = STATIC_FILES[i].content_end
+                ? (ssize_t)(STATIC_FILES[i].content_end - STATIC_FILES[i].content)
+                : HTTPD_RESP_USE_STRLEN;
+            httpd_resp_send(req, STATIC_FILES[i].content, len);
             return ESP_OK;
         }
     }

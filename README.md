@@ -1,9 +1,10 @@
 # Pool Controller
 
-Code to listen on and control an Connect 10 pool controller.
+Code to listen on and control an Connect 10 pool controller.  Note this is not and official product and is not supported by Fluidra.  I created it as a learning project and happy to collaborate with people who find it useful.
 
 This has been created by listening to the communications on the control bus, and decoding the instructions by trial and error.
 
+It is designed to run on and ESP32-C6, and there is a [circuit and PCB design](https://github.com/marklynch/pool-controller-pcb) documented here.
 
 ## Current Status
 
