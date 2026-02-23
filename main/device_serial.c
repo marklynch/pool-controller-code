@@ -10,6 +10,8 @@ static const char *TAG = "DEVICE_SERIAL";
 static const char CROCKFORD32[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 static char s_serial[DEVICE_SERIAL_LEN] = {0};
+static char s_mac_suffix[DEVICE_MAC_SUFFIX_LEN] = {0};
+static char s_mac_string[DEVICE_MAC_STRING_LEN] = {0};
 
 /**
  * Encode `data_len` bytes from `data` into Crockford Base32, writing the
@@ -64,5 +66,34 @@ void device_get_serial(char *buf, size_t len)
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
     strncpy(buf, s_serial, len - 1);
+    buf[len - 1] = '\0';
+}
+
+void device_get_mac_suffix(char *buf, size_t len)
+{
+    if (s_mac_suffix[0] != '\0') {
+        strncpy(buf, s_mac_suffix, len - 1);
+        buf[len - 1] = '\0';
+        return;
+    }
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(s_mac_suffix, sizeof(s_mac_suffix), "%02X%02X%02X", mac[3], mac[4], mac[5]);
+    strncpy(buf, s_mac_suffix, len - 1);
+    buf[len - 1] = '\0';
+}
+
+void device_get_mac_string(char *buf, size_t len)
+{
+    if (s_mac_string[0] != '\0') {
+        strncpy(buf, s_mac_string, len - 1);
+        buf[len - 1] = '\0';
+        return;
+    }
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(s_mac_string, sizeof(s_mac_string), "%02x:%02x:%02x:%02x:%02x:%02x",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    strncpy(buf, s_mac_string, len - 1);
     buf[len - 1] = '\0';
 }
