@@ -17,5 +17,6 @@
     "--compile-commands-dir=${workspaceFolder}/build"
   ],
   "idf.flashType": "UART",
-  "idf.monitorPort": "/dev/tty.usbmodem2101"
+  "idf.monitorPort": "/dev/tty.usbmodem2101",
+  "idf.currentSetup": "/Users/markl/esp/v5.5.1/esp-idf"
 }

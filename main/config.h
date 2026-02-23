@@ -6,8 +6,9 @@
 // ======================================================
 
 // mDNS Service Discovery
-#define MDNS_HOSTNAME                  "poolcontrol"           // Hostname for mDNS (accessible as poolcontroller.local)
-#define MDNS_INSTANCE_NAME             "Pool Control"  // Friendly name for service discovery
+#define MDNS_HOSTNAME                  "poolcontrol"           // Hostname prefix; full hostname is poolcontrol-AABBCC.local
+#define MDNS_INSTANCE_NAME             "Pool Control"          // Friendly name for HTTP service (suffix AABBCC appended at runtime)
+#define MDNS_INSTANCE_DEBUG_NAME       "Pool Control Debug"    // Friendly name for TCP bridge service (suffix AABBCC appended at runtime)
 
 // Device Identity (used in MQTT discovery)
 #define DEVICE_NAME                    "Pool Controller"

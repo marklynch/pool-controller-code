@@ -4,6 +4,7 @@
 #include "mqtt_poolclient.h"
 #include "led_helper.h"
 #include "dns_server.h"
+#include "device_serial.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -13,6 +14,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_app_desc.h"
 #include "nvs.h"
 #include <esp_http_server.h>
 #include "mdns.h"
@@ -32,6 +34,7 @@ static httpd_handle_t s_httpd_handle = NULL;
 static int s_wifi_retry_count = 0;
 static TimerHandle_t s_wifi_retry_timer = NULL;
 static char s_device_ip_address[16] = {0};
+static char s_mdns_hostname[64] = {0};
 
 // ======================================================
 // Forward Declarations
@@ -137,26 +140,59 @@ static void start_mdns_service(void)
     // Initialize mDNS
     ESP_ERROR_CHECK(mdns_init());
 
-    // Set mDNS hostname (will be accessible as <hostname>.local)
-    ESP_ERROR_CHECK(mdns_hostname_set(MDNS_HOSTNAME));
+    // Build unique hostname and instance names from last 3 MAC bytes
+    uint8_t mac[6];
+    esp_wifi_get_mac(WIFI_IF_STA, mac);
 
-    // Set default instance name
-    ESP_ERROR_CHECK(mdns_instance_name_set(MDNS_INSTANCE_NAME));
+    char hostname[32];
+    char instance_name[32];
+    char debug_instance_name[40];
+    snprintf(hostname,            sizeof(hostname),
+             "%s-%02X%02X%02X", MDNS_HOSTNAME, mac[3], mac[4], mac[5]);
+    snprintf(instance_name,       sizeof(instance_name),
+             "%s %02X%02X%02X", MDNS_INSTANCE_NAME, mac[3], mac[4], mac[5]);
+    snprintf(debug_instance_name, sizeof(debug_instance_name),
+             "%s %02X%02X%02X", MDNS_INSTANCE_DEBUG_NAME, mac[3], mac[4], mac[5]);
 
-    ESP_LOGI(TAG, "mDNS started - accessible at %s.local", MDNS_HOSTNAME);
+    // Cache hostname for use elsewhere (e.g. web UI)
+    strncpy(s_mdns_hostname, hostname, sizeof(s_mdns_hostname) - 1);
+    s_mdns_hostname[sizeof(s_mdns_hostname) - 1] = '\0';
+
+    // ESP-IDF requires hostname to be set before instance name
+    ESP_ERROR_CHECK(mdns_hostname_set(hostname));
+    ESP_ERROR_CHECK(mdns_instance_name_set(instance_name));
+
+    ESP_LOGI(TAG, "mDNS started - accessible at %s.local (%s)", hostname, instance_name);
+
+    // Shared TXT record values
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    char serial[DEVICE_SERIAL_LEN];
+    device_get_serial(serial, sizeof(serial));
 
     // Advertise HTTP service
-    ESP_ERROR_CHECK(mdns_service_add(NULL, "_http", "_tcp", HTTP_SERVER_PORT, NULL, 0));
-    ESP_LOGI(TAG, "  - HTTP service: http://%s.local:%d", MDNS_HOSTNAME, HTTP_SERVER_PORT);
+    mdns_txt_item_t http_txt[] = {
+        {"id", serial},
+        {"fw", app_desc->version},
+    };
+    ESP_ERROR_CHECK(mdns_service_add(instance_name, "_http", "_tcp", HTTP_SERVER_PORT,
+                                     http_txt, sizeof(http_txt) / sizeof(mdns_txt_item_t)));
+    ESP_LOGI(TAG, "  - HTTP service: http://%s.local:%d", hostname, HTTP_SERVER_PORT);
 
     // Advertise TCP bridge service (custom service type)
     mdns_txt_item_t tcp_bridge_txt[] = {
         {"protocol", "pool-controller-bus"},
-        {"version", "1.0"}
+        {"version",  "1.0"},
+        {"id", serial},
+        {"fw", app_desc->version},
     };
-    ESP_ERROR_CHECK(mdns_service_add(NULL, "_pool-bridge", "_tcp", TCP_BRIDGE_PORT,
+    ESP_ERROR_CHECK(mdns_service_add(debug_instance_name, "_pool-bridge", "_tcp", TCP_BRIDGE_PORT,
                                      tcp_bridge_txt, sizeof(tcp_bridge_txt) / sizeof(mdns_txt_item_t)));
-    ESP_LOGI(TAG, "  - Pool Bridge service: tcp://%s.local:%d", MDNS_HOSTNAME, TCP_BRIDGE_PORT);
+    ESP_LOGI(TAG, "  - Pool Bridge service: tcp://%s.local:%d (%s)", hostname, TCP_BRIDGE_PORT, debug_instance_name);
+}
+
+const char *wifi_get_mdns_hostname(void)
+{
+    return s_mdns_hostname;
 }
 
 // ======================================================

@@ -8,11 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [TODO]
-- Don't publish to MQTT after every change - add small debounce to it (verify frequency)
-
+- Lights should use the correct names
+- Sometimes messages fail - likely clashing message on bus. Make them do a retry
 
 ## [Unreleased]
 ### Added
+- Added display of serial number to home page
+- Use non clashing hostname poolcontrol-AABBCC.local via mdns
+- Added firmware and serial number to mDNS messages
+
 ### Removed
 ### Changed
 ### Fixed

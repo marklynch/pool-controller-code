@@ -5,6 +5,7 @@
 #include "mqtt_poolclient.h"
 #include "message_decoder.h"
 #include "tcp_bridge.h"
+#include "device_serial.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -121,20 +122,31 @@ static esp_err_t home_get_handler(httpd_req_t *req)
     else if (h > 0) snprintf(uptime_str, sizeof(uptime_str), "%luh %lum %lus", (unsigned long)h, (unsigned long)m, (unsigned long)s);
     else            snprintf(uptime_str, sizeof(uptime_str), "%lum %lus", (unsigned long)m, (unsigned long)s);
 
+    // Serial number
+    char serial[DEVICE_SERIAL_LEN];
+    device_get_serial(serial, sizeof(serial));
+
+    // mDNS hostname
+    const char *mdns_host = wifi_get_mdns_hostname();
+
     // System info table
-    char sys_table[512];
+    char sys_table[700];
     snprintf(sys_table, sizeof(sys_table),
         "<h1>Pool Controller</h1>"
         "<h2>System</h2>"
         "<table><tbody id='sys-body'>"
+        "<tr><th>Serial</th><td>%s</td></tr>"
         "<tr><th>Firmware</th><td>%s</td></tr>"
         "<tr><th>Project</th><td>%s</td></tr>"
         "<tr><th>Built</th><td>%s %s</td></tr>"
         "<tr><th>Uptime</th><td>%s</td></tr>"
-        "<tr><th>IP Address</th><td>%s</td></tr>",
+        "<tr><th>IP Address</th><td>%s</td></tr>"
+        "<tr><th>Hostname</th><td><a href='http://%s.local/'>%s.local</a></td></tr>",
+        serial,
         app_desc->version, app_desc->project_name,
         app_desc->date, app_desc->time,
-        uptime_str, wifi_get_device_ip());
+        uptime_str, wifi_get_device_ip(),
+        mdns_host, mdns_host);
 
     // WiFi row
     char wifi_row[96];

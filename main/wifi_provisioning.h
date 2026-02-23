@@ -47,6 +47,14 @@ bool wifi_is_connected(void);
 const char* wifi_get_device_ip(void);
 
 /**
+ * Get the resolved mDNS hostname (e.g. "poolcontrol" or "poolcontrol-2")
+ * Returns an empty string before mDNS has started.
+ *
+ * @return hostname string without the ".local" suffix
+ */
+const char* wifi_get_mdns_hostname(void);
+
+/**
  * Wait for WiFi connection
  * Blocks until WiFi is connected or provisioning is active
  */

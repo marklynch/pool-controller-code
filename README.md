@@ -25,11 +25,14 @@ Tested as working:
 ## Output
 To see the output, either monitor the device using the ESP monitor - or connect to the port exposed on the wifi network.
 
-The device is accessible via mDNS at `poolcontrol.local` or by its IP address.
+Each device gets a unique mDNS hostname derived from the last 3 bytes of its MAC address:
+`poolcontrol-AABBCC.local` — where `AABBCC` matches the suffix of the provisioning AP name (`POOL_AABBCC`).
+
+For example, if you provisioned via the `POOL_A1B2C3` network, the device will be accessible at `poolcontrol-A1B2C3.local`.  The serial number shown on the device's home page uses the same identifier.
 
 Example on a mac using nc (netcat)
 ```
-% nc poolcontrol.local 7373
+% nc poolcontrol-A1B2C3.local 7373
 Connected to ESP32-C6 pool bus bridge.
 UART bytes will be shown here in hex.
 Bytes you send will be forwarded to the bus.
@@ -44,7 +47,7 @@ Bytes you send will be forwarded to the bus.
 You can test individual messages against the decoder using the HTTP API endpoint:
 
 ```bash
-curl -X POST http://poolcontrol.local/api/test_decode \
+curl -X POST http://poolcontrol-A1B2C3.local/api/test_decode \
   -d "02 00 50 FF FF 80 00 38 0F 17 D0 01 02 1A 03"
 ```
 
@@ -74,16 +77,18 @@ I (12345) MSG_DECODER: [Controller -> Broadcast] Lighting zone 1 state - On
 
 This allows you to quickly test message patterns and verify decoder behavior without needing to send messages to the actual bus.
 
-## Initial Provisioning:
+## Initial Provisioning
 
-If the LED is purple then connect to the POOL_XXXXXX wifi access point on your phone
-In your phone browser navigate to http://poolcontrol.local or http://192.168.4.1
-Here you can choose the wifi network and enter the password.
-This will save the details to the NVRam.
+1. When the LED is **purple**, the device is in provisioning mode.
+2. On your phone, connect to the WiFi network named **`POOL_AABBCC`** (e.g. `POOL_A1B2C3`) — the `AABBCC` suffix is unique to each device.
+3. In your phone's browser navigate to **http://192.168.4.1** and choose your WiFi network and enter the password.
+4. The device will save the credentials and restart. The LED will turn white then green once connected.
 
-Note - if the wrong password is entered - it will try to connect for about 30 seconds and then reset to access point mode and you can start again.
+Once on your network the device is accessible at **`http://poolcontrol-AABBCC.local`** — using the same `AABBCC` suffix as the AP you provisioned through (e.g. `http://poolcontrol-A1B2C3.local`).
 
-Note 2: you need to clear the NVRam to redo this flow via "Erase Flash Memory from device"
+**Note:** If the wrong password is entered the device will retry for about 30 seconds then return to provisioning mode.
+
+**Note:** To re-provision, erase the flash ("Erase Flash Memory from device" in your IDE) to clear the saved credentials.
 
 ## Visual Feedback (LED Status):
 
@@ -180,13 +185,13 @@ flowchart TD
 
     Pool <-->|RJ12 Serial Bus| UART
     TCP <-->|TCP/IP Port 7373| Clients
-    WebAPI <-->|HTTP Port 80<br/>poolcontrol.local| Browser
+    WebAPI <-->|HTTP Port 80<br/>poolcontrol-AABBCC.local| Browser
     MQTTSub <-->|MQTT over WiFi| HA
 ```
 
 The system consists of an ESP32 C6 module that can be daisy chained into an existing connect 10 system via a RJ12 connection.
 
-It sets up a wifi AP called POOL_[XXXXXX] which if you connect to should bring you to `poolcontrol.local` (`192.168.4.1`) for initial configuration to connect to the existing network.
+It sets up a WiFi AP called `POOL_AABBCC` (where `AABBCC` is the last 3 bytes of the device's MAC address). Connecting to that AP and navigating to `192.168.4.1` opens the provisioning page. Once configured and on your network, the device is accessible at `poolcontrol-AABBCC.local` using the same suffix.
 
 It uses MQTT to connect and publish information and receive information from Home Assistant.
 

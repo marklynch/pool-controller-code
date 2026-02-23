@@ -10,6 +10,7 @@
 #include <mqtt_client.h>
 
 // Local headers
+#include "device_serial.h"
 #include "mqtt_discovery.h"
 #include "mqtt_commands.h"
 #include "led_helper.h"
@@ -44,10 +45,9 @@ void mqtt_get_device_id(char *device_id, size_t max_len)
         return;
     }
 
-    uint8_t mac[6];
-    esp_wifi_get_mac(WIFI_IF_STA, mac);
-    snprintf(s_device_id, sizeof(s_device_id), "pool_%02X%02X%02X",
-             mac[3], mac[4], mac[5]);
+    char serial[DEVICE_SERIAL_LEN];
+    device_get_serial(serial, sizeof(serial));
+    snprintf(s_device_id, sizeof(s_device_id), "pool_%s", serial);
     strncpy(device_id, s_device_id, max_len - 1);
     device_id[max_len - 1] = '\0';
 }
