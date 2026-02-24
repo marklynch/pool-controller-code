@@ -611,10 +611,22 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                                         LIGHTING_STATE_NAMES[s_pool_state.lighting[i].state] : "Unknown";
                 const char *color_name = (s_pool_state.lighting[i].color < LIGHTING_COLOR_COUNT) ?
                                         LIGHTING_COLOR_NAMES[s_pool_state.lighting[i].color] : "Unknown";
+                char name_json[48];
+                if (s_pool_state.lighting[i].name_valid &&
+                    s_pool_state.lighting[i].name_id < LIGHT_ZONE_NAME_COUNT) {
+                    snprintf(name_json, sizeof(name_json), "\"%s\"",
+                             LIGHT_ZONE_NAME_TABLE[s_pool_state.lighting[i].name_id]);
+                } else {
+                    snprintf(name_json, sizeof(name_json), "null");
+                }
 
                 len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
-                               "{\"zone\":%d,\"state\":\"%s\",\"color\":\"%s\",\"active\":%s}",
+                               "{\"zone\":%d,\"name\":%s,\"multicolor\":%s,\"state\":\"%s\",\"color\":\"%s\",\"active\":%s}",
                                s_pool_state.lighting[i].zone,
+                               name_json,
+                               s_pool_state.lighting[i].multicolor_valid
+                                   ? (s_pool_state.lighting[i].multicolor ? "true" : "false")
+                                   : "null",
                                state_name,
                                color_name,
                                s_pool_state.lighting[i].active ? "true" : "false");

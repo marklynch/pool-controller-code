@@ -109,7 +109,7 @@
 #define HTTP_OTA_BUFFER_SIZE           4096    // Buffer for OTA firmware chunks
 
 // MQTT Buffers
-#define MQTT_DISCOVERY_CONFIG_SIZE     1280    // Buffer for MQTT discovery config messages
+#define MQTT_DISCOVERY_CONFIG_SIZE     1408    // Buffer for MQTT discovery config messages
 
 // ======================================================
 // Timeouts & Delays

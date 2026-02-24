@@ -20,6 +20,10 @@ extern const char *LIGHTING_STATE_NAMES[];
 #define LIGHTING_COLOR_COUNT 51
 extern const char *LIGHTING_COLOR_NAMES[];
 
+// Lighting zone preset names
+#define LIGHT_ZONE_NAME_COUNT 6
+extern const char *LIGHT_ZONE_NAME_TABLE[];
+
 // Struct definitions
 typedef struct {
     uint8_t id;
@@ -33,7 +37,11 @@ typedef struct {
     uint8_t zone;
     uint8_t state;
     uint8_t color;
+    uint8_t name_id;    // Preset name code (0x00=Pool, 0x01=Spa, etc.)
     bool active;
+    bool multicolor;          // true if zone supports colour-changing (0xA0+ Slot 0x01 = 0x01)
+    bool multicolor_valid;    // true once a 0xA0+ multicolor message has been received
+    bool name_valid;          // true once a 0xB0+ name message has been received
     bool configured;
 } lighting_state_t;
 

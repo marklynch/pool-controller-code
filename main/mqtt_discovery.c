@@ -301,7 +301,8 @@ static void publish_channel_discovery(const char *device_id, const char *mac_suf
 // Light Discovery (4 zones)
 // ======================================================
 
-static void publish_light_discovery(const char *device_id, const char *mac_suffix, int zone_num)
+static void publish_light_discovery(const char *device_id, const char *mac_suffix,
+                                     int zone_num, const char *zone_name)
 {
     char avail_topic[128];
     char state_topic[128];
@@ -316,6 +317,13 @@ static void publish_light_discovery(const char *device_id, const char *mac_suffi
     char uid[64];
     snprintf(uid, sizeof(uid), DISCOVERY_ID_PREFIX "_%s_light%d", mac_suffix, zone_num);
 
+    char display_name[48];
+    if (zone_name && zone_name[0] != '\0') {
+        snprintf(display_name, sizeof(display_name), "%s", zone_name);
+    } else {
+        snprintf(display_name, sizeof(display_name), "Light Zone %d", zone_num);
+    }
+
     // Allocate config buffer on heap to avoid stack overflow
     char *config = malloc(MQTT_DISCOVERY_CONFIG_SIZE);
     if (!config) {
@@ -324,12 +332,12 @@ static void publish_light_discovery(const char *device_id, const char *mac_suffi
     }
 
     snprintf(config, MQTT_DISCOVERY_CONFIG_SIZE,
-             "{\"name\":\"Light %d\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
+             "{\"name\":\"%s\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
              "\"state_value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
              "\"unique_id\":\"%s\",\"object_id\":\"%s\","
              "\"availability_topic\":\"%s\",%s}",
-             zone_num, state_topic, command_topic, uid, uid, avail_topic, device_json);
+             display_name, state_topic, command_topic, uid, uid, avail_topic, device_json);
 
     publish_discovery("light", uid, config);
     free(config);
@@ -479,7 +487,7 @@ void mqtt_publish_channel_discovery_single(int channel_num, const char *channel_
     publish_channel_discovery(device_id, mac_suffix, channel_num, channel_name);
 }
 
-void mqtt_publish_light_discovery_single(int zone_num)
+void mqtt_publish_light_discovery_single(int zone_num, const char *zone_name)
 {
     char device_id[32];
     mqtt_get_device_id(device_id, sizeof(device_id));
@@ -487,8 +495,8 @@ void mqtt_publish_light_discovery_single(int zone_num)
     char mac_suffix[DEVICE_MAC_SUFFIX_LEN];
     device_get_mac_suffix(mac_suffix, sizeof(mac_suffix));
 
-    ESP_LOGI(TAG, "Publishing discovery for light zone %d", zone_num);
-    publish_light_discovery(device_id, mac_suffix, zone_num);
+    ESP_LOGI(TAG, "Publishing discovery for light zone %d: %s", zone_num, zone_name ? zone_name : "(unnamed)");
+    publish_light_discovery(device_id, mac_suffix, zone_num, zone_name);
 }
 
 // ======================================================

@@ -165,6 +165,16 @@ const char *LIGHTING_STATE_NAMES[] = {
     "On",           // 2
 };
 
+// Lighting zone preset name lookup table
+const char *LIGHT_ZONE_NAME_TABLE[] = {
+    "Pool",         // 0x00
+    "Spa",          // 0x01
+    "Pool & Spa",   // 0x02
+    "Waterfall 1",  // 0x03
+    "Waterfall 2",  // 0x04
+    "Waterfall 3",  // 0x05
+};
+
 // Day of week names
 const char *DAY_OF_WEEK_NAMES[] = {
     "Monday",       // 0
@@ -402,6 +412,8 @@ static bool handle_channel_name(const uint8_t *data, int len, const uint8_t *pay
 static bool handle_light_zone_state(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_light_zone_color(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_light_zone_active(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_light_zone_multicolor(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_light_zone_name(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_valve_label(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_register_label_generic(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 
@@ -419,6 +431,8 @@ static const register_handler_t REGISTER_HANDLERS[] = {
     {0x7C, 0x83, 0x02, handle_channel_name,       "Channel Name"},
 
     // Lighting zones
+    {0xA0, 0xA7, 0x01, handle_light_zone_multicolor, "Light Zone Multicolor"},
+    {0xB0, 0xB7, 0x01, handle_light_zone_name,    "Light Zone Name"},
     {0xC0, 0xC7, 0x01, handle_light_zone_state,   "Light Zone State"},
     {0xD0, 0xD7, 0x01, handle_light_zone_color,   "Light Zone Color"},
     {0xE0, 0xE7, 0x01, handle_light_zone_active,  "Light Zone Active"},
@@ -1466,6 +1480,81 @@ static bool handle_light_zone_color(
 
     if (should_publish && ctx->enable_mqtt) {
         mqtt_publish_light(&state_snapshot, zone_num);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Lighting zone multicolor capability
+ * Register range: 0xA0-0xA7, Slot: 0x01
+ */
+static bool handle_light_zone_multicolor(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    uint8_t capable = payload[2];
+    uint8_t zone_idx = reg_id - 0xA0;
+
+    ESP_LOGI(TAG, "%s Lighting zone %d multicolor - %s", addr_info, zone_idx + 1, capable ? "Yes" : "No");
+
+    pool_state_t state_snapshot;
+    bool should_publish = false;
+
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ctx->pool_state->lighting[zone_idx].multicolor = (capable != 0);
+        ctx->pool_state->lighting[zone_idx].multicolor_valid = true;
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        state_snapshot = *ctx->pool_state;
+        should_publish = ctx->pool_state->lighting[zone_idx].configured;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    if (ctx->enable_mqtt && should_publish) {
+        mqtt_publish_light(&state_snapshot, zone_idx + 1);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Lighting zone preset name
+ * Register range: 0xB0-0xB7, Slot: 0x01
+ */
+static bool handle_light_zone_name(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    uint8_t name_id = payload[2];
+    uint8_t zone_idx = reg_id - 0xB0;
+
+    const char *name = (name_id < LIGHT_ZONE_NAME_COUNT) ? LIGHT_ZONE_NAME_TABLE[name_id] : "Unknown";
+    ESP_LOGI(TAG, "%s Lighting zone %d name - %s (%d)", addr_info, zone_idx + 1, name, name_id);
+
+    pool_state_t state_snapshot;
+    bool should_publish = false;
+
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ctx->pool_state->lighting[zone_idx].name_id = name_id;
+        ctx->pool_state->lighting[zone_idx].name_valid = true;
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        state_snapshot = *ctx->pool_state;
+        should_publish = ctx->pool_state->lighting[zone_idx].configured;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    if (ctx->enable_mqtt && should_publish) {
+        mqtt_publish_light(&state_snapshot, zone_idx + 1);
     }
 
     return true;

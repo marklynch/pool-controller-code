@@ -8,7 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [TODO]
-- Lights should use the correct names
 - Sometimes messages fail - likely clashing message on bus. Make them do a retry
 
 ## [Unreleased]
@@ -19,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added serial number, url, mac info to device in home assistant
 - Added decoding for known register read requests.
 - Added decoding of the firmware version of the internet gateway
+- Added support for light names (and use in MQTT/HA)
+- Added reading of multicolor light support
 
 ### Removed
 ### Changed

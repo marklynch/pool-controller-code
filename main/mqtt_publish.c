@@ -199,9 +199,19 @@ void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
         return;
     }
 
-    // Publish discovery if this is the first time seeing this light zone
+    const char *zone_name = (light->name_valid && light->name_id < LIGHT_ZONE_NAME_COUNT) ?
+                            LIGHT_ZONE_NAME_TABLE[light->name_id] : NULL;
+
+    // Re-publish discovery if the zone name has changed since last publish
+    if (s_discovery_published.lights[idx] &&
+        (s_last_published_state.lighting[idx].name_id != light->name_id ||
+         s_last_published_state.lighting[idx].name_valid != light->name_valid)) {
+        s_discovery_published.lights[idx] = false;
+    }
+
+    // Publish discovery if this is the first time seeing this light zone (or name changed)
     if (!s_discovery_published.lights[idx]) {
-        mqtt_publish_light_discovery_single(zone);
+        mqtt_publish_light_discovery_single(zone, zone_name);
         s_discovery_published.lights[idx] = true;
     }
 
@@ -209,7 +219,11 @@ void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
     if (s_last_published_state.lighting[idx].configured &&
         s_last_published_state.lighting[idx].state == light->state &&
         s_last_published_state.lighting[idx].color == light->color &&
-        s_last_published_state.lighting[idx].active == light->active) {
+        s_last_published_state.lighting[idx].active == light->active &&
+        s_last_published_state.lighting[idx].multicolor == light->multicolor &&
+        s_last_published_state.lighting[idx].multicolor_valid == light->multicolor_valid &&
+        s_last_published_state.lighting[idx].name_id == light->name_id &&
+        s_last_published_state.lighting[idx].name_valid == light->name_valid) {
         return;  // No change, skip publish
     }
 
@@ -230,10 +244,18 @@ void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
     };
     const char *color_name = (light->color < 15) ? COLOR_NAMES[light->color] : "Unknown";
 
+    char fallback_name[24];
+    if (!zone_name) {
+        snprintf(fallback_name, sizeof(fallback_name), "Light Zone %d", zone);
+    }
+    const char *display_name = zone_name ? zone_name : fallback_name;
+
     char payload[256];
     snprintf(payload, sizeof(payload),
-             "{\"state\":\"%s\",\"color\":\"%s\",\"active\":%s}",
-             state_name, color_name, light->active ? "true" : "false");
+             "{\"state\":\"%s\",\"color\":\"%s\",\"active\":%s,\"name\":\"%s\",\"multicolor\":%s}",
+             state_name, color_name, light->active ? "true" : "false",
+             display_name,
+             light->multicolor_valid ? (light->multicolor ? "true" : "false") : "null");
 
     mqtt_publish(topic, payload, 0, false);
 
@@ -241,9 +263,14 @@ void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
     s_last_published_state.lighting[idx].state = light->state;
     s_last_published_state.lighting[idx].color = light->color;
     s_last_published_state.lighting[idx].active = light->active;
+    s_last_published_state.lighting[idx].multicolor = light->multicolor;
+    s_last_published_state.lighting[idx].multicolor_valid = light->multicolor_valid;
+    s_last_published_state.lighting[idx].name_id = light->name_id;
+    s_last_published_state.lighting[idx].name_valid = light->name_valid;
     s_last_published_state.lighting[idx].configured = true;
 
-    ESP_LOGI(TAG, "Published light %d: %s, %s, active=%d", zone, state_name, color_name, light->active);
+    ESP_LOGI(TAG, "Published light %d: %s, %s, active=%d, name=%s, multicolor=%d",
+             zone, state_name, color_name, light->active, display_name, light->multicolor);
 }
 
 // ======================================================

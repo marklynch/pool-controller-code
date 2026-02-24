@@ -331,6 +331,8 @@ The register ID and slot together determine the message meaning. The slot distin
 | 0x31-0x38 | 0x03 | Favourite Labels | Null-terminated ASCII string |
 | 0x6C-0x73 | 0x02 | Channel Types | 1-byte type code (see channel types) |
 | 0x7C-0x83 | 0x02 | Channel Names | Null-terminated ASCII string |
+| 0xA0-0xA7 | 0x01 | Light Zone Multicolor | 1-byte flag (0x00=No, 0x01=Yes) |
+| 0xB0-0xB7 | 0x01 | Light Zone Name | 1-byte preset name code (see table) |
 | 0xC0-0xC7 | 0x01 | Light Zone State | 1-byte value (0=Off, 1=Auto, 2=On) |
 | 0xD0-0xD1 | 0x02 | Valve Labels | Null-terminated ASCII string |
 | 0xD0-0xD7 | 0x01 | Light Zone Color | 1-byte color code |
@@ -366,6 +368,38 @@ The register ID and slot together determine the message meaning. The slot distin
                                  ^^ Slot 0x01 (State)
                                     ^^ Value: 0x02 = On
 ```
+
+**Light Zone Multicolor Capability (0xA0-0xA7, Slot 0x01):**
+```
+02 00 50 FF FF 80 00 38 0F 17 A0 01 01 A2 03
+                              ^^ Light Zone 1 (0xA0)
+                                 ^^ Slot 0x01 (Multicolor)
+                                    ^^ Value: 0x01 = Multicolor capable
+
+02 00 50 FF FF 80 00 38 0F 17 A1 01 00 A2 03
+                              ^^ Light Zone 2 (0xA1)
+                                 ^^ Slot 0x01 (Multicolor)
+                                    ^^ Value: 0x00 = Not multicolor capable
+```
+
+**Light Zone Name (0xB0-0xB7, Slot 0x01):**
+```
+02 00 50 FF FF 80 00 38 0F 17 B0 01 00 B1 03
+                              ^^ Light Zone 1 (0xB0)
+                                 ^^ Slot 0x01 (Name)
+                                    ^^ Name code: 0x00 = Pool
+```
+
+**Light Zone Name Codes:**
+
+| Code | Name |
+|------|------|
+| `0x00` | Pool |
+| `0x01` | Spa |
+| `0x02` | Pool & Spa |
+| `0x03` | Waterfall 1 |
+| `0x04` | Waterfall 2 |
+| `0x05` | Waterfall 3 |
 
 **Light Zone Color (0xD0-0xD7, Slot 0x01):**
 ```
@@ -408,6 +442,8 @@ The register ID and slot together determine the message meaning. The slot distin
 - `0x73`: Channel 8
 
 **Lighting Zones:**
+- Multicolor (0xA0-0xA7): `0xA0` = Zone 1, `0xA1` = Zone 2, etc.
+- Name (0xB0-0xB7): `0xB0` = Zone 1, `0xB1` = Zone 2, etc.
 - State (0xC0-0xC7): `0xC0` = Zone 1, `0xC1` = Zone 2, etc.
 - Color (0xD0-0xD7): `0xD0` = Zone 1, `0xD1` = Zone 2, etc.
 - Active (0xE0-0xE7): `0xE0` = Zone 1, `0xE1` = Zone 2, etc.
@@ -420,6 +456,8 @@ The firmware uses a dispatch table to route register messages to appropriate han
 static const register_handler_t REGISTER_HANDLERS[] = {
     {0x6C, 0x73, 0x02, handle_channel_type,       "Channel Type"},
     {0x7C, 0x83, 0x02, handle_channel_name,       "Channel Name"},
+    {0xA0, 0xA7, 0x01, handle_light_zone_multicolor, "Light Zone Multicolor"},
+    {0xB0, 0xB7, 0x01, handle_light_zone_name,    "Light Zone Name"},
     {0xC0, 0xC7, 0x01, handle_light_zone_state,   "Light Zone State"},
     {0x08, 0x17, 0x04, handle_timer,              "Timer"},
     {0xD0, 0xD7, 0x01, handle_light_zone_color,   "Light Zone Color"},
@@ -933,7 +971,7 @@ Touchscreen firmware version announcement. Broadcast periodically by the control
 This is broadcast consistently after the version number message `0A 0E E8` and currently
 appears to always have the data value `05 00`
 
-**Pattern:** `02 00 50 FF FF 80 00 12 0E F0 05 00 05 03`
+**Pattern:** `02 00 50 FF FF 80 00 12 0E F0`
 
 **Example:**
 
@@ -955,16 +993,15 @@ appears to always have the data value `05 00`
 ### 24. Touchscreen Unknown 2 - ??
 
 This is broadcast consistently after the version number message `27 0D 04` and currently
-appears to always have the data value `00 00`
+appears to always have the data value `00`
 
-**Pattern:** `02 00 50 FF FF 80 00 27 0D 04 00 00 03`
+**Pattern:** `02 00 50 FF FF 80 00 27 0D 04`
 
 **Example:**
 
 ```
-02 00 50 FF FF 80 00 12 0E F0 05 00 05 03
+02 00 50 FF FF 80 00 27 0D 04 00 00 03 
                               ^^ Unknown (always 0x00)
-                                 ^^ Unknown (always 0x00)
 ```
 
 **Data Fields:**
