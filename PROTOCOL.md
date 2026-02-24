@@ -642,7 +642,7 @@ Target ORP (oxidation-reduction potential) level.
 
 Current ORP reading from the sensor.
 
-**Pattern:** `02 00 90 FF FF 80 00` (followed by subcommand)
+**Pattern:** `02 00 90 FF FF 80 00 1F 0F 3E`
 
 **Example:**
 
@@ -664,7 +664,7 @@ Current ORP reading from the sensor.
 
 Serial number of the internet gateway module.
 
-**Pattern:** `02 00 F0 FF FF 80 00 37 11`
+**Pattern:** `02 00 F0 FF FF 80 00 37 11 B8`
 
 **Example:**
 
@@ -754,7 +754,64 @@ Status of the gateway's internet connection.
 
 ---
 
-### 18. Register Read Request/Response
+### 18. Internet Gateway Firmware Version ✅
+
+Firmware version announcement broadcast by the Internet Gateway on startup. Uses the same command byte (`0x0A`) as the Touchscreen Firmware Version message, but originates from source `0x00F0`.
+
+**Pattern:** `02 00 F0 FF FF 80 00 0A 0E 88`
+
+**Example:**
+
+```
+02 00 F0 FF FF 80 00 0A 0E 88 05 01 06 03
+                              ^^ Major version (5)
+                                 ^^ Minor version (1)
+                                    → Version 5.1
+```
+
+**Data Fields:**
+
+- Byte 10: Major version number
+- Byte 11: Minor version number
+
+**Notes:**
+
+- Uses the same command byte (`0x0A`) as the Touchscreen Firmware Version message (Section 22)
+- Broadcast at startup, paired with the Gateway Status Broadcast (Section 19)
+
+---
+
+### 19. Internet Gateway Status Broadcast ⚠️
+
+Status broadcast by the Internet Gateway on startup. Uses the same command byte (`0x12`) as the Touchscreen Unknown 1 message, but carries an additional third data byte and originates from source `0x00F0`.
+
+**Pattern:** `02 00 F0 FF FF 80 00 12 0F 91`
+
+**Example:**
+
+```
+02 00 F0 FF FF 80 00 12 0F 91 05 01 06 0C 03
+                              ^^ Unknown (always 0x05)
+                                 ^^ Unknown (always 0x01)
+                                    ^^ Unknown (always 0x06)
+```
+
+**Data Fields:**
+
+- Byte 10: Unknown (always `0x05` in observed samples)
+- Byte 11: Unknown (always `0x01` in observed samples)
+- Byte 12: Unknown (always `0x06` in observed samples)
+
+**Notes:**
+
+- Uses the same command byte (`0x12`) as Touchscreen Unknown 1 (Section 23), but is 1 byte longer (15 vs 14 bytes total)
+- The touchscreen version carries only 2 bytes (`0x05 0x00`); the gateway version carries 3 bytes
+- Broadcast at startup, paired with the Gateway Firmware Version message (Section 18)
+- Field meanings are unknown; `0x05` may be a shared protocol constant
+
+---
+
+### 20. Register Read Request/Response
 
 The Internet Gateway periodically polls controller registers to sync state with the cloud service. This uses a request-response pattern.
 
@@ -805,7 +862,7 @@ The Internet Gateway periodically polls controller registers to sync state with 
 
 ---
 
-### 19. Controller Day/Time/Clock ✅
+### 21. Controller Day/Time/Clock ✅
 
 Current time from the controller's internal clock. Broadcast periodically for synchronization.
 
@@ -842,7 +899,7 @@ Current time from the controller's internal clock. Broadcast periodically for sy
 
 ---
 
-### 20. Touchscreen Firmware Version ✅
+### 22. Touchscreen Firmware Version ✅
 
 Touchscreen firmware version announcement. Broadcast periodically by the controller.
 
@@ -871,7 +928,7 @@ Touchscreen firmware version announcement. Broadcast periodically by the control
 
 ---
 
-### 21. Touchscreen Unknown 1 - 5 little pigs?
+### 23. Touchscreen Unknown 1 - 5 little pigs?
 
 This is broadcast consistently after the version number message `0A 0E E8` and currently
 appears to always have the data value `05 00`
@@ -895,7 +952,7 @@ appears to always have the data value `05 00`
 
 - This message is broadcast by the controller as part of the regular system status sequence
 
-### 22.  Touchscreen Unknown 2 - ??
+### 24. Touchscreen Unknown 2 - ??
 
 This is broadcast consistently after the version number message `27 0D 04` and currently
 appears to always have the data value `00 00`
@@ -925,7 +982,7 @@ appears to always have the data value `00 00`
 
 The following commands can be sent from the Internet Gateway (or emulated gateway) to control pool equipment.
 
-### 23. Light Zone Control Command ✅
+### 25. Light Zone Control Command ✅
 
 Command to set light zone state (On/Off/Auto).
 
@@ -989,7 +1046,7 @@ Command to set light zone state (On/Off/Auto).
 
 ---
 
-### 24. Channel Toggle Command ✅
+### 26. Channel Toggle Command ✅
 
 Command to cycle a channel through its available states (Auto → On → Off, or On → Off depending on channel type).
 
@@ -1041,7 +1098,7 @@ Command to cycle a channel through its available states (Auto → On → Off, or
 
 ---
 
-### 25. Temperature Setpoint Command ✅
+### 27. Temperature Setpoint Command ✅
 
 Command to set the pool or spa temperature setpoint. The temperature byte is repeated twice within the payload.
 
@@ -1081,7 +1138,7 @@ Command to set the pool or spa temperature setpoint. The temperature byte is rep
 
 ---
 
-### 26. Heater Control Command ✅
+### 28. Heater Control Command ✅
 
 Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern as the Light Zone Control Command (Section 23), but with a different register ID and slot.
 
@@ -1122,7 +1179,7 @@ Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern a
 
 ---
 
-### 26. Mode Control Command (Pool/Spa) ✅
+### 29. Mode Control Command (Pool/Spa) ✅
 
 Command to switch between Pool and Spa operating modes.
 

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added firmware and serial number to mDNS messages
 - Added serial number, url, mac info to device in home assistant
 - Added decoding for known register read requests.
+- Added decoding of the firmware version of the internet gateway
 
 ### Removed
 ### Changed

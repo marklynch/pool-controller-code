@@ -88,6 +88,8 @@ static const char *CHLOR_ORP_READING  = "1F 0F 3E 02";
 static const char *MSG_TYPE_SERIAL_NUMBER =           "02 00 F0 FF FF 80 00 37 11 B8";
 static const char *MSG_TYPE_GATEWAY_IP =              "02 00 F0 FF FF 80 00 37 15 BC";
 static const char *MSG_TYPE_GATEWAY_COMMS =           "02 00 F0 FF FF 80 00 37 0F B6";
+static const char *MSG_TYPE_GATEWAY_VERSION =         "02 00 F0 FF FF 80 00 0A 0E 88";
+static const char *MSG_TYPE_GATEWAY_STATUS =          "02 00 F0 FF FF 80 00 12 0F 91";
 static const char *MSG_TYPE_REGISTER_READ_REQUEST =   "02 00 F0 FF FF 80 00 39 0E B7";
 
 // F0 Gateway Control Commands (Gateway -> Controller)
@@ -854,6 +856,52 @@ static bool handle_gateway_comms(
         ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
         xSemaphoreGive(ctx->state_mutex);
     }
+
+    return true;
+}
+
+/**
+ * Handler: Internet Gateway firmware version
+ * Pattern: "02 00 F0 FF FF 80 00 0A 0E 88"
+ */
+static bool handle_gateway_version(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 2) return false;
+
+    uint8_t major = payload[0];
+    uint8_t minor = payload[1];
+
+    ESP_LOGI(TAG, "%s Internet Gateway firmware version - %d.%d", addr_info, major, minor);
+
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ctx->pool_state->gateway_version_major = major;
+        ctx->pool_state->gateway_version_minor = minor;
+        ctx->pool_state->gateway_version_valid = true;
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Internet Gateway status broadcast
+ * Pattern: "02 00 F0 FF FF 80 00 12 0F 91"
+ */
+static bool handle_gateway_status(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    ESP_LOGI(TAG, "%s Internet Gateway status - 0x%02X 0x%02X 0x%02X",
+             addr_info, payload[0], payload[1], payload[2]);
 
     return true;
 }
@@ -1870,6 +1918,14 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     if (len >= 14 && match_pattern(data, len, MSG_TYPE_GATEWAY_COMMS)) {
         return handle_gateway_comms(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    if (len >= 14 && match_pattern(data, len, MSG_TYPE_GATEWAY_VERSION)) {
+        return handle_gateway_version(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    if (len >= 15 && match_pattern(data, len, MSG_TYPE_GATEWAY_STATUS)) {
+        return handle_gateway_status(data, len, payload, payload_len, addr_info, ctx);
     }
 
     if (len >= 12 && match_pattern(data, len, MSG_TYPE_REGISTER_READ_REQUEST)) {

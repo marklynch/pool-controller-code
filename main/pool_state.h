@@ -114,6 +114,11 @@ typedef struct {
     uint8_t touchscreen_version_minor;
     bool touchscreen_version_valid;
 
+    // Internet Gateway firmware version
+    uint8_t gateway_version_major;
+    uint8_t gateway_version_minor;
+    bool gateway_version_valid;
+
     // Timers (up to MAX_TIMERS)
     timer_state_t timers[MAX_TIMERS];
 

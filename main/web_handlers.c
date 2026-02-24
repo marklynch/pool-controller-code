@@ -653,6 +653,16 @@ static esp_err_t status_get_handler(httpd_req_t *req)
             len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
         }
 
+        // Firmware version
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"firmware_version\":");
+        if (s_pool_state.gateway_version_valid) {
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%d.%d\",",
+                           s_pool_state.gateway_version_major,
+                           s_pool_state.gateway_version_minor);
+        } else {
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
+        }
+
         // IP address
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"ip\":");
         if (s_pool_state.gateway_ip_valid) {
