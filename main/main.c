@@ -20,6 +20,7 @@
 #include "wifi_provisioning.h"
 #include "tcp_bridge.h"
 #include "message_decoder.h"
+#include "register_requester.h"
 
 // ==================== APPLICATION =====================
 // All configuration values are in config.h
@@ -59,7 +60,7 @@ message_decoder_context_t s_decoder_context = {
  *
  * Returns the number of bytes sent, or -1 on parse error.
  */
-static int bus_send_message(const char *hex_string)
+int bus_send_message(const char *hex_string)
 {
     if (hex_string == NULL || hex_string[0] == '\0') {
         ESP_LOGE(TAG, "bus_send_message: empty hex string");
@@ -367,4 +368,6 @@ void app_main(void)
     } else {
         ESP_LOGE(TAG, "Failed to start TCP bridge: %s", esp_err_to_name(bridge_err));
     }
+
+    register_requester_start();
 }

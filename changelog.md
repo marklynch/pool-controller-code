@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [TODO]
 - Sometimes messages fail - likely clashing message on bus. Make them do a retry
+- Valves are not yet supported
+- Solar is not yet supported
 
 ## [Unreleased]
 ### Added
@@ -20,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added decoding of the firmware version of the internet gateway
 - Added support for light names (and use in MQTT/HA)
 - Added reading of multicolor light support
+- Send requests for timers and light names if the Internet Gateway is not connected
 
 ### Removed
 ### Changed

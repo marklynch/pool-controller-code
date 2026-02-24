@@ -1,6 +1,7 @@
 #include "message_decoder.h"
 #include "config.h"
 #include "mqtt_publish.h"
+#include "register_requester.h"
 #include "esp_log.h"
 #include <string.h>
 
@@ -1222,8 +1223,10 @@ static bool handle_light_config(
         ESP_LOGI(TAG, "%s Lighting zone %d - %s", addr_info, zone_idx + 1, light_on ? "On" : "Off");
 
         pool_state_t state_snapshot;
+        bool newly_configured = false;
 
         if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+            newly_configured = !ctx->pool_state->lighting[zone_idx].configured;
             ctx->pool_state->lighting[zone_idx].zone       = zone_idx + 1;
             ctx->pool_state->lighting[zone_idx].configured = true;
             ctx->pool_state->lighting[zone_idx].active     = (light_on != 0);
@@ -1231,6 +1234,10 @@ static bool handle_light_config(
 
             state_snapshot = *ctx->pool_state;
             xSemaphoreGive(ctx->state_mutex);
+        }
+
+        if (newly_configured) {
+            register_requester_notify();
         }
 
         if (ctx->enable_mqtt) {

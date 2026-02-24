@@ -11,6 +11,7 @@ idf_component_register(
         "web_handlers.c"
         "tcp_bridge.c"
         "message_decoder.c"
+        "register_requester.c"
         "dns_server.c"
     INCLUDE_DIRS
          "."
