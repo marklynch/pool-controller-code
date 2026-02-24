@@ -189,13 +189,12 @@ static bool extract_and_process_message(int client_sock)
                 }
             }
 
-            // Decode message, log hex only if not decoded and not loopback
+            // Updat the counts of decoded vs unknown messages
             if (!is_loopback) {
                 if (s_config.decode_message(s_msg_buffer, msg_len)) {
                     s_messages_decoded++;
                 } else {
                     s_messages_unknown++;
-                    ESP_LOGI(TAG, "RX: %s", hexLine);
                 }
             }
 

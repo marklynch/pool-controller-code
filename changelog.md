@@ -17,10 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use non clashing hostname poolcontrol-AABBCC.local via mdns
 - Added firmware and serial number to mDNS messages
 - Added serial number, url, mac info to device in home assistant
+- Added decoding for known register read requests.
 
 ### Removed
 ### Changed
 - Improved the naming of entities to use the dns reference in the entity id, but have a simple name
+- Cleaned up the logging output to make it less verbose and easier to spot patterns
 
 ### Fixed
 
@@ -29,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for reading timers
 - Added counting of known vs unknown messages on the bus
 - Added partial support for additional temperature message from heater `31 0E 21`
-- Added toggle buttons for channel  to switch modes
+- Added toggle buttons for channel to switch modes
 
 ### Removed
 - Removed switches for channels as there isn't a clean interface for this

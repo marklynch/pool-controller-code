@@ -872,7 +872,23 @@ static bool handle_register_read_request(
 
     uint8_t reg_id = payload[0];
     uint8_t slot_id = payload[1];
-    ESP_LOGI(TAG, "%s Register read request - Reg=0x%02X, Slot=0x%02X", addr_info, reg_id, slot_id);
+
+    // Resolve a human-readable description by searching the register dispatch table
+    char desc[48];
+    bool found = false;
+    for (int i = 0; i < REGISTER_HANDLER_COUNT; i++) {
+        const register_handler_t *entry = &REGISTER_HANDLERS[i];
+        if (reg_id >= entry->reg_start && reg_id <= entry->reg_end && entry->slot == slot_id) {
+            snprintf(desc, sizeof(desc), "%s %d", entry->name, reg_id - entry->reg_start + 1);
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        snprintf(desc, sizeof(desc), "0x%02X/0x%02X", reg_id, slot_id);
+    }
+
+    ESP_LOGI(TAG, "%s Register read request - %s", addr_info, desc);
 
     // No state update needed - this is just a request message
     return true;
@@ -1751,8 +1767,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         uint8_t reg_id = payload[0];
         uint8_t slot = payload[1];
 
-        ESP_LOGI(TAG, "%s Register message received - Reg=0x%02X, Slot=0x%02X, searching handlers...",
-                 addr_info, reg_id, slot);
+        // ESP_LOGI(TAG, "%s Register message received - Reg=0x%02X, Slot=0x%02X, searching handlers...",
+        //          addr_info, reg_id, slot);
 
         // Find matching handler in dispatch table
         for (int i = 0; i < REGISTER_HANDLER_COUNT; i++) {
@@ -1764,9 +1780,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
             }
         }
 
-        // No handler found - log as unhandled register with full payload dump
-        ESP_LOGI(TAG, "  -> No handler matched, logging as unhandled");
-
+        // If we are here it means we have an unhandled register message - log details for debugging
+        
         // Format all payload bytes as hex for debugging (e.g., "7F 02 00 81")
         int payload_hex_size = payload_len * 3 + 1;
         char *payload_hex = malloc(payload_hex_size);
