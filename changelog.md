@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Removed
+### Changed
+### Fixed
+
+## [0.7.0] - 2026-02-25
+### Added
 - Added display of serial number to home page
 - Use non clashing hostname poolcontrol-AABBCC.local via mdns
 - Added firmware and serial number to mDNS messages
@@ -24,12 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added reading of multicolor light support
 - Send requests for timers and light names if the Internet Gateway is not connected
 
-### Removed
 ### Changed
 - Improved the naming of entities to use the dns reference in the entity id, but have a simple name
 - Cleaned up the logging output to make it less verbose and easier to spot patterns
-
-### Fixed
+- Pulled the uart code out to bus.c
 
 ## [0.6.0] - 2026-02-22
 ### Added

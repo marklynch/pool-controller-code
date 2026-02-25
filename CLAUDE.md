@@ -23,10 +23,12 @@ Requires ESP-IDF v5.5+ with environment sourced (`. $IDF_PATH/export.sh`).
 
 ### Core Modules (`main/` directory)
 
-- **main.c**: Application entry point, WiFi management, provisioning, UART initialization, HTTP/TCP server startup
+- **main.c**: Application entry point, WiFi management, provisioning, HTTP/TCP server startup
+- **bus.c/.h**: UART bus interface — init, read, and hex-string send (`bus_init`, `bus_read`, `bus_send_message`)
 - **tcp_bridge.c/.h**: TCP server (port 7373) that bridges UART data to/from network clients
 - **message_decoder.c/.h**: Pattern-matching decoder for protocol messages
 - **pool_state.c/.h**: Global pool state structure and definitions
+- **register_requester.c/.h**: Proactively sends CMD 0x39 register read requests when Internet Gateway is absent; woken immediately when a new light zone is configured
 - **mqtt_poolclient.c/.h**: MQTT client lifecycle and connection management
 - **mqtt_publish.c/.h**: MQTT publishing functions for pool state updates
 - **mqtt_discovery.c/.h**: Home Assistant MQTT discovery integration
@@ -38,7 +40,7 @@ Requires ESP-IDF v5.5+ with environment sourced (`. $IDF_PATH/export.sh`).
 
 - **WiFi Station**: Connects to configured network, auto-reconnects with exponential backoff (max 5 retries)
 - **WiFi Provisioning**: SoftAP mode with web-based WiFi credential configuration at http://192.168.4.1
-- **UART Bus Interface**: 9600 baud on GPIO1 (RX) / GPIO2 (TX), TX inverted for transistor-based bus interface
+- **Bus Interface**: 9600 baud on GPIO1 (RX) / GPIO2 (TX), TX inverted for transistor-based bus interface; encapsulated in `bus.c`
 - **TCP Bridge**: Port 7373, forwards UART data as hex strings to clients, accepts hex string commands from clients
 - **Protocol Decoder**: Pattern-matching decoder using `memcmp()` for known message types
 - **MQTT Integration**: Publishes pool state to Home Assistant, supports discovery and commands
@@ -47,7 +49,7 @@ Requires ESP-IDF v5.5+ with environment sourced (`. $IDF_PATH/export.sh`).
 
 ## Configuration
 
-Hardware pin configuration in `main/main.c`:
+Hardware pin configuration in `main/config.h`:
 - `BUS_TX_GPIO`, `BUS_RX_GPIO` - UART pins (GPIO2, GPIO1)
 - `TCP_PORT` - Server port (default 7373)
 
@@ -71,9 +73,13 @@ To add a new message decoder:
 
 ```
 main.c
-  ├─> tcp_bridge (UART <-> TCP forwarding)
-  │     └─> message_decoder (decode UART messages)
-  │           └─> mqtt_publish (publish state changes)
+  ├─> bus (UART init, read, send)
+  ├─> tcp_bridge (bus <-> TCP forwarding)
+  │     └─> message_decoder (decode bus messages)
+  │           ├─> mqtt_publish (publish state changes)
+  │           └─> register_requester (notify on new light zone)
+  ├─> register_requester (auto-poll missing registers when GW absent)
+  │     └─> bus (send CMD 0x39 requests)
   ├─> mqtt_poolclient (MQTT connection)
   │     ├─> mqtt_discovery (Home Assistant integration)
   │     └─> mqtt_commands (handle MQTT commands)

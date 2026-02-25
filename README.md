@@ -9,7 +9,7 @@ It is designed to run on and ESP32-C6, and there is a [circuit and PCB design](h
 ## Current Status
 
 Tested as working:
-- Lights now work fully ✅
+- Lights work fully — state, colour, zone name, multicolor capability ✅
 - Pool/Spa mode works ✅
 - Temperature set points for pool and spa work ✅
 - Heater on/off works ✅
@@ -19,7 +19,8 @@ Tested as working:
 - Reading of water temperature ✅
 - Reading config for channels, lights and heater ✅
 - Reading of config/state for Internet Gateway ✅
-- Reading of touchscreen firmware version ✅
+- Reading of touchscreen and Internet Gateway firmware versions ✅
+- Auto-requests missing timer and light config when Internet Gateway is absent ✅
 
 
 ## Output
@@ -130,8 +131,9 @@ flowchart TD
 
     subgraph ESP32-C6[fa:fa-microchip ESP32-C6 Pool Controller]
         subgraph Transport[Transport Layer]
-            UART[UART Interface<br/>9600 baud]
+            Bus[Bus Interface<br/>UART 9600 baud]
             TCP[TCP Bridge<br/>Port 7373]
+            RegReq[Register Requester<br/>Auto-polls when GW absent]
         end
 
         subgraph Protocol[Protocol Layer]
@@ -161,9 +163,12 @@ flowchart TD
             LED[LED Helper<br/>WS2812 RGB]
         end
 
-        UART <--> TCP
-        UART --> Decoder
+        Bus <--> TCP
+        Bus --> Decoder
         Decoder --> PoolState
+        Decoder -.->|notify on new zone| RegReq
+        RegReq --> PoolState
+        RegReq -->|CMD 0x39 requests| Bus
         PoolState --> MQTTPub
         PoolState --> WebAPI
         MQTTCmd --> PoolState
@@ -183,7 +188,7 @@ flowchart TD
     Browser[Web Browser]
     HA[Home Assistant]
 
-    Pool <-->|RJ12 Serial Bus| UART
+    Pool <-->|RJ12 Serial Bus| Bus
     TCP <-->|TCP/IP Port 7373| Clients
     WebAPI <-->|HTTP Port 80<br/>poolcontrol-AABBCC.local| Browser
     MQTTSub <-->|MQTT over WiFi| HA
@@ -212,7 +217,7 @@ Documents the proprietary serial protocol used by the Connect 10, reverse-engine
 
 - **Message framing** — `START (0x02) | SRC | DST | CTRL | CMD | DATA | CHECKSUM | END (0x03)`
 - **Device addresses** — Touch screen (`0x0050`), controller (`0x006F`), chlorinator (`0x0090`), internet gateway (`0x00F0`)
-- **22 decoded message types** — temperatures, channel states, lighting zones, chlorinator pH/ORP, controller clock, firmware version, gateway network status, and more
+- **30+ decoded message types** — temperatures, channel states, lighting zones (state, colour, name, multicolor capability), chlorinator pH/ORP, controller clock, firmware versions, gateway network status, and more
 - **Register system** — A unified register/slot dispatch mechanism used for channel names, types, lighting colors, and labels
 - **Control commands** — How to toggle channels, set temperature setpoints, control lighting zones, switch pool/spa mode, and control the heater (all by impersonating the internet gateway address `0x00F0`)
 - **Checksum algorithm** and message validation rules
