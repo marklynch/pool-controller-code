@@ -2,6 +2,50 @@
 
 This document describes the proprietary serial protocol used by the Connect 10 pool controller and has been clean-room developed by sniffing the messages on the RS-232 like bus that is used for communications.
 
+## Table of Contents
+
+- [Message Structure](#message-structure)
+  - [Message Format](#message-format)
+  - [Checksum Calculation](#checksum-calculation)
+  - [Device Addresses](#device-addresses)
+- [Quick Reference](#quick-reference)
+- [Message Types](#message-types)
+  - [1. Mode Message (Spa/Pool) ✅](#1-mode-message-spapool-)
+  - [2. Temperature Settings ✅](#2-temperature-settings-)
+  - [3. Temperature Reading ⚠️](#3-temperature-reading-️)
+  - [4. Heater Status ⚠️](#4-heater-status-️)
+  - [5. Configuration ⚠️](#5-configuration-️)
+  - [6. Active Channels Bitmask ⚠️](#6-active-channels-bitmask-️)
+  - [7. Channel Status ✅](#7-channel-status-)
+  - [8. Register Messages (Universal Register System) ⚠️](#8-register-messages-universal-register-system-️)
+  - [9. Timers ✅](#9-timers-)
+  - [10. Register Labels ✅](#10-register-labels-)
+  - [11. Lighting Zone Configuration ✅](#11-lighting-zone-configuration-)
+  - [12. Chlorinator pH Setpoint ✅](#12-chlorinator-ph-setpoint-)
+  - [13. Chlorinator pH Reading ✅](#13-chlorinator-ph-reading-)
+  - [14. Chlorinator ORP Setpoint ✅](#14-chlorinator-orp-setpoint-)
+  - [15. Chlorinator ORP Reading ✅](#15-chlorinator-orp-reading-)
+  - [16. Internet Gateway Serial Number ⚠️](#16-internet-gateway-serial-number-️)
+  - [17. Internet Gateway Network Config ⚠️](#17-internet-gateway-network-config-️)
+  - [18. Internet Gateway Communications Status ⚠️](#18-internet-gateway-communications-status-️)
+  - [19. Internet Gateway Firmware Version ✅](#19-internet-gateway-firmware-version-)
+  - [20. Internet Gateway Status Broadcast ⚠️](#20-internet-gateway-status-broadcast-️)
+  - [21. Register Read Request/Response](#21-register-read-requestresponse)
+  - [22. Controller Day/Time/Clock ✅](#22-controller-daytimeclock-)
+  - [23. Touchscreen Firmware Version ✅](#23-touchscreen-firmware-version-)
+  - [24. Touchscreen Unknown 1 ⚠️](#24-touchscreen-unknown-1-️)
+  - [25. Touchscreen Unknown 2 ⚠️](#25-touchscreen-unknown-2-️)
+- [Control Commands (Gateway to Controller)](#control-commands-gateway-to-controller)
+  - [26. Light Zone Control Command ✅](#26-light-zone-control-command-)
+  - [27. Channel Toggle Command ✅](#27-channel-toggle-command-)
+  - [28. Temperature Setpoint Command ✅](#28-temperature-setpoint-command-)
+  - [29. Heater Control Command ✅](#29-heater-control-command-)
+  - [30. Mode Control Command (Pool/Spa) ✅](#30-mode-control-command-poolspa-)
+- [Appendix A: Register Dispatch Table](#appendix-a-register-dispatch-table)
+- [Implementation Notes](#implementation-notes)
+
+---
+
 ## Message Structure
 
 All messages follow this basic structure:
@@ -46,6 +90,49 @@ uint8_t checksum = sum & 0xFF;
 | `0x00F0` | Internet GW  | Internet gateway module           |
 | `0xFFFF` | Broadcast    | Broadcast to all devices          |
 
+---
+
+## Quick Reference
+
+✅ = fully decoded, ⚠️ = partially decoded. Messages with the same pattern are distinguished by byte 10 (register ID).
+
+| #  | Name                              | Source   | Pattern (bytes 0–9)                       | Status | Notes                               |
+|----|-----------------------------------|----------|-------------------------------------------|--------|-------------------------------------|
+| 1  | Mode (Spa/Pool)                   | `0x0050` | `02 00 50 FF FF 80 00 14 0D F1`           | ✅     |                                     |
+| 2  | Temperature Settings              | `0x0050` | `02 00 50 FF FF 80 00 17 10 F7`           | ✅     |                                     |
+| 3  | Temperature Reading (A)           | `0x0062` | `02 00 62 FF FF 80 00 16 0E 06`           | ⚠️     | Two pattern variants                |
+| 3  | Temperature Reading (B)           | `0x0062` | `02 00 62 FF FF 80 00 31 0E 21`           | ⚠️     | Two pattern variants                |
+| 4  | Heater Status                     | `0x0062` | `02 00 62 FF FF 80 00 12 0F 03`           | ⚠️     |                                     |
+| 5  | Configuration                     | `0x0050` | `02 00 50 FF FF 80 00 26 0E 04`           | ⚠️     |                                     |
+| 6  | Active Channels Bitmask           | `0x0050` | `02 00 50 00 6F 80 00 0D 0D 5B`           | ⚠️     | Dst=`0x006F` (Controller)           |
+| 7  | Channel Status                    | `0x0050` | `02 00 50 FF FF 80 00 0B 25 00`           | ✅     |                                     |
+| 8  | Register Messages                 | `0x0050` | `02 00 50 FF FF 80 00 38 ** **`           | ⚠️     | CMD/SUB vary; see [Appendix A](#appendix-a-register-dispatch-table) |
+| 9  | Timers                            | `0x0050` | `02 00 50 FF FF 80 00 38 13 1B`           | ✅     | Reg `0x08`–`0x17`, Slot `0x04`      |
+| 10 | Register Labels                   | `0x0050` | `02 00 50 FF FF 80 00 38 1A 22`           | ✅     | Variant: `38 16 1E`                 |
+| 11 | Lighting Zone Configuration       | `0x0050` | `02 00 50 FF FF 80 00 06 0E E4`           | ✅     |                                     |
+| 12 | Chlorinator pH Setpoint           | `0x0090` | `02 00 90 FF FF 80 00 1D 0F 3C`           | ✅     | Byte 10: `0x01`                     |
+| 13 | Chlorinator pH Reading            | `0x0090` | `02 00 90 FF FF 80 00 1F 0F 3E`           | ✅     | Byte 10: `0x01`                     |
+| 14 | Chlorinator ORP Setpoint          | `0x0090` | `02 00 90 FF FF 80 00 1D 0F 3C`           | ✅     | Byte 10: `0x02`; same pattern as [§12](#12-chlorinator-ph-setpoint-)|
+| 15 | Chlorinator ORP Reading           | `0x0090` | `02 00 90 FF FF 80 00 1F 0F 3E`           | ✅     | Byte 10: `0x02`; same pattern as [§13](#13-chlorinator-ph-reading-)|
+| 16 | Internet Gateway Serial Number    | `0x00F0` | `02 00 F0 FF FF 80 00 37 11 B8`           | ⚠️     |                                     |
+| 17 | Internet Gateway Network Config   | `0x00F0` | `02 00 F0 FF FF 80 00 37 15 BC`           | ⚠️     |                                     |
+| 18 | Internet Gateway Comms Status     | `0x00F0` | `02 00 F0 FF FF 80 00 37 0F B6`           | ⚠️     |                                     |
+| 19 | Internet Gateway Firmware Version | `0x00F0` | `02 00 F0 FF FF 80 00 0A 0E 88`           | ✅     | Same cmd byte as §23                |
+| 20 | Internet Gateway Status Broadcast | `0x00F0` | `02 00 F0 FF FF 80 00 12 0F 91`           | ⚠️     | Same cmd byte as §24                |
+| 21 | Register Read Request             | `0x00F0` | `02 00 F0 FF FF 80 00 39 0E B7`           |        |                                     |
+| 21 | Register Read Response            | `0x0050` | `02 00 50 FF FF 80 00 38 0F 17`           |        |                                     |
+| 22 | Controller Day/Time/Clock         | `0x0050` | `02 00 50 FF FF 80 00 FD 0F DC`           | ✅     |                                     |
+| 23 | Touchscreen Firmware Version      | `0x0050` | `02 00 50 FF FF 80 00 0A 0E E8`           | ✅     | Same cmd byte as §19                |
+| 24 | Touchscreen Unknown 1             | `0x0050` | `02 00 50 FF FF 80 00 12 0E F0`           | ⚠️     | Same cmd byte as §20                |
+| 25 | Touchscreen Unknown 2             | `0x0050` | `02 00 50 FF FF 80 00 27 0D 04`           | ⚠️     |                                     |
+| 26 | Light Zone Control Command        | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§29](#29-heater-control-command-) |
+| 27 | Channel Toggle Command            | `0x00F0` | `02 00 F0 FF FF 80 00 10 0D 8D`           | ✅     |                                     |
+| 28 | Temperature Setpoint Command      | `0x00F0` | `02 00 F0 FF FF 80 00 19 0F 98`           | ✅     |                                     |
+| 29 | Heater Control Command            | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§26](#26-light-zone-control-command-); different reg |
+| 30 | Mode Control Command              | `0x00F0` | `02 00 F0 00 50 80 00 2A 0D F9`           | ✅     | Dst=`0x0050` (not broadcast)        |
+
+---
+
 ## Message Types
 
 The messages that are fully decoded have a ✅ and the partially decoded ones have a ⚠️
@@ -89,7 +176,7 @@ Reports the temperature setpoints for both spa and pool.
                               ^^ Spa setpoint Celcius (37°C in this example)
                                  ^^ Pool setpoint Celcius (25°C in this example)
                                     ^^ Spa setpoint Fahrenheit (99°F in this example)
-                                       ^^ Pool setpoint Fahrenheit (84°F in this example)                         
+                                       ^^ Pool setpoint Fahrenheit (84°F in this example)
 ```
 
 **Data Fields:**
@@ -99,7 +186,9 @@ Reports the temperature setpoints for both spa and pool.
 - Byte 12: Spa setpoint temperature Fahrenheit
 - Byte 13: Pool setpoint temperature Fahrenheit
 
-**Note:** Temperature scale (Celsius/Fahrenheit) is set by configuration message.
+**Notes:**
+
+- Temperature scale (Celsius/Fahrenheit) is set by configuration message ([Section 5](#5-configuration-️))
 
 ---
 
@@ -163,6 +252,7 @@ Reports whether the heater is on or off.
 - Byte 10: Padding/unused
 - Byte 11: Heater state (`0x00` = Off, `0x01` = On)
 - Byte 12: Unknown (maybe bitmask or interlock?)
+
 ---
 
 ### 5. Configuration ⚠️
@@ -180,6 +270,7 @@ System configuration including temperature scale.
 ```
 
 **Example - Fahrenheit:**
+
 ```
 02 00 50 FF FF 80 00 26 0E 04 11 06 17 03
                               ^^ 0x11 - Fahrenheit
@@ -189,18 +280,19 @@ System configuration including temperature scale.
 **Data Fields:**
 
 - Byte 10: Temperature configuration - 01 Celcius, 11, Fahrenheit - possible bitmask as defined below.
-  - Bit 7: 
-  - Bit 6: 
-  - Bit 5: 
+  - Bit 7:
+  - Bit 6:
+  - Bit 5:
   - Bit 4:  0: celsius, 1:fahrenheit
-  - Bit 3:  
-  - Bit 2: 
-  - Bit 1: 
+  - Bit 3:
+  - Bit 2:
+  - Bit 1:
   - Bit 0:  1:heat 0: cool
 - Byte 11: Unknown
+
 ---
 
-### 6. Active Channels Bitmask
+### 6. Active Channels Bitmask ⚠️
 
 Reports which channels are currently active.
 
@@ -242,7 +334,7 @@ Detailed status for all configured channels.
                                  ^^  Channel 1: Type=1 (Filter)
                                     ^^ Channel 1: State (00 off, 01, Auto, 02 One)
                                        ^^ Channel 1:  currently active (either on or auto timer)
-                                         ^^ Channel 2: Type=2 (Cleaner) 
+                                         ^^ Channel 2: Type=2 (Cleaner)
                                             etc
 ```
 
@@ -275,8 +367,8 @@ Detailed status for all configured channels.
 - `0x11`: Hot Seat
 - `0x12`: Heater Power
 - `0x13`: Custom Name
-- `0xFE`: Unused channel (disabled) (Light channel)
-- `0xFD`: End marker (no more channels beyond this) (Controlled heater power)
+- `0xFE`: Flagged as light channel
+- `0xFD`: Flagged as heater power
 
 **Channel States:**
 
@@ -290,11 +382,12 @@ Detailed status for all configured channels.
 
 The controller uses a unified register-based system for configuration and state. All register messages follow the same pattern with a register ID and slot (data type) to distinguish different aspects of the same register.
 
-#### Message Structure
+> See [Appendix A](#appendix-a-register-dispatch-table) for the full register dispatch table, examples by register type, register ID mappings, and the firmware dispatch implementation.
 
 **Base Pattern:** `02 00 50 FF FF 80 00 38`
 
 **Complete Structure:**
+
 ```
 02 00 50 FF FF 80 00 38 [CMD] [SUB] [REG_ID] [SLOT] [DATA...] [CHECKSUM] 03
                         ^^^^^^^^^^^
@@ -303,6 +396,7 @@ The controller uses a unified register-based system for configuration and state.
 ```
 
 **Example:**
+
 ```
 02 00 50 FF FF 80 00 38 0F 17 C0 01 00 C1 03
                         ^^ CMD (0x0F)
@@ -312,166 +406,17 @@ The controller uses a unified register-based system for configuration and state.
                                     ^^ Data (Light state: 0=Off)
 ```
 
-**Key Fields:**
+**Data Fields:**
+
 - Byte 8 (CMD): Command byte
-- Byte 9 (SUB): Subcommand byte - **always equals CMD + 8**
+- Byte 9 (SUB): Subcommand byte — **always equals CMD + 8**
 - Byte 10 (REG_ID): Register identifier (which setting/channel/zone)
 - Byte 11 (SLOT): Data slot - defines data type and format
 - Byte 12+: Data payload (varies by register and slot)
 
-**Important:** The CMD/SUB checksum relationship (SUB = CMD + 8) is a validation mechanism. Messages violating this are rejected.
+**Notes:**
 
-#### Register Dispatch Table
-
-The register ID and slot together determine the message meaning. The slot distinguishes different data aspects of the same register:
-
-| Register Range | Slot | Purpose | Data Format |
-|----------------|------|---------|-------------|
-| 0x08-0x17 | 0x04 | Timers 1-16 | start/stop time + days bitmask (see Timer section) |
-| 0x31-0x38 | 0x03 | Favourite Labels | Null-terminated ASCII string |
-| 0x6C-0x73 | 0x02 | Channel Types | 1-byte type code (see channel types) |
-| 0x7C-0x83 | 0x02 | Channel Names | Null-terminated ASCII string |
-| 0xA0-0xA7 | 0x01 | Light Zone Multicolor | 1-byte flag (0x00=No, 0x01=Yes) |
-| 0xB0-0xB7 | 0x01 | Light Zone Name | 1-byte preset name code (see table) |
-| 0xC0-0xC7 | 0x01 | Light Zone State | 1-byte value (0=Off, 1=Auto, 2=On) |
-| 0xD0-0xD1 | 0x02 | Valve Labels | Null-terminated ASCII string |
-| 0xD0-0xD7 | 0x01 | Light Zone Color | 1-byte color code |
-| 0xE0-0xE7 | 0x01 | Light Zone Active | 1-byte binary (0x00=Inactive, 0x01=Active) |
-
-**Note:**
-- Register ranges can overlap (e.g., 0xD0-0xD7) but are distinguished by the slot value
-- The same slot value (e.g., 0x02) can represent different data formats depending on the register
-- Slot values appear to be context-dependent rather than globally defining a data type
-
-#### Examples by Register Type
-
-**Channel Type Configuration (0x6C-0x73, Slot 0x02):**
-```
-02 00 50 FF FF 80 00 38 0F 17 6C 02 01 6F 03
-                              ^^ Channel 1 (0x6C)
-                                 ^^ Slot 0x02 (Type)
-                                    ^^ Type code: 0x01 = Filter
-```
-
-**Channel Name (0x7C-0x83, Slot 0x02):**
-```
-02 00 50 FF FF 80 00 38 17 1F 7C 02 46 69 6C 74 65 72 00 A6 03
-                              ^^ Channel 1 (0x7C)
-                                 ^^ Slot 0x02 (Name)
-                                    F  i  l  t  e  r  \0
-```
-
-**Light Zone State (0xC0-0xC7, Slot 0x01):**
-```
-02 00 50 FF FF 80 00 38 0F 17 C0 01 02 C3 03
-                              ^^ Light Zone 1 (0xC0)
-                                 ^^ Slot 0x01 (State)
-                                    ^^ Value: 0x02 = On
-```
-
-**Light Zone Multicolor Capability (0xA0-0xA7, Slot 0x01):**
-```
-02 00 50 FF FF 80 00 38 0F 17 A0 01 01 A2 03
-                              ^^ Light Zone 1 (0xA0)
-                                 ^^ Slot 0x01 (Multicolor)
-                                    ^^ Value: 0x01 = Multicolor capable
-
-02 00 50 FF FF 80 00 38 0F 17 A1 01 00 A2 03
-                              ^^ Light Zone 2 (0xA1)
-                                 ^^ Slot 0x01 (Multicolor)
-                                    ^^ Value: 0x00 = Not multicolor capable
-```
-
-**Light Zone Name (0xB0-0xB7, Slot 0x01):**
-```
-02 00 50 FF FF 80 00 38 0F 17 B0 01 00 B1 03
-                              ^^ Light Zone 1 (0xB0)
-                                 ^^ Slot 0x01 (Name)
-                                    ^^ Name code: 0x00 = Pool
-```
-
-**Light Zone Name Codes:**
-
-| Code | Name |
-|------|------|
-| `0x00` | Pool |
-| `0x01` | Spa |
-| `0x02` | Pool & Spa |
-| `0x03` | Waterfall 1 |
-| `0x04` | Waterfall 2 |
-| `0x05` | Waterfall 3 |
-
-**Light Zone Color (0xD0-0xD7, Slot 0x01):**
-```
-02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03
-                              ^^ Light Zone 1 (0xD0)
-                                 ^^ Slot 0x01 (Color)
-                                    ^^ Color code: 0x05 = Blue
-```
-
-**Valve Label (0xD0-0xD1, Slot 0x02):**
-```
-02 00 50 FF FF 80 00 38 16 1E D0 02 56 61 6C 76 65 20 31 00 21 03
-                              ^^ Valve 1 (0xD0) - same register as Light Zone 1!
-                                 ^^ Slot 0x02 (Label)
-                                    V  a  l  v  e     1  \0
-```
-
-**Note:** Register 0xD0 serves dual purpose:
-- With slot 0x01: Light zone 1 color (numeric)
-- With slot 0x02: Valve 1 label (text)
-
-**Light Zone Active (0xE0-0xE7, Slot 0x01):**
-```
-02 00 50 FF FF 80 00 38 0F 17 E0 01 01 E2 03
-                              ^^ Light Zone 1 (0xE0)
-                                 ^^ Slot 0x01 (Active flag)
-                                    ^^ Value: 0x01 = Active
-```
-
-#### Register ID Mappings
-
-**Channels (0x6C-0x73):**
-- `0x6C`: Channel 1
-- `0x6D`: Channel 2
-- `0x6E`: Channel 3
-- `0x6F`: Channel 4
-- `0x70`: Channel 5
-- `0x71`: Channel 6
-- `0x72`: Channel 7
-- `0x73`: Channel 8
-
-**Lighting Zones:**
-- Multicolor (0xA0-0xA7): `0xA0` = Zone 1, `0xA1` = Zone 2, etc.
-- Name (0xB0-0xB7): `0xB0` = Zone 1, `0xB1` = Zone 2, etc.
-- State (0xC0-0xC7): `0xC0` = Zone 1, `0xC1` = Zone 2, etc.
-- Color (0xD0-0xD7): `0xD0` = Zone 1, `0xD1` = Zone 2, etc.
-- Active (0xE0-0xE7): `0xE0` = Zone 1, `0xE1` = Zone 2, etc.
-
-#### Implementation
-
-The firmware uses a dispatch table to route register messages to appropriate handlers. See `message_decoder.c` for the complete implementation:
-
-```c
-static const register_handler_t REGISTER_HANDLERS[] = {
-    {0x6C, 0x73, 0x02, handle_channel_type,       "Channel Type"},
-    {0x7C, 0x83, 0x02, handle_channel_name,       "Channel Name"},
-    {0xA0, 0xA7, 0x01, handle_light_zone_multicolor, "Light Zone Multicolor"},
-    {0xB0, 0xB7, 0x01, handle_light_zone_name,    "Light Zone Name"},
-    {0xC0, 0xC7, 0x01, handle_light_zone_state,   "Light Zone State"},
-    {0x08, 0x17, 0x04, handle_timer,              "Timer"},
-    {0xD0, 0xD7, 0x01, handle_light_zone_color,   "Light Zone Color"},
-    {0xE0, 0xE7, 0x01, handle_light_zone_active,  "Light Zone Active"},
-    {0xD0, 0xD1, 0x02, handle_valve_label,        "Valve Label"},
-    {0x31, 0x38, 0x03, handle_register_label_generic, "Favourite Label"},
-};
-```
-
-The dispatcher:
-1. Validates CMD/SUB relationship (SUB = CMD + 8)
-2. Extracts register ID and slot
-3. Looks up matching handler in table
-4. Routes to appropriate handler function
+- The CMD/SUB checksum relationship (SUB = CMD + 8) is a validation mechanism. Messages violating this are rejected.
 
 ---
 
@@ -479,7 +424,7 @@ The dispatcher:
 
 Timer schedule configuration. Each timer has a start time, stop time, and a days-of-week bitmask. Up to 16 timers are supported (registers `0x08`–`0x17`).
 
-**Base Pattern:** `02 00 50 FF FF 80 00 38 13 1B` (Register message, CMD=0x13, SUB=0x1B, slot `0x04`)
+**Pattern:** `02 00 50 FF FF 80 00 38 13 1B` (Register message, CMD=0x13, SUB=0x1B, slot `0x04`)
 
 **Examples:**
 
@@ -548,18 +493,19 @@ Generic register label assignments.
                                     F  i  l  t  e  r     P  u  m  p  (null terminated)
 
 ```
+
 **Data Fields:**
 
 - Byte 10: Register ID
 - Byte 11: Slot ID
 - Byte 12+: ASCII label string (null terminated)
 
-
 **Pattern Variant: Lighting/Valve Labels** `02 00 50 FF FF 80 00 38 16 1E`
 
 Assigns custom names to lighting zones or valve registers (0xD0-0xD3 range).
 
 **Example - Valve 1:**
+
 ```
 02 00 50 FF FF 80 00 38 16 1E D0 02 56 61 6C 76 65 20 31 00 21 03
                               ^^ Register ID (0xD0 = Light Zone 1 Color/Valve 1)
@@ -568,6 +514,7 @@ Assigns custom names to lighting zones or valve registers (0xD0-0xD3 range).
 ```
 
 **Example - Valve 2:**
+
 ```
 02 00 50 FF FF 80 00 38 16 1E D1 02 56 61 6C 76 65 20 32 00 23 03
                               ^^ Register ID (0xD1 = Light Zone 2 Color/Valve 2)
@@ -590,13 +537,14 @@ Assigns custom names to lighting zones or valve registers (0xD0-0xD3 range).
 
 ---
 
-### 10. Lighting Zone Configuration ✅
+### 11. Lighting Zone Configuration ✅
 
 Indicates which lighting zones are installed and their current on/off state.
 
 **Pattern:** `02 00 50 FF FF 80 00 06 0E E4`
 
 **Example:**
+
 ```
 02 00 50 FF FF 80 00 06 0E E4 00 00 00 03
                               ^^ Zone index (0-3 for zones 1-4)
@@ -610,7 +558,7 @@ Indicates which lighting zones are installed and their current on/off state.
 
 ---
 
-### 11. Chlorinator pH Setpoint ✅
+### 12. Chlorinator pH Setpoint ✅
 
 Target pH level for the chlorinator.
 
@@ -627,12 +575,12 @@ Target pH level for the chlorinator.
 
 **Data Fields:**
 
-- Byte 10: pH setpoint register (0x01)
+- Byte 10: pH setpoint register (`0x01`)
 - Bytes 11-12: pH value in tenths (little endian, divide by 10 for actual pH)
 
 ---
 
-### 12. Chlorinator pH Reading ✅
+### 13. Chlorinator pH Reading ✅
 
 Current pH reading from the sensor.
 
@@ -649,12 +597,12 @@ Current pH reading from the sensor.
 
 **Data Fields:**
 
-- Byte 10: pH setpoint register (0x01)
+- Byte 10: pH setpoint register (`0x01`)
 - Bytes 11-12: pH value in tenths (little endian, divide by 10 for actual pH)
 
 ---
 
-### 13. Chlorinator ORP Setpoint ✅
+### 14. Chlorinator ORP Setpoint ✅
 
 Target ORP (oxidation-reduction potential) level.
 
@@ -671,12 +619,12 @@ Target ORP (oxidation-reduction potential) level.
 
 **Data Fields:**
 
-- Byte 10: ORP setpoint register (0x02)
+- Byte 10: ORP setpoint register (`0x02`)
 - Bytes 11-12: ORP value in millivolts (little endian)
 
 ---
 
-### 14. Chlorinator ORP Reading ✅
+### 15. Chlorinator ORP Reading ✅
 
 Current ORP reading from the sensor.
 
@@ -693,12 +641,12 @@ Current ORP reading from the sensor.
 
 **Data Fields:**
 
-- Byte 10: ORP reading register
+- Byte 10: ORP reading register (`0x02`)
 - Bytes 11-12: ORP value in millivolts (little endian)
 
 ---
 
-### 15. Internet Gateway Serial Number ⚠️
+### 16. Internet Gateway Serial Number ⚠️
 
 Serial number of the internet gateway module.
 
@@ -715,25 +663,25 @@ Serial number of the internet gateway module.
 
 **Data Fields:**
 
-- Byte 10  (Maybe a type 04)
+- Byte 10: Unknown (Maybe a type `0x04`)
 - Bytes 11-14: Serial number (32-bit little endian)
 
 ---
 
-### 16. Internet Gateway Network Config ⚠️
+### 17. Internet Gateway Network Config ⚠️
 
 IP address and signal strength of the gateway.
 
 **Pattern:** `02 00 F0 FF FF 80 00 37 15 BC`
 
-**Example:**
+**Example - On startup (no connection):**
 
-On Startup (no connection)
 ```
 02 00 F0 FF FF 80 00 37 15 BC 01 01 01 03 00 00 00 00 00 06 03
 ```
 
-With IP address (wifi connected)
+**Example - With IP address (wifi connected):**
+
 ```
 02 00 F0 FF FF 80 00 37 15 BC 01 01 01 07 C0 A8 00 17 2B B4 03
                               ^^ Unknown
@@ -755,7 +703,7 @@ With IP address (wifi connected)
 
 ---
 
-### 17. Internet Gateway Communications Status ⚠️
+### 18. Internet Gateway Communications Status ⚠️
 
 Status of the gateway's internet connection.
 
@@ -765,34 +713,35 @@ Status of the gateway's internet connection.
 
 ```
 02 00 F0 FF FF 80 00 37 0F B6 02 01 80 83 03
-                              ^^ Unknown 
+                              ^^ Unknown
                                  ^^ ^^ Status code (little endian)
                                           0x8001 = 32769: Communicating with server
 ```
 
 **Data Fields:**
-- Byte 10: Unknown (observed as always 0x02) 
+
+- Byte 10: Unknown (observed as always `0x02`)
 - Bytes 11-12: Communications status code (little endian)
 
 **Status Codes:**
 
-- `0x0000`:`0` Idle
-- `0x0100`:`256` No suitable interfaces ready
-- `0x0201`:`513` DNS resolve error
-- `0x0301`:`769` Internal error creating local socket
-- `0x0400`:`1024` Connecting to server
-- `0x0401`:`1025` Failed to connect
-- `0x8000`:`32768` Connection open
-- `0x8001`:`32769` Communicating with server
-- `0xF000`:`61440` Connection closed
-- `0xF001`:`61441` Communication error with server
-- `0xF002`:`61442` Communication error with server
-- `0xF003`:`61443` Communication error with server
-- `0xF004`:`61444` Communication error with server
+- `0x0000`: `0` Idle
+- `0x0100`: `256` No suitable interfaces ready
+- `0x0201`: `513` DNS resolve error
+- `0x0301`: `769` Internal error creating local socket
+- `0x0400`: `1024` Connecting to server
+- `0x0401`: `1025` Failed to connect
+- `0x8000`: `32768` Connection open
+- `0x8001`: `32769` Communicating with server
+- `0xF000`: `61440` Connection closed
+- `0xF001`: `61441` Communication error with server
+- `0xF002`: `61442` Communication error with server
+- `0xF003`: `61443` Communication error with server
+- `0xF004`: `61444` Communication error with server
 
 ---
 
-### 18. Internet Gateway Firmware Version ✅
+### 19. Internet Gateway Firmware Version ✅
 
 Firmware version announcement broadcast by the Internet Gateway on startup. Uses the same command byte (`0x0A`) as the Touchscreen Firmware Version message, but originates from source `0x00F0`.
 
@@ -814,12 +763,12 @@ Firmware version announcement broadcast by the Internet Gateway on startup. Uses
 
 **Notes:**
 
-- Uses the same command byte (`0x0A`) as the Touchscreen Firmware Version message (Section 22)
-- Broadcast at startup, paired with the Gateway Status Broadcast (Section 19)
+- Uses the same command byte (`0x0A`) as the Touchscreen Firmware Version message ([Section 23](#23-touchscreen-firmware-version-))
+- Broadcast at startup, paired with the Gateway Status Broadcast ([Section 20](#20-internet-gateway-status-broadcast-️))
 
 ---
 
-### 19. Internet Gateway Status Broadcast ⚠️
+### 20. Internet Gateway Status Broadcast ⚠️
 
 Status broadcast by the Internet Gateway on startup. Uses the same command byte (`0x12`) as the Touchscreen Unknown 1 message, but carries an additional third data byte and originates from source `0x00F0`.
 
@@ -842,14 +791,14 @@ Status broadcast by the Internet Gateway on startup. Uses the same command byte 
 
 **Notes:**
 
-- Uses the same command byte (`0x12`) as Touchscreen Unknown 1 (Section 23), but is 1 byte longer (15 vs 14 bytes total)
+- Uses the same command byte (`0x12`) as Touchscreen Unknown 1 ([Section 24](#24-touchscreen-unknown-1-️)), but is 1 byte longer (15 vs 14 bytes total)
 - The touchscreen version carries only 2 bytes (`0x05 0x00`); the gateway version carries 3 bytes
-- Broadcast at startup, paired with the Gateway Firmware Version message (Section 18)
+- Broadcast at startup, paired with the Gateway Firmware Version message ([Section 19](#19-internet-gateway-firmware-version-))
 - Field meanings are unknown; `0x05` may be a shared protocol constant
 
 ---
 
-### 20. Register Read Request/Response
+### 21. Register Read Request/Response
 
 The Internet Gateway periodically polls controller registers to sync state with the cloud service. This uses a request-response pattern.
 
@@ -877,12 +826,12 @@ The Internet Gateway periodically polls controller registers to sync state with 
 **Request Data Fields (from Gateway):**
 
 - Byte 10: Register ID to read
-- Byte 11: Slot ID 
+- Byte 11: Slot ID
 
 **Response Data Fields (from Controller):**
 
 - Byte 10: Register ID (echoed from request)
-- Byte 11: Slot ID 
+- Byte 11: Slot ID
 - Byte 12: Register value
 
 **Observed Behavior:**
@@ -900,7 +849,7 @@ The Internet Gateway periodically polls controller registers to sync state with 
 
 ---
 
-### 21. Controller Day/Time/Clock ✅
+### 22. Controller Day/Time/Clock ✅
 
 Current time from the controller's internal clock. Broadcast periodically for synchronization.
 
@@ -933,11 +882,11 @@ Current time from the controller's internal clock. Broadcast periodically for sy
 
 - This message is broadcast by the controller for device time synchronization
 - Used by connected devices (touchscreen, internet gateway) to maintain consistent time
-- Appears to be sent every minute.
+- Appears to be sent every minute
 
 ---
 
-### 22. Touchscreen Firmware Version ✅
+### 23. Touchscreen Firmware Version ✅
 
 Touchscreen firmware version announcement. Broadcast periodically by the controller.
 
@@ -966,10 +915,9 @@ Touchscreen firmware version announcement. Broadcast periodically by the control
 
 ---
 
-### 23. Touchscreen Unknown 1 - 5 little pigs?
+### 24. Touchscreen Unknown 1 ⚠️
 
-This is broadcast consistently after the version number message `0A 0E E8` and currently
-appears to always have the data value `05 00`
+Broadcast consistently after the firmware version message (`0A 0E E8`). Currently appears to always have data value `05 00`.
 
 **Pattern:** `02 00 50 FF FF 80 00 12 0E F0`
 
@@ -983,24 +931,25 @@ appears to always have the data value `05 00`
 
 **Data Fields:**
 
-- Byte 10: Unknown
-- Byte 11: Unknown
+- Byte 10: Unknown (always `0x05` in observed samples)
+- Byte 11: Unknown (always `0x00` in observed samples)
 
 **Notes:**
 
 - This message is broadcast by the controller as part of the regular system status sequence
 
-### 24. Touchscreen Unknown 2 - ??
+---
 
-This is broadcast consistently after the version number message `27 0D 04` and currently
-appears to always have the data value `00`
+### 25. Touchscreen Unknown 2 ⚠️
+
+Broadcast consistently after the version number message (`27 0D 04`). Currently appears to always have data value `00`.
 
 **Pattern:** `02 00 50 FF FF 80 00 27 0D 04`
 
 **Example:**
 
 ```
-02 00 50 FF FF 80 00 27 0D 04 00 00 03 
+02 00 50 FF FF 80 00 27 0D 04 00 00 03
                               ^^ Unknown (always 0x00)
 ```
 
@@ -1019,7 +968,9 @@ appears to always have the data value `00`
 
 The following commands can be sent from the Internet Gateway (or emulated gateway) to control pool equipment.
 
-### 25. Light Zone Control Command ✅
+---
+
+### 26. Light Zone Control Command ✅
 
 Command to set light zone state (On/Off/Auto).
 
@@ -1045,7 +996,7 @@ Command to set light zone state (On/Off/Auto).
                                        ^^ Checksum (0xC1 + 0x01 + 0x00 = 0xC2)
 ```
 
-**Message Structure:**
+**Data Fields:**
 
 - Bytes 0-1: `02 00` - Start
 - Bytes 2: `00 F0` - Source (Internet Gateway = 0x00F0)
@@ -1083,7 +1034,7 @@ Command to set light zone state (On/Off/Auto).
 
 ---
 
-### 26. Channel Toggle Command ✅
+### 27. Channel Toggle Command ✅
 
 Command to cycle a channel through its available states (Auto → On → Off, or On → Off depending on channel type).
 
@@ -1100,7 +1051,7 @@ Command to cycle a channel through its available states (Auto → On → Off, or
 | Jets       | 0x04  | `02 00 F0 FF FF 80 00 10 0D 8D 04 04 03`  | On, Off       |
 | Blower     | 0x05  | `02 00 F0 FF FF 80 00 10 0D 8D 05 05 03`  | On, Off       |
 
-**Message Structure:**
+**Data Fields:**
 
 - Bytes 0-1: `02 00` - Start + Source High
 - Byte 2: `F0` - Source Low (Internet Gateway = 0x00F0)
@@ -1130,12 +1081,12 @@ Command to cycle a channel through its available states (Auto → On → Off, or
 **Notes:**
 
 - Sending this command always advances the state - there is no direct way to set a specific state
-- The controller will respond with an updated Channel Status message (type 7)
+- The controller will respond with an updated [Channel Status message (§7)](#7-channel-status-)
 - Channel index is 0-based and corresponds to the channel's position in the controller configuration
 
 ---
 
-### 27. Temperature Setpoint Command ✅
+### 28. Temperature Setpoint Command ✅
 
 Command to set the pool or spa temperature setpoint. The temperature byte is repeated twice within the payload.
 
@@ -1171,13 +1122,13 @@ Command to set the pool or spa temperature setpoint. The temperature byte is rep
 **Notes:**
 
 - The temperature value is repeated at bytes 11 and 12 — this is part of the message format, not two separate sends
-- The controller will respond with an updated Temperature Settings message (type 2)
+- The controller will respond with an updated [Temperature Settings message (§2)](#2-temperature-settings-)
 
 ---
 
-### 28. Heater Control Command ✅
+### 29. Heater Control Command ✅
 
-Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern as the Light Zone Control Command (Section 23), but with a different register ID and slot.
+Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern as the Light Zone Control Command ([Section 26](#26-light-zone-control-command-)), but with a different register ID and slot.
 
 **Pattern:** `02 00 F0 FF FF 80 00 3A 0F B9`
 
@@ -1212,11 +1163,11 @@ Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern a
 
 - This command uses the same pattern as Light Zone Control (`3A 0F B9`) but register `0xE6` with slot `0x00` identifies it as the heater
 - Unlike light zones (slot `0x01`), the heater uses slot `0x00`
-- The controller will respond with an updated Heater Status message (type 4)
+- The controller will respond with an updated [Heater Status message (§4)](#4-heater-status-️)
 
 ---
 
-### 29. Mode Control Command (Pool/Spa) ✅
+### 30. Mode Control Command (Pool/Spa) ✅
 
 Command to switch between Pool and Spa operating modes.
 
@@ -1238,14 +1189,14 @@ Command to switch between Pool and Spa operating modes.
                                  ^^ Checksum (0x00)
 ```
 
-**Message Structure:**
+**Data Fields:**
 
 - Bytes 0: `02 00` - Start
 - Bytes 1-2: `00 F0` - Source (Internet Gateway = 0x00F0)
 - Bytes 3-4: `00 50` - Destination (Touch Screen = 0x0050) - **Not broadcast!**
 - Bytes 5-6: `80 00` - Control bytes
 - Bytes 7-9: `2A 0D F9` - Command pattern for mode control
-- Byte 10: Mode value (0x00 = Pool, 0x01 = Spa)
+- Byte 10: Mode value (`0x00` = Pool, `0x01` = Spa)
 - Byte 11: Checksum (byte 10)
 - Byte 12: `03` - End byte
 
@@ -1254,12 +1205,180 @@ Command to switch between Pool and Spa operating modes.
 - `0x00`: Switch to Pool mode
 - `0x01`: Switch to Spa mode
 
-**Important Notes:**
+**Notes:**
 
-- **Destination is Touch Screen (0x0050), not broadcast** - Unlike light commands, this is addressed specifically to the touch screen controller
-- **Command values are inverted from status values** - In status messages (Message Type 1), Spa=0x00 and Pool=0x01, but in control commands, Spa=0x01 and Pool=0x00
+- **Destination is Touch Screen (0x0050), not broadcast** — Unlike light commands, this is addressed specifically to the touch screen controller
+- **Command values are inverted from status values** — In status messages (Message Type 1), Spa=0x00 and Pool=0x01, but in control commands, Spa=0x01 and Pool=0x00
 - This command requires the sender to impersonate the Internet Gateway (source address 0x00F0)
 - The controller will switch modes and broadcast the new mode status to all devices
+
+---
+
+## Appendix A: Register Dispatch Table
+
+The register ID and slot together determine the message meaning. The slot distinguishes different data aspects of the same register. Used by the universal register message format ([Section 8](#8-register-messages-universal-register-system-️)).
+
+### Dispatch Table
+
+| Register Range  | Slot   | Purpose                | Data Format                                      |
+|-----------------|--------|------------------------|--------------------------------------------------|
+| `0x08`–`0x17`  | `0x04` | Timers 1–16            | start/stop time + days bitmask (see [Section 9](#9-timers-))   |
+| `0x31`–`0x38`  | `0x03` | Favourite Labels       | Null-terminated ASCII string                     |
+| `0x6C`–`0x73`  | `0x02` | Channel Types          | 1-byte type code (see [Section 7](#7-channel-status-) channel types)   |
+| `0x7C`–`0x83`  | `0x02` | Channel Names          | Null-terminated ASCII string                     |
+| `0xA0`–`0xA7`  | `0x01` | Light Zone Multicolor  | 1-byte flag (`0x00`=No, `0x01`=Yes)              |
+| `0xB0`–`0xB7`  | `0x01` | Light Zone Name        | 1-byte preset name code (see [name codes table](#light-zone-name-codes)) |
+| `0xC0`–`0xC7`  | `0x01` | Light Zone State       | 1-byte value (0=Off, 1=Auto, 2=On)               |
+| `0xD0`–`0xD1`  | `0x02` | Valve Labels           | Null-terminated ASCII string                     |
+| `0xD0`–`0xD7`  | `0x01` | Light Zone Color       | 1-byte color code                                |
+| `0xE0`–`0xE7`  | `0x01` | Light Zone Active      | 1-byte binary (`0x00`=Inactive, `0x01`=Active)   |
+
+**Notes:**
+
+- Register ranges can overlap (e.g., `0xD0`–`0xD7`) but are distinguished by the slot value
+- The same slot value (e.g., `0x02`) can represent different data formats depending on the register
+- Slot values appear to be context-dependent rather than globally defining a data type
+
+### Examples by Register Type
+
+**Channel Type Configuration (`0x6C`–`0x73`, Slot `0x02`):**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 6C 02 01 6F 03
+                              ^^ Channel 1 (0x6C)
+                                 ^^ Slot 0x02 (Type)
+                                    ^^ Type code: 0x01 = Filter
+```
+
+**Channel Name (`0x7C`–`0x83`, Slot `0x02`):**
+
+```
+02 00 50 FF FF 80 00 38 17 1F 7C 02 46 69 6C 74 65 72 00 A6 03
+                              ^^ Channel 1 (0x7C)
+                                 ^^ Slot 0x02 (Name)
+                                    F  i  l  t  e  r  \0
+```
+
+**Light Zone State (`0xC0`–`0xC7`, Slot `0x01`):**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 C0 01 02 C3 03
+                              ^^ Light Zone 1 (0xC0)
+                                 ^^ Slot 0x01 (State)
+                                    ^^ Value: 0x02 = On
+```
+
+**Light Zone Multicolor Capability (`0xA0`–`0xA7`, Slot `0x01`):**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 A0 01 01 A2 03
+                              ^^ Light Zone 1 (0xA0)
+                                 ^^ Slot 0x01 (Multicolor)
+                                    ^^ Value: 0x01 = Multicolor capable
+
+02 00 50 FF FF 80 00 38 0F 17 A1 01 00 A2 03
+                              ^^ Light Zone 2 (0xA1)
+                                 ^^ Slot 0x01 (Multicolor)
+                                    ^^ Value: 0x00 = Not multicolor capable
+```
+
+**Light Zone Name (`0xB0`–`0xB7`, Slot `0x01`):**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 B0 01 00 B1 03
+                              ^^ Light Zone 1 (0xB0)
+                                 ^^ Slot 0x01 (Name)
+                                    ^^ Name code: 0x00 = Pool
+```
+
+**Light Zone Name Codes:**
+
+| Code   | Name       |
+|--------|------------|
+| `0x00` | Pool       |
+| `0x01` | Spa        |
+| `0x02` | Pool & Spa |
+| `0x03` | Waterfall 1|
+| `0x04` | Waterfall 2|
+| `0x05` | Waterfall 3|
+
+**Light Zone Color (`0xD0`–`0xD7`, Slot `0x01`):**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03
+                              ^^ Light Zone 1 (0xD0)
+                                 ^^ Slot 0x01 (Color)
+                                    ^^ Color code: 0x05 = Blue
+```
+
+**Valve Label (`0xD0`–`0xD1`, Slot `0x02`):**
+
+```
+02 00 50 FF FF 80 00 38 16 1E D0 02 56 61 6C 76 65 20 31 00 21 03
+                              ^^ Valve 1 (0xD0) - same register as Light Zone 1!
+                                 ^^ Slot 0x02 (Label)
+                                    V  a  l  v  e     1  \0
+```
+
+**Note:** Register `0xD0` serves dual purpose:
+- With slot `0x01`: Light zone 1 color (numeric)
+- With slot `0x02`: Valve 1 label (text)
+
+**Light Zone Active (`0xE0`–`0xE7`, Slot `0x01`):**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 E0 01 01 E2 03
+                              ^^ Light Zone 1 (0xE0)
+                                 ^^ Slot 0x01 (Active flag)
+                                    ^^ Value: 0x01 = Active
+```
+
+### Register ID Mappings
+
+**Channels (`0x6C`–`0x73`):**
+
+- `0x6C`: Channel 1
+- `0x6D`: Channel 2
+- `0x6E`: Channel 3
+- `0x6F`: Channel 4
+- `0x70`: Channel 5
+- `0x71`: Channel 6
+- `0x72`: Channel 7
+- `0x73`: Channel 8
+
+**Lighting Zones:**
+
+- Multicolor (`0xA0`–`0xA7`): `0xA0` = Zone 1, `0xA1` = Zone 2, etc.
+- Name (`0xB0`–`0xB7`): `0xB0` = Zone 1, `0xB1` = Zone 2, etc.
+- State (`0xC0`–`0xC7`): `0xC0` = Zone 1, `0xC1` = Zone 2, etc.
+- Color (`0xD0`–`0xD7`): `0xD0` = Zone 1, `0xD1` = Zone 2, etc.
+- Active (`0xE0`–`0xE7`): `0xE0` = Zone 1, `0xE1` = Zone 2, etc.
+
+### Implementation
+
+The firmware uses a dispatch table to route register messages to appropriate handlers. See `message_decoder.c` for the complete implementation:
+
+```c
+static const register_handler_t REGISTER_HANDLERS[] = {
+    {0x6C, 0x73, 0x02, handle_channel_type,          "Channel Type"},
+    {0x7C, 0x83, 0x02, handle_channel_name,          "Channel Name"},
+    {0xA0, 0xA7, 0x01, handle_light_zone_multicolor, "Light Zone Multicolor"},
+    {0xB0, 0xB7, 0x01, handle_light_zone_name,       "Light Zone Name"},
+    {0xC0, 0xC7, 0x01, handle_light_zone_state,      "Light Zone State"},
+    {0x08, 0x17, 0x04, handle_timer,                 "Timer"},
+    {0xD0, 0xD7, 0x01, handle_light_zone_color,      "Light Zone Color"},
+    {0xE0, 0xE7, 0x01, handle_light_zone_active,     "Light Zone Active"},
+    {0xD0, 0xD1, 0x02, handle_valve_label,           "Valve Label"},
+    {0x31, 0x38, 0x03, handle_register_label_generic,"Favourite Label"},
+};
+```
+
+The dispatcher:
+
+1. Validates CMD/SUB relationship (SUB = CMD + 8)
+2. Extracts register ID and slot
+3. Looks up matching handler in table
+4. Routes to appropriate handler function
 
 ---
 
