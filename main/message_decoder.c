@@ -417,6 +417,7 @@ static bool handle_light_zone_multicolor(const uint8_t *data, int len, const uin
 static bool handle_light_zone_name(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_valve_label(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_register_label_generic(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_temp_setpoint(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 
 /**
  * Register message dispatch table
@@ -443,6 +444,9 @@ static const register_handler_t REGISTER_HANDLERS[] = {
 
     // Labels (slot 0x03) - only specific ranges we've observed
     {0x31, 0x38, 0x03, handle_register_label_generic, "Favourite Label"},
+
+    // Temperature setpoints (slot 0x00, registers 0xE7=Pool, 0xE8=Spa)
+    {0xE7, 0xE8, 0x00, handle_temp_setpoint,          "Temperature Setpoint"},
 };
 
 #define REGISTER_HANDLER_COUNT (sizeof(REGISTER_HANDLERS) / sizeof(REGISTER_HANDLERS[0]))
@@ -474,6 +478,44 @@ static bool handle_temp_reading(
 
     if (ctx->enable_mqtt) {
         mqtt_publish_temperature(&snapshot);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Temperature setpoint register messages
+ * Register 0xE7 (Pool), 0xE8 (Spa), Slot 0x00
+ */
+static bool handle_temp_setpoint(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    uint8_t temp_c = payload[2];
+    bool is_pool = (reg_id == 0xE7);
+
+    ESP_LOGI(TAG, "%s %s temperature setpoint - %d°C", addr_info,
+             is_pool ? "Pool" : "Spa", temp_c);
+
+    pool_state_t state_snapshot;
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        if (is_pool) {
+            ctx->pool_state->pool_setpoint = temp_c;
+        } else {
+            ctx->pool_state->spa_setpoint = temp_c;
+        }
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        state_snapshot = *ctx->pool_state;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    if (ctx->enable_mqtt) {
+        mqtt_publish_temperature(&state_snapshot);
     }
 
     return true;

@@ -14,9 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-### Removed
+- Added support for E7/E8 slot 0 pool and spa set point temperature registers
+
 ### Changed
+### Deprecated
+### Removed
 ### Fixed
+### Security
 
 ## [0.7.0] - 2026-02-25
 ### Added
@@ -78,17 +82,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved mutex handling in tcp_bridge.c
 
 ### Fixed
-- Improved security of mqtt credentials password (don't send back)
 - Added default port for MQTT
 - Moved the logging earlier in the startup process to be more effective.
 - Reduced used of heap for logging messages to avoid potential heap overflow.
-- Security - Channel count not bounds-checked before array write
-- Security - fix potential non-null-terminated string extraction from payload
-- Security - fix potential parsing issue in MQTT channel publishing logic
-- Security -  Fix missing DNS response building lacks bounds check
 - Fixed race condition on LED state
 - Fixed -  s_mqtt_connected not marked as volatile
-- Security - Improve malformed MQTT message for setting temperature
 - Fixed abort on tx timeout - doesn't need to crash
 - Fixed uninitialized struct sockaddr_in client_addr
 - Fixed provisioning AP was being setup every time - even when configured.
@@ -96,6 +94,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed - don't show lights in the channels section
 - Fixed up wiring for the heater on/off commands via MQTT
 
+### Security
+- Improved security of mqtt credentials password (don't send back)
+- Security - Channel count not bounds-checked before array write
+- Security - fix potential non-null-terminated string extraction from payload
+- Security - fix potential parsing issue in MQTT channel publishing logic
+- Security -  Fix missing DNS response building lacks bounds check
+- Security - Improve malformed MQTT message for setting temperature
 
 ## [0.0.6] - 2026-02-09
 ### Added

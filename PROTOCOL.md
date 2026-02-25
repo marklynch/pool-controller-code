@@ -99,7 +99,7 @@ uint8_t checksum = sum & 0xFF;
 | #  | Name                              | Source   | Pattern (bytes 0–9)                       | Status | Notes                               |
 |----|-----------------------------------|----------|-------------------------------------------|--------|-------------------------------------|
 | 1  | Mode (Spa/Pool)                   | `0x0050` | `02 00 50 FF FF 80 00 14 0D F1`           | ✅     |                                     |
-| 2  | Temperature Settings              | `0x0050` | `02 00 50 FF FF 80 00 17 10 F7`           | ✅     |                                     |
+| 2  | Temperature Settings              | `0x0050` | `02 00 50 FF FF 80 00 17 10 F7`           | ✅     | Register variant: E7/E8 Slot 0x00   |
 | 3  | Temperature Reading (A)           | `0x0062` | `02 00 62 FF FF 80 00 16 0E 06`           | ⚠️     | Two pattern variants                |
 | 3  | Temperature Reading (B)           | `0x0062` | `02 00 62 FF FF 80 00 31 0E 21`           | ⚠️     | Two pattern variants                |
 | 4  | Heater Status                     | `0x0062` | `02 00 62 FF FF 80 00 12 0F 03`           | ⚠️     |                                     |
@@ -174,7 +174,7 @@ Reports the temperature setpoints for both spa and pool.
 ```
 02 00 50 FF FF 80 00 17 10 F7 25 1D 63 54 F9 03
                               ^^ Spa setpoint Celcius (37°C in this example)
-                                 ^^ Pool setpoint Celcius (25°C in this example)
+                                 ^^ Pool setpoint Celcius (29°C in this example)
                                     ^^ Spa setpoint Fahrenheit (99°F in this example)
                                        ^^ Pool setpoint Fahrenheit (84°F in this example)
 ```
@@ -189,6 +189,35 @@ Reports the temperature setpoints for both spa and pool.
 **Notes:**
 
 - Temperature scale (Celsius/Fahrenheit) is set by configuration message ([Section 5](#5-configuration-️))
+- The same setpoints are also broadcast individually via the register system — see pattern variant below
+
+**Pattern Variant: Register-based Temperature Setpoints** `02 00 50 FF FF 80 00 38 0F 17`
+
+The controller also broadcasts pool and spa setpoints as individual register messages (one per message). These carry the Celsius value only.
+
+**Example - Pool setpoint (29°C):**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 E7 00 1D 04 03
+                              ^^ Register 0xE7 (Pool setpoint)
+                                 ^^ Slot 0x00
+                                    ^^ Value: 0x1D = 29°C
+```
+
+**Example - Spa setpoint (37°C):**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 E8 00 25 0D 03
+                              ^^ Register 0xE8 (Spa setpoint)
+                                 ^^ Slot 0x00
+                                    ^^ Value: 0x25 = 37°C
+```
+
+**Data Fields:**
+
+- Byte 10: Register ID (`0xE7` = Pool setpoint, `0xE8` = Spa setpoint)
+- Byte 11: Slot (`0x00`)
+- Byte 12: Temperature in °C
 
 ---
 
@@ -1208,7 +1237,7 @@ Command to switch between Pool and Spa operating modes.
 **Notes:**
 
 - **Destination is Touch Screen (0x0050), not broadcast** — Unlike light commands, this is addressed specifically to the touch screen controller
-- **Command values are inverted from status values** — In status messages (Message Type 1), Spa=0x00 and Pool=0x01, but in control commands, Spa=0x01 and Pool=0x00
+- **Command values are inverted from status values** — In status messages ([§1 Mode Message](#1-mode-message-spapool-)), Spa=0x00 and Pool=0x01, but in control commands, Spa=0x01 and Pool=0x00
 - This command requires the sender to impersonate the Internet Gateway (source address 0x00F0)
 - The controller will switch modes and broadcast the new mode status to all devices
 
@@ -1232,6 +1261,9 @@ The register ID and slot together determine the message meaning. The slot distin
 | `0xD0`–`0xD1`  | `0x02` | Valve Labels           | Null-terminated ASCII string                     |
 | `0xD0`–`0xD7`  | `0x01` | Light Zone Color       | 1-byte color code                                |
 | `0xE0`–`0xE7`  | `0x01` | Light Zone Active      | 1-byte binary (`0x00`=Inactive, `0x01`=Active)   |
+| `0xE6`         | `0x00` | Heater State           | 1-byte (`0x00`=Off, `0x01`=On)                   |
+| `0xE7`         | `0x00` | Pool Temperature Setpoint | 1-byte °C value                               |
+| `0xE8`         | `0x00` | Spa Temperature Setpoint  | 1-byte °C value                               |
 
 **Notes:**
 
