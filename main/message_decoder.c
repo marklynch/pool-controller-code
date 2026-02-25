@@ -1815,7 +1815,8 @@ static bool handle_channel_status(
             }
 
             uint8_t ch_type = payload[payload_idx];
-            uint8_t state = payload[payload_idx + 1];
+            uint8_t state   = payload[payload_idx + 1];
+            uint8_t active  = payload[payload_idx + 2];
             const char *state_name = (state < CHANNEL_STATE_COUNT) ? CHANNEL_STATE_NAMES[state] : "Unknown";
 
             if (ch_type == CHANNEL_UNUSED) {
@@ -1823,12 +1824,14 @@ static bool handle_channel_status(
                 ctx->pool_state->channels[ch_num - 1].configured = false;
             } else {
                 const char *type_name = get_channel_type_name(ch_type);
-                ESP_LOGI(TAG, "  Ch%d: %s (%d) = %s", ch_num, type_name, ch_type, state_name);
+                ESP_LOGI(TAG, "  Ch%d: %s (%d) = %s (%s)", ch_num, type_name, ch_type, state_name,
+                         active ? "Active" : "Inactive");
 
                 // Update channel state
                 ctx->pool_state->channels[ch_num - 1].id = ch_num;
                 ctx->pool_state->channels[ch_num - 1].type = ch_type;
                 ctx->pool_state->channels[ch_num - 1].state = state;
+                ctx->pool_state->channels[ch_num - 1].active = (active != 0);
                 ctx->pool_state->channels[ch_num - 1].configured = true;
 
                 // Mark this channel for publishing

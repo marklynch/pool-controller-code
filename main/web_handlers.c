@@ -722,6 +722,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         } else {
             len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null");
         }
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",\"num_channels\":%d",
+                       s_pool_state.num_channels);
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
 
         // Timers section (only configured timers)

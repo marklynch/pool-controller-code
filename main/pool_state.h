@@ -30,6 +30,7 @@ typedef struct {
     char name[32];
     uint8_t type;
     uint8_t state;
+    bool active;       // true if currently running (e.g. turned on by timer)
     bool configured;
 } channel_state_t;
 

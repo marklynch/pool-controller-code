@@ -150,6 +150,7 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
     if (s_last_published_state.channels[idx].configured &&
         s_last_published_state.channels[idx].type == channel->type &&
         s_last_published_state.channels[idx].state == channel->state &&
+        s_last_published_state.channels[idx].active == channel->active &&
         strcmp(s_last_published_state.channels[idx].name, channel->name) == 0) {
         return;  // No change, skip publish
     }
@@ -166,14 +167,15 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
 
     char payload[256];
     snprintf(payload, sizeof(payload),
-             "{\"state\":\"%s\",\"name\":\"%s\"}",
-             state_name, display_name);
+             "{\"state\":\"%s\",\"active\":%s,\"name\":\"%s\"}",
+             state_name, channel->active ? "true" : "false", display_name);
 
     mqtt_publish(topic, payload, 0, true);
 
     // Update last published state
     s_last_published_state.channels[idx].type = channel->type;
     s_last_published_state.channels[idx].state = channel->state;
+    s_last_published_state.channels[idx].active = channel->active;
     strncpy(s_last_published_state.channels[idx].name, channel->name, sizeof(s_last_published_state.channels[idx].name) - 1);
     s_last_published_state.channels[idx].configured = true;
 

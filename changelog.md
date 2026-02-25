@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Added support for E7/E8 slot 0 pool and spa set point temperature registers
+- Display total channels in the touchscreen section
+- Display Active state as well as status in logging of channel state
 
 ### Changed
 ### Deprecated
