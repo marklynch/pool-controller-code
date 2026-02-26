@@ -17,10 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for E7/E8 slot 0 pool and spa set point temperature registers
 - Display total channels in the touchscreen section
 - Display Active state as well as status in logging of channel state
+- Added checks for the header checksum and validate against field length
+- Added known command bytes section to the `PROTOCOL.md` file
 
 ### Changed
 - Updated documentation based on new understanding of header checksum
 - Combined register messages, timers, and register labels into a single section
+- Simplified per message validation now that full data structure is known
 
 ### Deprecated
 ### Removed

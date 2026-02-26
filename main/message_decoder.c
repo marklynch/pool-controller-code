@@ -1867,8 +1867,8 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         return false;
     }
 
-    // Must start with 0x02 and end with 0x03
-    if (len < 7 || data[0] != 0x02 || data[len - 1] != 0x03) {
+    // Minimum valid message: 10-byte header + data checksum + end byte
+    if (len < 12 || data[0] != 0x02 || data[len - 1] != 0x03) {
         return false;
     }
 
@@ -1884,36 +1884,34 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     ESP_LOGI(TAG, "RX MSG: %s", full_msg);
     free(full_msg);
 
-    // Verify checksum if message is long enough
-    if (len >= 13) {
-        if (!verify_message_checksum(data, len)) {
-            // Format full message as hex string
-            char hexMsg[3 * len + 1];
-            int pos = 0;
-            for (int i = 0; i < len; i++) {
-                pos += snprintf(&hexMsg[pos], sizeof(hexMsg) - pos, "%02X ", data[i]);
-            }
-            hexMsg[pos] = '\0';
+    // Validate length field: byte[8] = total message length including START and END
+    if (data[8] != len) {
+        ESP_LOGW(TAG, "Length field mismatch: byte[8]=0x%02X (%d), actual=%d",
+                 data[8], data[8], len);
+    }
 
-            // Calculate what we expected (sum from index 10 to len-3)
-            uint32_t sum = 0;
-            for (int i = 10; i < len - 2; i++) {
-                sum += data[i];
-            }
-            uint8_t calculated = sum & 0xFF;
-            uint8_t received = data[len - 2];
+    // Validate header checksum: byte[9] = sum(bytes 0-8) & 0xFF
+    uint8_t expected_hchk = 0;
+    for (int i = 0; i < 9; i++) expected_hchk += data[i];
+    if (expected_hchk != data[9]) {
+        ESP_LOGW(TAG, "Header checksum FAILED: expected 0x%02X, got 0x%02X",
+                 expected_hchk, data[9]);
+    }
 
-            ESP_LOGW(TAG, "Checksum FAILED: %s", hexMsg);
-            ESP_LOGW(TAG, "  Calculated: 0x%02X, Received: 0x%02X", calculated, received);
-        } else {
-            ESP_LOGD(TAG, "Checksum verification OK");
-        }
+    // Validate data checksum
+    if (!verify_message_checksum(data, len)) {
+        uint32_t sum = 0;
+        for (int i = 10; i < len - 2; i++) sum += data[i];
+        ESP_LOGW(TAG, "Data checksum FAILED: expected 0x%02X, got 0x%02X",
+                 (uint8_t)(sum & 0xFF), data[len - 2]);
+    } else {
+        ESP_LOGD(TAG, "Checksums OK");
     }
 
     // Extract data payload section (bytes 10 to len-3)
-    // Message format: [START=0][SRC=1-2][DST=3-4][CTRL=5-6][CMD=7-9][DATA=10...][CHECKSUM=len-2][END=len-1]
+    // Message format: [START=0][SRC=1-2][DST=3-4][CTRL=5-6][CMD=7][LEN=8][HDR_CHK=9][DATA=10...][DATA_CHK=len-2][END=len-1]
     const uint8_t *payload = &data[10];
-    int payload_len = (len >= 13) ? (len - 12) : 0;  // len - 12 = len - (10 header + 2 trailer)
+    int payload_len = len - 12;  // len - (10 header bytes + data checksum + end)
 
     // Extract source and destination addresses
     uint8_t src_hi = data[1], src_lo = data[2];
@@ -1935,17 +1933,9 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Dispatch to message handlers
 
-    // Register messages (NEW dispatch table approach)
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_REGISTER)) {
-        // Verify checksum relationship: byte[8] + 8 should equal byte[9]
-        uint8_t cmd = data[8];
-        uint8_t sub = data[9];
-
-        if ((cmd + 8) != sub) {
-            ESP_LOGW(TAG, "%s Register message - Invalid CMD/SUB relationship: "
-                     "0x%02X + 8 != 0x%02X", addr_info, cmd, sub);
-            return false;
-        }
+    // Register messages (dispatch table approach)
+    if (match_pattern(data, len, MSG_TYPE_REGISTER)) {
+        // Header checksum already validated above
 
         // Extract register ID and slot
         if (payload_len < 2) {
@@ -1991,46 +1981,46 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Configuration messages
-    if (len >= 14 && match_pattern(data, len, MSG_TYPE_LIGHT_CONFIG)) {
+    if (match_pattern(data, len, MSG_TYPE_LIGHT_CONFIG)) {
         return handle_light_config(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 12 && match_pattern(data, len, MSG_TYPE_CONFIG)) {
+    if (match_pattern(data, len, MSG_TYPE_CONFIG)) {
         return handle_config(data, len, payload, payload_len, addr_info, ctx);
     }
 
     // Operational messages
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_MODE)) {
+    if (match_pattern(data, len, MSG_TYPE_MODE)) {
         return handle_mode(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHANNELS)) {
+    if (match_pattern(data, len, MSG_TYPE_CHANNELS)) {
         return handle_channels(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHANNEL_STATUS)) {
+    if (match_pattern(data, len, MSG_TYPE_CHANNEL_STATUS)) {
         return handle_channel_status(data, len, payload, payload_len, addr_info, ctx);
     }
 
     // Temperature messages
-    if (len >= 14 && match_pattern(data, len, MSG_TYPE_TEMP_SETTING)) {
+    if (match_pattern(data, len, MSG_TYPE_TEMP_SETTING)) {
         return handle_temp_setting(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 12 && match_pattern(data, len, MSG_TYPE_TEMP_READING)) {
+    if (match_pattern(data, len, MSG_TYPE_TEMP_READING)) {
         return handle_temp_reading(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 14 && match_pattern(data, len, MSG_TYPE_TEMP_READING2)) {
+    if (match_pattern(data, len, MSG_TYPE_TEMP_READING2)) {
         return handle_temp_reading2(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 12 && match_pattern(data, len, MSG_TYPE_HEATER)) {
+    if (match_pattern(data, len, MSG_TYPE_HEATER)) {
         return handle_heater(data, len, payload, payload_len, addr_info, ctx);
     }
 
     // Chlorinator messages
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHLOR)) {
+    if (match_pattern(data, len, MSG_TYPE_CHLOR)) {
         // Dispatch to chlorinator sub-handlers based on sub-type
         const uint8_t *sub = &data[7];
 
@@ -2049,61 +2039,61 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     }
 
     // Gateway messages
-    if (len >= 15 && match_pattern(data, len, MSG_TYPE_SERIAL_NUMBER)) {
+    if (match_pattern(data, len, MSG_TYPE_SERIAL_NUMBER)) {
         return handle_serial_number(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 19 && match_pattern(data, len, MSG_TYPE_GATEWAY_IP)) {
+    if (match_pattern(data, len, MSG_TYPE_GATEWAY_IP)) {
         return handle_gateway_ip(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 14 && match_pattern(data, len, MSG_TYPE_GATEWAY_COMMS)) {
+    if (match_pattern(data, len, MSG_TYPE_GATEWAY_COMMS)) {
         return handle_gateway_comms(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 14 && match_pattern(data, len, MSG_TYPE_GATEWAY_VERSION)) {
+    if (match_pattern(data, len, MSG_TYPE_GATEWAY_VERSION)) {
         return handle_gateway_version(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 15 && match_pattern(data, len, MSG_TYPE_GATEWAY_STATUS)) {
+    if (match_pattern(data, len, MSG_TYPE_GATEWAY_STATUS)) {
         return handle_gateway_status(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 12 && match_pattern(data, len, MSG_TYPE_REGISTER_READ_REQUEST)) {
+    if (match_pattern(data, len, MSG_TYPE_REGISTER_READ_REQUEST)) {
         return handle_register_read_request(data, len, payload, payload_len, addr_info, ctx);
     }
 
     // Gateway control commands
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_CHANNEL_TOGGLE_CMD)) {
+    if (match_pattern(data, len, MSG_TYPE_CHANNEL_TOGGLE_CMD)) {
         return handle_channel_toggle_cmd(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 15 && match_pattern(data, len, MSG_TYPE_TEMP_SET_CMD)) {
+    if (match_pattern(data, len, MSG_TYPE_TEMP_SET_CMD)) {
         return handle_temp_set_cmd(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_LIGHT_CONTROL_CMD)) {
+    if (match_pattern(data, len, MSG_TYPE_LIGHT_CONTROL_CMD)) {
         return handle_light_control_cmd(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_MODE_CONTROL_CMD)) {
+    if (match_pattern(data, len, MSG_TYPE_MODE_CONTROL_CMD)) {
         return handle_mode_control_cmd(data, len, payload, payload_len, addr_info, ctx);
     }
 
     // Controller info messages
-    if (len >= 14 && match_pattern(data, len, MSG_TYPE_CONTROLLER_TIME)) {
+    if (match_pattern(data, len, MSG_TYPE_CONTROLLER_TIME)) {
         return handle_controller_time(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_VERSION)) {
+    if (match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_VERSION)) {
         return handle_touchscreen_version(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 14 && match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_UNKNOWN1)) {
+    if (match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_UNKNOWN1)) {
         return handle_touchscreen_unknown1(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    if (len >= 13 && match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_UNKNOWN2)) {
+    if (match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_UNKNOWN2)) {
         return handle_touchscreen_unknown2(data, len, payload, payload_len, addr_info, ctx);
     }
 

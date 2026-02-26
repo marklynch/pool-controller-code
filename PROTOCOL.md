@@ -8,6 +8,7 @@ This document describes the proprietary serial protocol used by the Connect 10 p
   - [Message Format](#message-format)
   - [Checksum Calculation](#checksum-calculation)
   - [Device Addresses](#device-addresses)
+  - [Known Command Bytes](#known-command-bytes)
 - [Quick Reference](#quick-reference)
 - [Message Types](#message-types)
   - [1. Mode Message (Spa/Pool) ✅](#1-mode-message-spapool-)
@@ -95,12 +96,86 @@ uint8_t data_checksum = sum & 0xFF;
 
 | Address  | Device       | Description                       |
 | -------- | ------------ | --------------------------------- |
-| `0x0050` | Touch Screen | Touch screen interface.           |
+| `0x0050` | Touch Screen | Touch screen interface            |
 | `0x0062` | Temp Sensor  | Temperature sensor module         |
 | `0x006F` | Controller   | Main pool controller (Connect 10) |
 | `0x0090` | Chlorinator  | Chemistry/chlorinator module      |
 | `0x00F0` | Internet GW  | Internet gateway module           |
 | `0xFFFF` | Broadcast    | Broadcast to all devices          |
+
+### Known Command Bytes
+
+The command byte (byte 7) identifies the message type. Some command values are shared across devices — the source address distinguishes them.
+
+**Register protocol (0x38–0x3A)**
+
+| CMD    | Name                  | Direction              | Section(s) |
+|--------|-----------------------|------------------------|------------|
+| `0x38` | Register Data         | Touchscreen → Broadcast | [§8](#8-register-messages-universal-register-system-️) |
+| `0x39` | Register Read Request | Gateway → Touchscreen  | [§19](#19-register-read-requestresponse) |
+| `0x3A` | Register Write        | Gateway → Controller   | [§24](#24-light-zone-control-command-), [§27](#27-heater-control-command-) |
+
+**Device status (0x12, shared across three devices)**
+
+| CMD    | Source       | Meaning                  | Section |
+|--------|--------------|--------------------------|---------|
+| `0x12` | `0x0062`     | Heater Status            | [§4](#4-heater-status-️) |
+| `0x12` | `0x00F0`     | Gateway Status Broadcast | [§18](#18-internet-gateway-status-broadcast-️) |
+| `0x12` | `0x0050`     | Touchscreen Status       | [§22](#22-touchscreen-unknown-1-️) |
+
+**Firmware version (0x0A, shared across two devices)**
+
+| CMD    | Source       | Meaning                       | Section |
+|--------|--------------|-------------------------------|---------|
+| `0x0A` | `0x0050`     | Touchscreen Firmware Version  | [§21](#21-touchscreen-firmware-version-) |
+| `0x0A` | `0x00F0`     | Gateway Firmware Version      | [§17](#17-internet-gateway-firmware-version-) |
+
+**Touchscreen state broadcasts**
+
+| CMD    | Meaning                   | Section |
+|--------|---------------------------|---------|
+| `0x06` | Lighting Zone Config      | [§9](#9-lighting-zone-configuration-) |
+| `0x0B` | Channel Status            | [§7](#7-channel-status-) |
+| `0x0D` | Active Channels Bitmask   | [§6](#6-active-channels-bitmask-️) |
+| `0x14` | Mode (Spa/Pool)           | [§1](#1-mode-message-spapool-) |
+| `0x17` | Temperature Settings      | [§2](#2-temperature-settings-) |
+| `0x26` | Configuration             | [§5](#5-configuration-️) |
+| `0x27` | Unknown 2                 | [§23](#23-touchscreen-unknown-2-️) |
+| `0x38` | Register Data             | [§8](#8-register-messages-universal-register-system-️) |
+| `0xFD` | Controller Clock          | [§20](#20-controller-daytimeclock-) |
+
+**Temperature sensor broadcasts**
+
+| CMD    | Meaning                   | Section |
+|--------|---------------------------|---------|
+| `0x12` | Heater Status             | [§4](#4-heater-status-️) |
+| `0x16` | Temperature Reading (A)   | [§3](#3-temperature-reading-️) |
+| `0x31` | Temperature Reading (B)   | [§3](#3-temperature-reading-️) |
+
+**Chlorinator broadcasts**
+
+| CMD    | Meaning                   | Section |
+|--------|---------------------------|---------|
+| `0x1D` | Setpoint (pH or ORP)      | [§10](#10-chlorinator-ph-setpoint-), [§12](#12-chlorinator-orp-setpoint-) |
+| `0x1F` | Reading (pH or ORP)       | [§11](#11-chlorinator-ph-reading-), [§13](#13-chlorinator-orp-reading-) |
+
+**Internet Gateway broadcasts**
+
+| CMD    | Meaning                          | Section |
+|--------|----------------------------------|---------|
+| `0x0A` | Firmware Version                 | [§17](#17-internet-gateway-firmware-version-) |
+| `0x12` | Status Broadcast                 | [§18](#18-internet-gateway-status-broadcast-️) |
+| `0x37` | Info messages (serial/net/comms) | [§14](#14-internet-gateway-serial-number-️)–[§16](#16-internet-gateway-communications-status-️) |
+
+**Internet Gateway control commands (to controller)**
+
+| CMD    | Meaning                   | Section |
+|--------|---------------------------|---------|
+| `0x10` | Channel Toggle            | [§25](#25-channel-toggle-command-) |
+| `0x19` | Temperature Setpoint      | [§26](#26-temperature-setpoint-command-) |
+| `0x2A` | Mode Control (Pool/Spa)   | [§28](#28-mode-control-command-poolspa-) |
+| `0x39` | Register Read Request     | [§19](#19-register-read-requestresponse) |
+| `0x3A` | Register Write            | [§24](#24-light-zone-control-command-), [§27](#27-heater-control-command-) |
 
 ---
 
@@ -866,7 +941,7 @@ The Internet Gateway periodically polls controller registers to sync state with 
 
 **Notes:**
 
-- The response command pattern `38 0F 17` is similar to `MSG_TYPE_REGISTER_STATUS` (`38 0F 17`)
+- The response command pattern is documented in [8. Register Messages](#8-register-messages-universal-register-system-️)
 - Both request and response are broadcast (destination 0xFFFF)
 - The gateway appears to scan ranges of registers systematically
 
