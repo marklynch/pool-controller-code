@@ -18,29 +18,27 @@ This document describes the proprietary serial protocol used by the Connect 10 p
   - [6. Active Channels Bitmask ⚠️](#6-active-channels-bitmask-️)
   - [7. Channel Status ✅](#7-channel-status-)
   - [8. Register Messages (Universal Register System) ⚠️](#8-register-messages-universal-register-system-️)
-  - [9. Timers ✅](#9-timers-)
-  - [10. Register Labels ✅](#10-register-labels-)
-  - [11. Lighting Zone Configuration ✅](#11-lighting-zone-configuration-)
-  - [12. Chlorinator pH Setpoint ✅](#12-chlorinator-ph-setpoint-)
-  - [13. Chlorinator pH Reading ✅](#13-chlorinator-ph-reading-)
-  - [14. Chlorinator ORP Setpoint ✅](#14-chlorinator-orp-setpoint-)
-  - [15. Chlorinator ORP Reading ✅](#15-chlorinator-orp-reading-)
-  - [16. Internet Gateway Serial Number ⚠️](#16-internet-gateway-serial-number-️)
-  - [17. Internet Gateway Network Config ⚠️](#17-internet-gateway-network-config-️)
-  - [18. Internet Gateway Communications Status ⚠️](#18-internet-gateway-communications-status-️)
-  - [19. Internet Gateway Firmware Version ✅](#19-internet-gateway-firmware-version-)
-  - [20. Internet Gateway Status Broadcast ⚠️](#20-internet-gateway-status-broadcast-️)
-  - [21. Register Read Request/Response](#21-register-read-requestresponse)
-  - [22. Controller Day/Time/Clock ✅](#22-controller-daytimeclock-)
-  - [23. Touchscreen Firmware Version ✅](#23-touchscreen-firmware-version-)
-  - [24. Touchscreen Unknown 1 ⚠️](#24-touchscreen-unknown-1-️)
-  - [25. Touchscreen Unknown 2 ⚠️](#25-touchscreen-unknown-2-️)
+  - [9. Lighting Zone Configuration ✅](#9-lighting-zone-configuration-)
+  - [10. Chlorinator pH Setpoint ✅](#10-chlorinator-ph-setpoint-)
+  - [11. Chlorinator pH Reading ✅](#11-chlorinator-ph-reading-)
+  - [12. Chlorinator ORP Setpoint ✅](#12-chlorinator-orp-setpoint-)
+  - [13. Chlorinator ORP Reading ✅](#13-chlorinator-orp-reading-)
+  - [14. Internet Gateway Serial Number ⚠️](#14-internet-gateway-serial-number-️)
+  - [15. Internet Gateway Network Config ⚠️](#15-internet-gateway-network-config-️)
+  - [16. Internet Gateway Communications Status ⚠️](#16-internet-gateway-communications-status-️)
+  - [17. Internet Gateway Firmware Version ✅](#17-internet-gateway-firmware-version-)
+  - [18. Internet Gateway Status Broadcast ⚠️](#18-internet-gateway-status-broadcast-️)
+  - [19. Register Read Request/Response](#19-register-read-requestresponse)
+  - [20. Controller Day/Time/Clock ✅](#20-controller-daytimeclock-)
+  - [21. Touchscreen Firmware Version ✅](#21-touchscreen-firmware-version-)
+  - [22. Touchscreen Unknown 1 ⚠️](#22-touchscreen-unknown-1-️)
+  - [23. Touchscreen Unknown 2 ⚠️](#23-touchscreen-unknown-2-️)
 - [Control Commands (Gateway to Controller)](#control-commands-gateway-to-controller)
-  - [26. Light Zone Control Command ✅](#26-light-zone-control-command-)
-  - [27. Channel Toggle Command ✅](#27-channel-toggle-command-)
-  - [28. Temperature Setpoint Command ✅](#28-temperature-setpoint-command-)
-  - [29. Heater Control Command ✅](#29-heater-control-command-)
-  - [30. Mode Control Command (Pool/Spa) ✅](#30-mode-control-command-poolspa-)
+  - [24. Light Zone Control Command ✅](#24-light-zone-control-command-)
+  - [25. Channel Toggle Command ✅](#25-channel-toggle-command-)
+  - [26. Temperature Setpoint Command ✅](#26-temperature-setpoint-command-)
+  - [27. Heater Control Command ✅](#27-heater-control-command-)
+  - [28. Mode Control Command (Pool/Spa) ✅](#28-mode-control-command-poolspa-)
 - [Appendix A: Register Dispatch Table](#appendix-a-register-dispatch-table)
 - [Implementation Notes](#implementation-notes)
 
@@ -51,32 +49,46 @@ This document describes the proprietary serial protocol used by the Connect 10 p
 All messages follow this basic structure:
 
 ```
-[START] [SRC_HI] [SRC_LO] [DST_HI] [DST_LO] [CTRL_HI] [CTRL_LO] [CMD] [SUBCMD] [DATA...] [CHECKSUM] [END]
+[START] [SRC_HI] [SRC_LO] [DST_HI] [DST_LO] [CTRL_HI] [CTRL_LO] [CMD] [LENGTH] [HEADER_CHECKSUM] [DATA...] [DATA_CHECKSUM] [END]
 ```
 
 ### Message Format
 
-| Offset | Field    | Description                                                   |
-| ------ | -------- | ------------------------------------------------------------- |
-| 0      | START    | Always `0x02`                                                 |
-| 1-2    | SOURCE   | Source device address (big endian)                            |
-| 3-4    | DEST     | Destination device address (big endian)                       |
-| 5-6    | CONTROL  | Control bytes (typically `0x80 0x00`)                         |
-| 7+     | COMMAND  | Command and subcommand bytes                                  |
-| 10+    | DATA     | Payload data (varies by message type)                         |
-| N-2    | CHECKSUM | Sum of all data bytes (from index 10 to N-3) masked with 0xFF |
-| N-1    | END      | Always `0x03`                                                 |
+| Offset | Field           | Description                                                       |
+| ------ | --------------- | ----------------------------------------------------------------- |
+| 0      | START           | Always `0x02`                                                     |
+| 1-2    | SOURCE          | Source device address (big endian)                                |
+| 3-4    | DEST            | Destination device address (big endian)                           |
+| 5-6    | CONTROL         | Control bytes (typically `0x80 0x00`)                             |
+| 7      | COMMAND         | Command byte (message type)                                       |
+| 8      | LENGTH          | Total message length in bytes (including START and END bytes)     |
+| 9      | HEADER_CHECKSUM | Sum of bytes 0–8, masked to 8 bits (`sum(bytes[0..8]) & 0xFF`)    |
+| 10+    | DATA            | Payload data (varies by message type)                             |
+| N-2    | DATA_CHECKSUM   | Sum of all data bytes (from index 10 to N-3) masked with 0xFF     |
+| N-1    | END             | Always `0x03`                                                     |
 
 ### Checksum Calculation
 
-The checksum is calculated as the sum of all bytes from index 10 to (length - 3), masked to 8 bits:
+There are two checksums in every message:
+
+**Header checksum** (byte 9): Sum of bytes 0–8 masked to 8 bits:
+
+```c
+uint8_t header_checksum = 0;
+for (int i = 0; i < 9; i++) {
+    header_checksum += data[i];
+}
+// header_checksum &= 0xFF  (implicit for uint8_t)
+```
+
+**Data checksum** (second-to-last byte): Sum of payload bytes from index 10 to (length - 3), masked to 8 bits:
 
 ```c
 uint32_t sum = 0;
 for (int i = 10; i < len - 2; i++) {
     sum += data[i];
 }
-uint8_t checksum = sum & 0xFF;
+uint8_t data_checksum = sum & 0xFF;
 ```
 
 ### Device Addresses
@@ -106,30 +118,27 @@ uint8_t checksum = sum & 0xFF;
 | 5  | Configuration                     | `0x0050` | `02 00 50 FF FF 80 00 26 0E 04`           | ⚠️     |                                     |
 | 6  | Active Channels Bitmask           | `0x0050` | `02 00 50 00 6F 80 00 0D 0D 5B`           | ⚠️     | Dst=`0x006F` (Controller)           |
 | 7  | Channel Status                    | `0x0050` | `02 00 50 FF FF 80 00 0B 25 00`           | ✅     |                                     |
-| 8  | Register Messages                 | `0x0050` | `02 00 50 FF FF 80 00 38 ** **`           | ⚠️     | CMD/SUB vary; see [Appendix A](#appendix-a-register-dispatch-table) |
-| 9  | Timers                            | `0x0050` | `02 00 50 FF FF 80 00 38 13 1B`           | ✅     | Reg `0x08`–`0x17`, Slot `0x04`      |
-| 10 | Register Labels                   | `0x0050` | `02 00 50 FF FF 80 00 38 1A 22`           | ✅     | Variant: `38 16 1E`                 |
-| 11 | Lighting Zone Configuration       | `0x0050` | `02 00 50 FF FF 80 00 06 0E E4`           | ✅     |                                     |
-| 12 | Chlorinator pH Setpoint           | `0x0090` | `02 00 90 FF FF 80 00 1D 0F 3C`           | ✅     | Byte 10: `0x01`                     |
-| 13 | Chlorinator pH Reading            | `0x0090` | `02 00 90 FF FF 80 00 1F 0F 3E`           | ✅     | Byte 10: `0x01`                     |
-| 14 | Chlorinator ORP Setpoint          | `0x0090` | `02 00 90 FF FF 80 00 1D 0F 3C`           | ✅     | Byte 10: `0x02`; same pattern as [§12](#12-chlorinator-ph-setpoint-)|
-| 15 | Chlorinator ORP Reading           | `0x0090` | `02 00 90 FF FF 80 00 1F 0F 3E`           | ✅     | Byte 10: `0x02`; same pattern as [§13](#13-chlorinator-ph-reading-)|
-| 16 | Internet Gateway Serial Number    | `0x00F0` | `02 00 F0 FF FF 80 00 37 11 B8`           | ⚠️     |                                     |
-| 17 | Internet Gateway Network Config   | `0x00F0` | `02 00 F0 FF FF 80 00 37 15 BC`           | ⚠️     |                                     |
-| 18 | Internet Gateway Comms Status     | `0x00F0` | `02 00 F0 FF FF 80 00 37 0F B6`           | ⚠️     |                                     |
-| 19 | Internet Gateway Firmware Version | `0x00F0` | `02 00 F0 FF FF 80 00 0A 0E 88`           | ✅     | Same cmd byte as §23                |
-| 20 | Internet Gateway Status Broadcast | `0x00F0` | `02 00 F0 FF FF 80 00 12 0F 91`           | ⚠️     | Same cmd byte as §24                |
-| 21 | Register Read Request             | `0x00F0` | `02 00 F0 FF FF 80 00 39 0E B7`           |        |                                     |
-| 21 | Register Read Response            | `0x0050` | `02 00 50 FF FF 80 00 38 0F 17`           |        |                                     |
-| 22 | Controller Day/Time/Clock         | `0x0050` | `02 00 50 FF FF 80 00 FD 0F DC`           | ✅     |                                     |
-| 23 | Touchscreen Firmware Version      | `0x0050` | `02 00 50 FF FF 80 00 0A 0E E8`           | ✅     | Same cmd byte as §19                |
-| 24 | Touchscreen Unknown 1             | `0x0050` | `02 00 50 FF FF 80 00 12 0E F0`           | ⚠️     | Same cmd byte as §20                |
-| 25 | Touchscreen Unknown 2             | `0x0050` | `02 00 50 FF FF 80 00 27 0D 04`           | ⚠️     |                                     |
-| 26 | Light Zone Control Command        | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§29](#29-heater-control-command-) |
-| 27 | Channel Toggle Command            | `0x00F0` | `02 00 F0 FF FF 80 00 10 0D 8D`           | ✅     |                                     |
-| 28 | Temperature Setpoint Command      | `0x00F0` | `02 00 F0 FF FF 80 00 19 0F 98`           | ✅     |                                     |
-| 29 | Heater Control Command            | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§26](#26-light-zone-control-command-); different reg |
-| 30 | Mode Control Command              | `0x00F0` | `02 00 F0 00 50 80 00 2A 0D F9`           | ✅     | Dst=`0x0050` (not broadcast)        |
+| 8  | Register Messages                 | `0x0050` | `02 00 50 FF FF 80 00 38 ** **`           | ⚠️     | Incl. timers (Slot `0x04`) & labels (Slot `0x02`); see [Appendix A](#appendix-a-register-dispatch-table) |
+| 9  | Lighting Zone Configuration       | `0x0050` | `02 00 50 FF FF 80 00 06 0E E4`           | ✅     |                                     |
+| 10 | Chlorinator pH Setpoint           | `0x0090` | `02 00 90 FF FF 80 00 1D 0F 3C`           | ✅     | Byte 10: `0x01`                     |
+| 11 | Chlorinator pH Reading            | `0x0090` | `02 00 90 FF FF 80 00 1F 0F 3E`           | ✅     | Byte 10: `0x01`                     |
+| 12 | Chlorinator ORP Setpoint          | `0x0090` | `02 00 90 FF FF 80 00 1D 0F 3C`           | ✅     | Byte 10: `0x02`; same pattern as [§10](#10-chlorinator-ph-setpoint-)|
+| 13 | Chlorinator ORP Reading           | `0x0090` | `02 00 90 FF FF 80 00 1F 0F 3E`           | ✅     | Byte 10: `0x02`; same pattern as [§11](#11-chlorinator-ph-reading-)|
+| 14 | Internet Gateway Serial Number    | `0x00F0` | `02 00 F0 FF FF 80 00 37 11 B8`           | ⚠️     |                                     |
+| 15 | Internet Gateway Network Config   | `0x00F0` | `02 00 F0 FF FF 80 00 37 15 BC`           | ⚠️     |                                     |
+| 16 | Internet Gateway Comms Status     | `0x00F0` | `02 00 F0 FF FF 80 00 37 0F B6`           | ⚠️     |                                     |
+| 17 | Internet Gateway Firmware Version | `0x00F0` | `02 00 F0 FF FF 80 00 0A 0E 88`           | ✅     | Same cmd byte as §21                |
+| 18 | Internet Gateway Status Broadcast | `0x00F0` | `02 00 F0 FF FF 80 00 12 0F 91`           | ⚠️     | Same cmd byte as §22                |
+| 19 | Register Read Request             | `0x00F0` | `02 00 F0 FF FF 80 00 39 0E B7`           |        | For responses see [§10](#8-register-messages-universal-register-system-️)|
+| 20 | Controller Day/Time/Clock         | `0x0050` | `02 00 50 FF FF 80 00 FD 0F DC`           | ✅     |                                     |
+| 21 | Touchscreen Firmware Version      | `0x0050` | `02 00 50 FF FF 80 00 0A 0E E8`           | ✅     | Same cmd byte as §17                |
+| 22 | Touchscreen Unknown 1             | `0x0050` | `02 00 50 FF FF 80 00 12 0E F0`           | ⚠️     | Same cmd byte as §18                |
+| 23 | Touchscreen Unknown 2             | `0x0050` | `02 00 50 FF FF 80 00 27 0D 04`           | ⚠️     |                                     |
+| 24 | Light Zone Control Command        | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§27](#27-heater-control-command-) |
+| 25 | Channel Toggle Command            | `0x00F0` | `02 00 F0 FF FF 80 00 10 0D 8D`           | ✅     |                                     |
+| 26 | Temperature Setpoint Command      | `0x00F0` | `02 00 F0 FF FF 80 00 19 0F 98`           | ✅     |                                     |
+| 27 | Heater Control Command            | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§24](#24-light-zone-control-command-); different reg |
+| 28 | Mode Control Command              | `0x00F0` | `02 00 F0 00 50 80 00 2A 0D F9`           | ✅     | Dst=`0x0050` (not broadcast)        |
 
 ---
 
@@ -409,7 +418,7 @@ Detailed status for all configured channels.
 
 ### 8. Register Messages (Universal Register System) ⚠️
 
-The controller uses a unified register-based system for configuration and state. All register messages follow the same pattern with a register ID and slot (data type) to distinguish different aspects of the same register.
+The controller uses a unified register-based system for configuration and state. All register messages share the same base pattern `02 00 50 FF FF 80 00 38` — only the register ID, slot, and data payload vary.
 
 > See [Appendix A](#appendix-a-register-dispatch-table) for the full register dispatch table, examples by register type, register ID mappings, and the firmware dispatch implementation.
 
@@ -418,18 +427,19 @@ The controller uses a unified register-based system for configuration and state.
 **Complete Structure:**
 
 ```
-02 00 50 FF FF 80 00 38 [CMD] [SUB] [REG_ID] [SLOT] [DATA...] [CHECKSUM] 03
-                        ^^^^^^^^^^^
-                        CMD/SUB have a checksum relationship:
-                        SUB = CMD + 8
+02 00 50 FF FF 80 00 38 [LENGTH] [HEADER_CHECKSUM] [REG_ID] [SLOT] [DATA...] [DATA_CHECKSUM] 03
+                                 ^^^^^^^^^^^^^^^^
+                                 sum(bytes 0–8) & 0xFF
+                                 For this base pattern, bytes 0–7 sum to 776 ≡ 8 (mod 256),
+                                 so HEADER_CHECKSUM = LENGTH + 8
 ```
 
 **Example:**
 
 ```
 02 00 50 FF FF 80 00 38 0F 17 C0 01 00 C1 03
-                        ^^ CMD (0x0F)
-                           ^^ SUB (0x17 = 0x0F + 8) ✓
+                        ^^ LENGTH (0x0F = 15 bytes total)
+                           ^^ HEADER_CHECKSUM (0x17 = 0x0F + 8, since bytes 0–7 sum to 8 mod 256)
                               ^^ Register ID (0xC0)
                                  ^^ Slot/Data Type (0x01)
                                     ^^ Data (Light state: 0=Off)
@@ -437,23 +447,21 @@ The controller uses a unified register-based system for configuration and state.
 
 **Data Fields:**
 
-- Byte 8 (CMD): Command byte
-- Byte 9 (SUB): Subcommand byte — **always equals CMD + 8**
+- Byte 8 (LENGTH): Total message length in bytes (including `0x02` start and `0x03` end)
+- Byte 9 (HEADER_CHECKSUM): Sum of bytes 0–8, masked to 8 bits
 - Byte 10 (REG_ID): Register identifier (which setting/channel/zone)
-- Byte 11 (SLOT): Data slot - defines data type and format
+- Byte 11 (SLOT): Data slot — defines data type and format
 - Byte 12+: Data payload (varies by register and slot)
 
 **Notes:**
 
-- The CMD/SUB checksum relationship (SUB = CMD + 8) is a validation mechanism. Messages violating this are rejected.
+- The header checksum formula `HEADER_CHECKSUM = LENGTH + 8` holds specifically for register messages because bytes 0–7 (`02 00 50 FF FF 80 00 38`) always sum to 776 ≡ 8 (mod 256). This is a consequence of the fixed base pattern, not a separate rule.
 
----
-
-### 9. Timers ✅
+#### Timer Registers (Slot 0x04)
 
 Timer schedule configuration. Each timer has a start time, stop time, and a days-of-week bitmask. Up to 16 timers are supported (registers `0x08`–`0x17`).
 
-**Pattern:** `02 00 50 FF FF 80 00 38 13 1B` (Register message, CMD=0x13, SUB=0x1B, slot `0x04`)
+**Pattern:** `02 00 50 FF FF 80 00 38 13 1B` (LENGTH=0x13=19 bytes, HEADER_CHECKSUM=0x1B)
 
 **Examples:**
 
@@ -503,70 +511,56 @@ Timer schedule configuration. Each timer has a start time, stop time, and a days
 **Notes:**
 
 - Timers with all-zero payload (`start=00:00 stop=00:00 days=0x00`) are not configured
-- All 16 timer registers are broadcast in sequence on startup
+- Timers are not broadcast by the touchscreen, but the internet gateway requests these 16 timer registers regularly.
+- Assumption of 16 timers based on how the gateway calls it — but potentially could be 8 as can only verify 8 timers on existing touchscreen.
 
----
+#### Label Registers (Slot 0x02/0x03)
 
-### 10. Register Labels ✅
+Assigns human-readable names to channels, lighting zones, and valves as null-terminated ASCII strings.
 
-Generic register label assignments.
+**Pattern:** `02 00 50 FF FF 80 00 38 1A 22` (LENGTH=0x1A=26, for longer names) or `38 16 1E` (LENGTH=0x16=22, for shorter names / valve labels)
 
-**Pattern:** `02 00 50 FF FF 80 00 38 1A 22`
-
-**Example:**
+**Example — Channel Name:**
 
 ```
 02 00 50 FF FF 80 00 38 1A 22 7C 02 46 69 6C 74 65 72 20 50 75 6D 70 00 A6 03
                               ^^ Register ID (0x7C)
-                                 ^^  Slot ID
+                                 ^^ Slot ID
                                     F  i  l  t  e  r     P  u  m  p  (null terminated)
-
 ```
 
-**Data Fields:**
-
-- Byte 10: Register ID
-- Byte 11: Slot ID
-- Byte 12+: ASCII label string (null terminated)
-
-**Pattern Variant: Lighting/Valve Labels** `02 00 50 FF FF 80 00 38 16 1E`
-
-Assigns custom names to lighting zones or valve registers (0xD0-0xD3 range).
-
-**Example - Valve 1:**
+**Example — Valve 1:**
 
 ```
 02 00 50 FF FF 80 00 38 16 1E D0 02 56 61 6C 76 65 20 31 00 21 03
-                              ^^ Register ID (0xD0 = Light Zone 1 Color/Valve 1)
+                              ^^ Register ID (0xD0 Slot 2 = Valve 1)
                                  ^^ Slot ID
                                     V  a  l  v  e     1  \0  (null-terminated ASCII string)
 ```
 
-**Example - Valve 2:**
+**Example — Valve 2:**
 
 ```
 02 00 50 FF FF 80 00 38 16 1E D1 02 56 61 6C 76 65 20 32 00 23 03
-                              ^^ Register ID (0xD1 = Light Zone 2 Color/Valve 2)
+                              ^^ Register ID (0xD1 Slot 2 = Valve 2)
                                  ^^ Slot ID
                                     V  a  l  v  e     2  \0  (null-terminated ASCII string)
 ```
 
 **Data Fields:**
 
-- Byte 10: Register ID (0xD0-0xD3 for zones/valves 1-4)
+- Byte 10: Register ID (e.g. `0x7C`–`0x83` for channels 1–8; `0xD0`–`0xD3` for zones/valves 1–4)
 - Byte 11: Slot ID
-- Bytes 12+: Null-terminated ASCII string (custom label/name)
+- Byte 12+: Null-terminated ASCII string
 
 **Notes:**
 
-- These registers (0xD0-0xD3) appear to be multipurpose
-- Can represent either lighting zone colors or valve names depending on system configuration
-- The null-terminated string format allows for variable-length names
+- Registers `0xD0`–`0xD3` appear to be multipurpose — can represent either lighting zone colors or valve names depending on system configuration
 - Maximum string length appears to be limited by message size constraints
 
 ---
 
-### 11. Lighting Zone Configuration ✅
+### 9. Lighting Zone Configuration ✅
 
 Indicates which lighting zones are installed and their current on/off state.
 
@@ -587,7 +581,7 @@ Indicates which lighting zones are installed and their current on/off state.
 
 ---
 
-### 12. Chlorinator pH Setpoint ✅
+### 10. Chlorinator pH Setpoint ✅
 
 Target pH level for the chlorinator.
 
@@ -609,7 +603,7 @@ Target pH level for the chlorinator.
 
 ---
 
-### 13. Chlorinator pH Reading ✅
+### 11. Chlorinator pH Reading ✅
 
 Current pH reading from the sensor.
 
@@ -631,7 +625,7 @@ Current pH reading from the sensor.
 
 ---
 
-### 14. Chlorinator ORP Setpoint ✅
+### 12. Chlorinator ORP Setpoint ✅
 
 Target ORP (oxidation-reduction potential) level.
 
@@ -653,7 +647,7 @@ Target ORP (oxidation-reduction potential) level.
 
 ---
 
-### 15. Chlorinator ORP Reading ✅
+### 13. Chlorinator ORP Reading ✅
 
 Current ORP reading from the sensor.
 
@@ -675,7 +669,7 @@ Current ORP reading from the sensor.
 
 ---
 
-### 16. Internet Gateway Serial Number ⚠️
+### 14. Internet Gateway Serial Number ⚠️
 
 Serial number of the internet gateway module.
 
@@ -697,7 +691,7 @@ Serial number of the internet gateway module.
 
 ---
 
-### 17. Internet Gateway Network Config ⚠️
+### 15. Internet Gateway Network Config ⚠️
 
 IP address and signal strength of the gateway.
 
@@ -732,7 +726,7 @@ IP address and signal strength of the gateway.
 
 ---
 
-### 18. Internet Gateway Communications Status ⚠️
+### 16. Internet Gateway Communications Status ⚠️
 
 Status of the gateway's internet connection.
 
@@ -770,7 +764,7 @@ Status of the gateway's internet connection.
 
 ---
 
-### 19. Internet Gateway Firmware Version ✅
+### 17. Internet Gateway Firmware Version ✅
 
 Firmware version announcement broadcast by the Internet Gateway on startup. Uses the same command byte (`0x0A`) as the Touchscreen Firmware Version message, but originates from source `0x00F0`.
 
@@ -792,12 +786,12 @@ Firmware version announcement broadcast by the Internet Gateway on startup. Uses
 
 **Notes:**
 
-- Uses the same command byte (`0x0A`) as the Touchscreen Firmware Version message ([Section 23](#23-touchscreen-firmware-version-))
-- Broadcast at startup, paired with the Gateway Status Broadcast ([Section 20](#20-internet-gateway-status-broadcast-️))
+- Uses the same command byte (`0x0A`) as the Touchscreen Firmware Version message ([Section 21](#21-touchscreen-firmware-version-))
+- Broadcast at startup, paired with the Gateway Status Broadcast ([Section 18](#18-internet-gateway-status-broadcast-️))
 
 ---
 
-### 20. Internet Gateway Status Broadcast ⚠️
+### 18. Internet Gateway Status Broadcast ⚠️
 
 Status broadcast by the Internet Gateway on startup. Uses the same command byte (`0x12`) as the Touchscreen Unknown 1 message, but carries an additional third data byte and originates from source `0x00F0`.
 
@@ -820,14 +814,14 @@ Status broadcast by the Internet Gateway on startup. Uses the same command byte 
 
 **Notes:**
 
-- Uses the same command byte (`0x12`) as Touchscreen Unknown 1 ([Section 24](#24-touchscreen-unknown-1-️)), but is 1 byte longer (15 vs 14 bytes total)
+- Uses the same command byte (`0x12`) as Touchscreen Unknown 1 ([Section 22](#22-touchscreen-unknown-1-️)), but is 1 byte longer (15 vs 14 bytes total)
 - The touchscreen version carries only 2 bytes (`0x05 0x00`); the gateway version carries 3 bytes
-- Broadcast at startup, paired with the Gateway Firmware Version message ([Section 19](#19-internet-gateway-firmware-version-))
+- Broadcast at startup, paired with the Gateway Firmware Version message ([Section 17](#17-internet-gateway-firmware-version-))
 - Field meanings are unknown; `0x05` may be a shared protocol constant
 
 ---
 
-### 21. Register Read Request/Response
+### 19. Register Read Request/Response
 
 The Internet Gateway periodically polls controller registers to sync state with the cloud service. This uses a request-response pattern.
 
@@ -878,7 +872,7 @@ The Internet Gateway periodically polls controller registers to sync state with 
 
 ---
 
-### 22. Controller Day/Time/Clock ✅
+### 20. Controller Day/Time/Clock ✅
 
 Current time from the controller's internal clock. Broadcast periodically for synchronization.
 
@@ -915,7 +909,7 @@ Current time from the controller's internal clock. Broadcast periodically for sy
 
 ---
 
-### 23. Touchscreen Firmware Version ✅
+### 21. Touchscreen Firmware Version ✅
 
 Touchscreen firmware version announcement. Broadcast periodically by the controller.
 
@@ -944,7 +938,7 @@ Touchscreen firmware version announcement. Broadcast periodically by the control
 
 ---
 
-### 24. Touchscreen Unknown 1 ⚠️
+### 22. Touchscreen Unknown 1 ⚠️
 
 Broadcast consistently after the firmware version message (`0A 0E E8`). Currently appears to always have data value `05 00`.
 
@@ -969,7 +963,7 @@ Broadcast consistently after the firmware version message (`0A 0E E8`). Currentl
 
 ---
 
-### 25. Touchscreen Unknown 2 ⚠️
+### 23. Touchscreen Unknown 2 ⚠️
 
 Broadcast consistently after the version number message (`27 0D 04`). Currently appears to always have data value `00`.
 
@@ -999,7 +993,7 @@ The following commands can be sent from the Internet Gateway (or emulated gatewa
 
 ---
 
-### 26. Light Zone Control Command ✅
+### 24. Light Zone Control Command ✅
 
 Command to set light zone state (On/Off/Auto).
 
@@ -1063,7 +1057,7 @@ Command to set light zone state (On/Off/Auto).
 
 ---
 
-### 27. Channel Toggle Command ✅
+### 25. Channel Toggle Command ✅
 
 Command to cycle a channel through its available states (Auto → On → Off, or On → Off depending on channel type).
 
@@ -1115,7 +1109,7 @@ Command to cycle a channel through its available states (Auto → On → Off, or
 
 ---
 
-### 28. Temperature Setpoint Command ✅
+### 26. Temperature Setpoint Command ✅
 
 Command to set the pool or spa temperature setpoint. The temperature byte is repeated twice within the payload.
 
@@ -1155,9 +1149,9 @@ Command to set the pool or spa temperature setpoint. The temperature byte is rep
 
 ---
 
-### 29. Heater Control Command ✅
+### 27. Heater Control Command ✅
 
-Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern as the Light Zone Control Command ([Section 26](#26-light-zone-control-command-)), but with a different register ID and slot.
+Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern as the Light Zone Control Command ([Section 24](#24-light-zone-control-command-)), but with a different register ID and slot.
 
 **Pattern:** `02 00 F0 FF FF 80 00 3A 0F B9`
 
@@ -1196,7 +1190,7 @@ Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern a
 
 ---
 
-### 30. Mode Control Command (Pool/Spa) ✅
+### 28. Mode Control Command (Pool/Spa) ✅
 
 Command to switch between Pool and Spa operating modes.
 
@@ -1251,7 +1245,7 @@ The register ID and slot together determine the message meaning. The slot distin
 
 | Register Range  | Slot   | Purpose                | Data Format                                      |
 |-----------------|--------|------------------------|--------------------------------------------------|
-| `0x08`–`0x17`  | `0x04` | Timers 1–16            | start/stop time + days bitmask (see [Section 9](#9-timers-))   |
+| `0x08`–`0x17`  | `0x04` | Timers 1–16            | start/stop time + days bitmask (see [§8 Timer Registers](#timer-registers-slot-0x04))   |
 | `0x31`–`0x38`  | `0x03` | Favourite Labels       | Null-terminated ASCII string                     |
 | `0x6C`–`0x73`  | `0x02` | Channel Types          | 1-byte type code (see [Section 7](#7-channel-status-) channel types)   |
 | `0x7C`–`0x83`  | `0x02` | Channel Names          | Null-terminated ASCII string                     |
@@ -1407,7 +1401,7 @@ static const register_handler_t REGISTER_HANDLERS[] = {
 
 The dispatcher:
 
-1. Validates CMD/SUB relationship (SUB = CMD + 8)
+1. Validates header checksum (byte 9 = sum(bytes 0–8) & 0xFF)
 2. Extracts register ID and slot
 3. Looks up matching handler in table
 4. Routes to appropriate handler function

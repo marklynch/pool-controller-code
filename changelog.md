@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Display Active state as well as status in logging of channel state
 
 ### Changed
+- Updated documentation based on new understanding of header checksum
+- Combined register messages, timers, and register labels into a single section
+
 ### Deprecated
 ### Removed
 ### Fixed
