@@ -239,6 +239,47 @@ static void handle_temperature_command(bool is_pool, const char *payload, int pa
 }
 
 // ======================================================
+// Valve Control
+// ======================================================
+
+static void handle_valve_command(int valve_num, const char *payload, int payload_len)
+{
+    ESP_LOGI(TAG, "Valve %d command: %.*s", valve_num, payload_len, payload);
+
+    uint8_t state;
+    if (strncmp(payload, "On", payload_len) == 0) {
+        state = 0x02;
+    } else if (strncmp(payload, "Auto", payload_len) == 0) {
+        state = 0x01;
+    } else if (strncmp(payload, "Off", payload_len) == 0) {
+        state = 0x00;
+    } else {
+        ESP_LOGE(TAG, "Invalid valve command: %.*s (expected Off/Auto/On)", payload_len, payload);
+        return;
+    }
+
+    // Build UART command
+    // Pattern: 02 00 F0 FF FF 80 00 28 0E A6 [VALVE_IDX] [STATE] [CHECKSUM] 03
+    // Checksum = (valve_idx + state) & 0xFF
+    uint8_t valve_idx = valve_num - 1;
+    uint8_t cmd[] = {
+        0x02,       // START
+        0x00, 0xF0, // SOURCE: Internet Gateway
+        0xFF, 0xFF, // DEST: Broadcast
+        0x80, 0x00, // CONTROL
+        0x28, 0x0E, 0xA6, // Command pattern (checksum: 02+00+F0+FF+FF+80+00+28+0E = 0xA6)
+        valve_idx,         // Valve index (0-based)
+        state,             // Target state (0=Off, 1=Auto, 2=On)
+        (valve_idx + state) & 0xFF, // Data checksum
+        0x03               // END
+    };
+
+    ESP_LOGI(TAG, "Setting valve %d to %s", valve_num,
+             state == 0x02 ? "On" : (state == 0x01 ? "Auto" : "Off"));
+    send_uart_command(cmd, sizeof(cmd));
+}
+
+// ======================================================
 // Main Command Handler
 // ======================================================
 
@@ -288,6 +329,19 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
             handle_light_command(zone, data, data_len);
         } else {
             ESP_LOGE(TAG, "Invalid light zone: %d", zone);
+        }
+    }
+    else if (strncmp(cmd_topic, "valve/", 6) == 0 && cmd_topic_len > 8) {
+        // Extract valve number (format: "valve/N/set")
+        if (!isdigit((unsigned char)cmd_topic[6])) {
+            ESP_LOGE(TAG, "Invalid valve topic format: %s", cmd_topic);
+            return;
+        }
+        int valve = cmd_topic[6] - '0';
+        if (valve >= 1 && valve <= MAX_VALVE_SLOTS) {
+            handle_valve_command(valve, data, data_len);
+        } else {
+            ESP_LOGE(TAG, "Invalid valve number: %d", valve);
         }
     }
     else if (strncmp(cmd_topic, "heater/set", 10) == 0) {

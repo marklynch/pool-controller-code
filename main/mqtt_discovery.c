@@ -508,8 +508,10 @@ static void publish_valve_discovery(const char *device_id, const char *mac_suffi
 {
     char avail_topic[128];
     char state_topic[128];
+    char command_topic[128];
     snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
     snprintf(state_topic, sizeof(state_topic), "pool/%s/valve/%d/state", device_id, valve_num);
+    snprintf(command_topic, sizeof(command_topic), "pool/%s/valve/%d/set", device_id, valve_num);
 
     char device_json[512];
     build_device_json(device_json, sizeof(device_json), device_id, mac_suffix);
@@ -532,13 +534,14 @@ static void publish_valve_discovery(const char *device_id, const char *mac_suffi
 
     snprintf(config, MQTT_DISCOVERY_CONFIG_SIZE,
              "{\"name\":\"%s\","
-             "\"state_topic\":\"%s\","
+             "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
+             "\"options\":[\"Off\",\"Auto\",\"On\"],"
              "\"value_template\":\"{{ value_json.state }}\","
              "\"unique_id\":\"%s\",\"object_id\":\"%s\","
              "\"availability_topic\":\"%s\",%s}",
-             display_name, state_topic, uid, uid, avail_topic, device_json);
+             display_name, state_topic, command_topic, uid, uid, avail_topic, device_json);
 
-    publish_discovery("sensor", uid, config);
+    publish_discovery("select", uid, config);
     free(config);
 }
 

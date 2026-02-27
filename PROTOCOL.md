@@ -41,6 +41,7 @@ This document describes the proprietary serial protocol used by the Connect 10 p
   - [27. Temperature Setpoint Command ✅](#27-temperature-setpoint-command-)
   - [28. Heater Control Command ✅](#28-heater-control-command-)
   - [29. Mode Control Command (Pool/Spa) ✅](#29-mode-control-command-poolspa-)
+  - [30. Valve Control Command ✅](#30-valve-control-command-)
 - [Appendix A: Register Dispatch Table](#appendix-a-register-dispatch-table)
 - [Implementation Notes](#implementation-notes)
 
@@ -175,6 +176,7 @@ The command byte (byte 7) identifies the message type. Some command values are s
 |--------|---------------------------|---------|
 | `0x10` | Channel Toggle            | [§26](#26-channel-toggle-command-) |
 | `0x19` | Temperature Setpoint      | [§27](#27-temperature-setpoint-command-) |
+| `0x28` | Valve Control             | [§30](#30-valve-control-command-) |
 | `0x2A` | Mode Control (Pool/Spa)   | [§29](#29-mode-control-command-poolspa-) |
 | `0x39` | Register Read Request     | [§19](#19-register-read-requestresponse) |
 | `0x3A` | Register Write            | [§25](#25-light-zone-control-command-), [§28](#28-heater-control-command-) |
@@ -217,6 +219,7 @@ The command byte (byte 7) identifies the message type. Some command values are s
 | 27 | Temperature Setpoint Command      | `0x00F0` | `02 00 F0 FF FF 80 00 19 0F 98`           | ✅     |                                     |
 | 28 | Heater Control Command            | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§25](#25-light-zone-control-command-); different reg |
 | 29 | Mode Control Command              | `0x00F0` | `02 00 F0 00 50 80 00 2A 0D F9`           | ✅     | Dst=`0x0050` (not broadcast)        |
+| 30 | Valve Control Command             | `0x00F0` | `02 00 F0 FF FF 80 00 28 0E A6`           | ✅     |                                     |
 
 ---
 
@@ -1403,6 +1406,36 @@ Command to switch between Pool and Spa operating modes.
 - **Command values are inverted from status values** — In status messages ([§1 Mode Message](#1-mode-message-spapool-)), Spa=0x00 and Pool=0x01, but in control commands, Spa=0x01 and Pool=0x00
 - This command requires the sender to impersonate the Internet Gateway (source address 0x00F0)
 - The controller will switch modes and broadcast the new mode status to all devices
+
+---
+
+### 30. Valve Control Command ✅
+
+Sent by the Internet Gateway to set a valve to a specific state directly. Unlike the Channel Toggle Command (§26) which cycles through states, this sets the target state explicitly.
+
+**Pattern:** `02 00 F0 FF FF 80 00 28 0E A6`
+
+**Examples:**
+
+| Command      | Full message                                |
+|--------------|---------------------------------------------|
+| Valve 1 Off  | `02 00 F0 FF FF 80 00 28 0E A6 00 00 00 03` |
+| Valve 1 Auto | `02 00 F0 FF FF 80 00 28 0E A6 00 01 01 03` |
+| Valve 1 On   | `02 00 F0 FF FF 80 00 28 0E A6 00 02 02 03` |
+| Valve 2 Off  | `02 00 F0 FF FF 80 00 28 0E A6 01 00 01 03` |
+| Valve 2 Auto | `02 00 F0 FF FF 80 00 28 0E A6 01 01 02 03` |
+| Valve 2 On   | `02 00 F0 FF FF 80 00 28 0E A6 01 02 03 03` |
+
+**Data Fields:**
+
+- Byte 10: Valve index, 0-based (`0x00`=Valve 1, `0x01`=Valve 2)
+- Byte 11: Target state (`0x00`=Off, `0x01`=Auto, `0x02`=On)
+- Byte 12: Data checksum = (byte 10 + byte 11) & 0xFF
+
+**Notes:**
+
+- Whether Auto is accepted by the controller depends on the valve's configuration
+- The controller responds immediately with an updated Valve State Broadcast (§23)
 
 ---
 

@@ -196,6 +196,12 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         snprintf(topic, sizeof(topic), "pool/%s/temperature/spa/set", device_id);
         esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
 
+        // Subscribe to valve commands (valves 1-MAX_VALVE_SLOTS)
+        for (int i = 1; i <= MAX_VALVE_SLOTS; i++) {
+            snprintf(topic, sizeof(topic), "pool/%s/valve/%d/set", device_id, i);
+            esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
+        }
+
         ESP_LOGI(TAG, "Subscribed to command topics");
 
         // Publish Home Assistant discovery messages

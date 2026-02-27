@@ -1835,6 +1835,7 @@ static bool handle_valve_label(
     ESP_LOGI(TAG, "%s Valve zone %d label (0x%02X) - \"%s\"", addr_info, zone_num, reg_id, label);
 
     // Update pool state
+    pool_state_t state_snapshot;
     if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
         int slot = -1;
         for (int i = 0; i < 32; i++) {
@@ -1862,7 +1863,13 @@ static bool handle_valve_label(
             ctx->pool_state->valves[valve_idx].name[sizeof(ctx->pool_state->valves[valve_idx].name) - 1] = '\0';
         }
 
+        state_snapshot = *ctx->pool_state;
         xSemaphoreGive(ctx->state_mutex);
+    }
+
+    // Re-publish valve discovery and state now that the name is known
+    if (ctx->enable_mqtt && zone_num >= 1 && zone_num <= MAX_VALVE_SLOTS) {
+        mqtt_publish_valve(&state_snapshot, zone_num);
     }
 
     return true;
