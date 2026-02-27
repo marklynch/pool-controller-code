@@ -18,8 +18,8 @@
 // HTTP Server
 #define HTTP_SERVER_PORT               80
 #define HTTP_MAX_URI_HANDLERS          14      // Number of endpoint handlers
-#define HTTP_RECV_TIMEOUT_SEC          60      // Timeout for large file uploads
-#define HTTP_SEND_TIMEOUT_SEC          60      // Timeout for responses
+#define HTTP_RECV_TIMEOUT_SEC          10      // Timeout for receiving requests
+#define HTTP_SEND_TIMEOUT_SEC          10      // Timeout for sending responses
 #define HTTP_STACK_SIZE                8192    // Stack size for HTTP server task
 
 // TCP Bridge
