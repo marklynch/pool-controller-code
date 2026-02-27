@@ -33,13 +33,14 @@ This document describes the proprietary serial protocol used by the Connect 10 p
   - [20. Controller Day/Time/Clock ✅](#20-controller-daytimeclock-)
   - [21. Touchscreen Firmware Version ✅](#21-touchscreen-firmware-version-)
   - [22. Touchscreen Unknown 1 ⚠️](#22-touchscreen-unknown-1-️)
-  - [23. Touchscreen Unknown 2 ⚠️](#23-touchscreen-unknown-2-️)
+  - [23. Valve State Broadcast ⚠️](#23-valve-state-broadcast-️)
+  - [24. Valve Sync to Controller ⚠️](#24-valve-sync-to-controller-️)
 - [Control Commands (Gateway to Controller)](#control-commands-gateway-to-controller)
-  - [24. Light Zone Control Command ✅](#24-light-zone-control-command-)
-  - [25. Channel Toggle Command ✅](#25-channel-toggle-command-)
-  - [26. Temperature Setpoint Command ✅](#26-temperature-setpoint-command-)
-  - [27. Heater Control Command ✅](#27-heater-control-command-)
-  - [28. Mode Control Command (Pool/Spa) ✅](#28-mode-control-command-poolspa-)
+  - [25. Light Zone Control Command ✅](#25-light-zone-control-command-)
+  - [26. Channel Toggle Command ✅](#26-channel-toggle-command-)
+  - [27. Temperature Setpoint Command ✅](#27-temperature-setpoint-command-)
+  - [28. Heater Control Command ✅](#28-heater-control-command-)
+  - [29. Mode Control Command (Pool/Spa) ✅](#29-mode-control-command-poolspa-)
 - [Appendix A: Register Dispatch Table](#appendix-a-register-dispatch-table)
 - [Implementation Notes](#implementation-notes)
 
@@ -113,7 +114,7 @@ The command byte (byte 7) identifies the message type. Some command values are s
 |--------|-----------------------|------------------------|------------|
 | `0x38` | Register Data         | Touchscreen → Broadcast | [§8](#8-register-messages-universal-register-system-️) |
 | `0x39` | Register Read Request | Gateway → Touchscreen  | [§19](#19-register-read-requestresponse) |
-| `0x3A` | Register Write        | Gateway → Controller   | [§24](#24-light-zone-control-command-), [§27](#27-heater-control-command-) |
+| `0x3A` | Register Write        | Gateway → Controller   | [§25](#25-light-zone-control-command-), [§28](#28-heater-control-command-) |
 
 **Device status (0x12, shared across three devices)**
 
@@ -139,8 +140,9 @@ The command byte (byte 7) identifies the message type. Some command values are s
 | `0x0D` | Active Channels Bitmask   | [§6](#6-active-channels-bitmask-️) |
 | `0x14` | Mode (Spa/Pool)           | [§1](#1-mode-message-spapool-) |
 | `0x17` | Temperature Settings      | [§2](#2-temperature-settings-) |
+| `0x25` | Valve Sync (to Controller)| [§24](#24-valve-sync-to-controller-️) |
 | `0x26` | Configuration             | [§5](#5-configuration-️) |
-| `0x27` | Unknown 2                 | [§23](#23-touchscreen-unknown-2-️) |
+| `0x27` | Valve State Broadcast     | [§23](#23-valve-state-broadcast-️) |
 | `0x38` | Register Data             | [§8](#8-register-messages-universal-register-system-️) |
 | `0xFD` | Controller Clock          | [§20](#20-controller-daytimeclock-) |
 
@@ -171,11 +173,11 @@ The command byte (byte 7) identifies the message type. Some command values are s
 
 | CMD    | Meaning                   | Section |
 |--------|---------------------------|---------|
-| `0x10` | Channel Toggle            | [§25](#25-channel-toggle-command-) |
-| `0x19` | Temperature Setpoint      | [§26](#26-temperature-setpoint-command-) |
-| `0x2A` | Mode Control (Pool/Spa)   | [§28](#28-mode-control-command-poolspa-) |
+| `0x10` | Channel Toggle            | [§26](#26-channel-toggle-command-) |
+| `0x19` | Temperature Setpoint      | [§27](#27-temperature-setpoint-command-) |
+| `0x2A` | Mode Control (Pool/Spa)   | [§29](#29-mode-control-command-poolspa-) |
 | `0x39` | Register Read Request     | [§19](#19-register-read-requestresponse) |
-| `0x3A` | Register Write            | [§24](#24-light-zone-control-command-), [§27](#27-heater-control-command-) |
+| `0x3A` | Register Write            | [§25](#25-light-zone-control-command-), [§28](#28-heater-control-command-) |
 
 ---
 
@@ -208,12 +210,13 @@ The command byte (byte 7) identifies the message type. Some command values are s
 | 20 | Controller Day/Time/Clock         | `0x0050` | `02 00 50 FF FF 80 00 FD 0F DC`           | ✅     |                                     |
 | 21 | Touchscreen Firmware Version      | `0x0050` | `02 00 50 FF FF 80 00 0A 0E E8`           | ✅     | Same cmd byte as §17                |
 | 22 | Touchscreen Unknown 1             | `0x0050` | `02 00 50 FF FF 80 00 12 0E F0`           | ⚠️     | Same cmd byte as §18                |
-| 23 | Touchscreen Unknown 2             | `0x0050` | `02 00 50 FF FF 80 00 27 0D 04`           | ⚠️     |                                     |
-| 24 | Light Zone Control Command        | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§27](#27-heater-control-command-) |
-| 25 | Channel Toggle Command            | `0x00F0` | `02 00 F0 FF FF 80 00 10 0D 8D`           | ✅     |                                     |
-| 26 | Temperature Setpoint Command      | `0x00F0` | `02 00 F0 FF FF 80 00 19 0F 98`           | ✅     |                                     |
-| 27 | Heater Control Command            | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§24](#24-light-zone-control-command-); different reg |
-| 28 | Mode Control Command              | `0x00F0` | `02 00 F0 00 50 80 00 2A 0D F9`           | ✅     | Dst=`0x0050` (not broadcast)        |
+| 23 | Valve State Broadcast             | `0x0050` | `02 00 50 FF FF 80 00 27 0D 04`           | ⚠️     | Two LENGTH variants: 0x0D (short) and 0x13 (full state) |
+| 24 | Valve Sync to Controller          | `0x0050` | `02 00 50 00 6F 80 00 25 0D 73`           | ⚠️     | Dst=`0x006F` (Controller)           |
+| 25 | Light Zone Control Command        | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§28](#28-heater-control-command-) |
+| 26 | Channel Toggle Command            | `0x00F0` | `02 00 F0 FF FF 80 00 10 0D 8D`           | ✅     |                                     |
+| 27 | Temperature Setpoint Command      | `0x00F0` | `02 00 F0 FF FF 80 00 19 0F 98`           | ✅     |                                     |
+| 28 | Heater Control Command            | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§25](#25-light-zone-control-command-); different reg |
+| 29 | Mode Control Command              | `0x00F0` | `02 00 F0 00 50 80 00 2A 0D F9`           | ✅     | Dst=`0x0050` (not broadcast)        |
 
 ---
 
@@ -1038,27 +1041,118 @@ Broadcast consistently after the firmware version message (`0A 0E E8`). Currentl
 
 ---
 
-### 23. Touchscreen Unknown 2 ⚠️
+### 23. Valve State Broadcast ✅
 
-Broadcast consistently after the version number message (`27 0D 04`). Currently appears to always have data value `00`.
+Broadcast by the touchscreen to report the configured and active state of all valve zones. Appears in two LENGTH variants.
 
-**Pattern:** `02 00 50 FF FF 80 00 27 0D 04`
+**Pattern (short form):** `02 00 50 FF FF 80 00 27 0D 04`
 
-**Example:**
+Used at startup before valve state is available; always carries a single zero data byte.
+
+**Pattern (long form):** `02 00 50 FF FF 80 00 27 13 0A`
+
+Carries live per-valve state. Each valve occupies 3 bytes (configured flag, state, active flag).
+
+**Example — Short form:**
 
 ```
 02 00 50 FF FF 80 00 27 0D 04 00 00 03
-                              ^^ Unknown (always 0x00)
+                              ^^ Data (always 0x00)
+```
+
+**Example — Long form, both valves off:**
+
+```
+02 00 50 FF FF 80 00 27 13 0A 02 01 00 00 01 00 00 04 03
+                              ^^ Slot count (0x02 = 2 slots)
+                                 ^^ Valve 1 configured (0x01 = yes)
+                                    ^^ Valve 1 state (0x00 = Off)
+                                       ^^ Valve 1 active (0x00 = Inactive)
+                                          ^^ Valve 2 configured (0x01 = yes)
+                                             ^^ Valve 2 state (0x00 = Off)
+                                                ^^ Valve 2 active (0x00 = Inactive)
+```
+
+**Example — Long form, Valve 1 On and active:**
+
+```
+02 00 50 FF FF 80 00 27 13 0A 02 01 02 01 01 00 00 07 03
+                                    ^^ Valve 1 state: 0x02 = On
+                                       ^^ Valve 1 active: 0x01 = Active
+```
+
+**Example — Long form, Valve 2 On and active:**
+
+```
+02 00 50 FF FF 80 00 27 13 0A 02 01 00 00 01 02 01 07 03
+                                          ^^ Valve 2 state: 0x02 = On
+                                             ^^ Valve 2 active: 0x01 = Active
+```
+
+**Data Fields (long form):**
+
+- Byte 10: Valve slot count (0x02 = 2 slots)
+- Bytes 11–13: Valve 1 entry:
+  - Byte 11: Configured (`0x00` = not present, `0x01` = configured)
+  - Byte 12: State (`0x00` = Off, `0x01` = Auto, `0x02` = On)
+  - Byte 13: Active (`0x00` = Inactive, `0x01` = Active)
+- Bytes 14–16: Valve 2 entry (same layout as bytes 11–13)
+
+**State Values:**
+
+- `0x00`: Off
+- `0x01`: Auto (only for valves configured with Auto mode)
+- `0x02`: On
+
+**Notes:**
+
+- The short form (LENGTH=`0x0D`) appears at startup; the long form (LENGTH=`0x13`) carries live state
+- Valves not yet configured appear as `00 00 00` in their slot
+- Whether a valve supports Auto mode depends on its configuration; in the observed capture valve 1 was configured without Auto, valve 2 was configured with Auto
+- Valve labels are stored via the register system (`0xD0`–`0xD1`, Slot `0x02`); see [Appendix A](#appendix-a-register-dispatch-table)
+- State transitions correlate exactly with [§24 Valve Sync to Controller](#24-valve-sync-to-controller-️)
+
+---
+
+### 24. Valve Sync to Controller ⚠️
+
+Sent by the touchscreen directly to the controller (destination `0x006F`) to synchronise the overall valve active status. Emitted as part of the regular broadcast cycle.
+
+**Pattern:** `02 00 50 00 6F 80 00 25 0D 73`
+
+**Example — No valve active:**
+
+```
+02 00 50 00 6F 80 00 25 0D 73 00 00 03
+                              ^^ Active flag: 0x00 = no valve active
+```
+
+**Example — At least one valve active:**
+
+```
+02 00 50 00 6F 80 00 25 0D 73 01 01 03
+                              ^^ Active flag: 0x01 = valve(s) active
 ```
 
 **Data Fields:**
 
-- Byte 10: Unknown
-- Byte 11: Unknown
+- Byte 10: Valve active bitmask — one bit per valve slot (`0x00` = no valve active, bit 0 = valve 1, bit 1 = valve 2)
+- Byte 11: DATA_CHECKSUM (equals byte 10)
+
+**Observed values:**
+
+| Value | Meaning |
+|-------|---------|
+| `0x00` | No valves active |
+| `0x01` | Valve 1 active only |
+| `0x02` | Valve 2 active only |
+| `0x03` | Both valves active |
 
 **Notes:**
 
-- This message is broadcast by the controller as part of the regular system status sequence
+- Unlike most touchscreen messages which broadcast (`FF FF`), this is addressed specifically to the Controller (`0x006F`)
+- Mirrors the OR of all `active` flags in [§23](#23-valve-state-broadcast-) encoded as a bitmask
+- Emitted every broadcast cycle (~60 s); may lag behind real-time valve state changes by up to one cycle
 
 ---
 
@@ -1068,7 +1162,7 @@ The following commands can be sent from the Internet Gateway (or emulated gatewa
 
 ---
 
-### 24. Light Zone Control Command ✅
+### 25. Light Zone Control Command ✅
 
 Command to set light zone state (On/Off/Auto).
 
@@ -1132,7 +1226,7 @@ Command to set light zone state (On/Off/Auto).
 
 ---
 
-### 25. Channel Toggle Command ✅
+### 26. Channel Toggle Command ✅
 
 Command to cycle a channel through its available states (Auto → On → Off, or On → Off depending on channel type).
 
@@ -1184,7 +1278,7 @@ Command to cycle a channel through its available states (Auto → On → Off, or
 
 ---
 
-### 26. Temperature Setpoint Command ✅
+### 27. Temperature Setpoint Command ✅
 
 Command to set the pool or spa temperature setpoint. The temperature byte is repeated twice within the payload.
 
@@ -1224,9 +1318,9 @@ Command to set the pool or spa temperature setpoint. The temperature byte is rep
 
 ---
 
-### 27. Heater Control Command ✅
+### 28. Heater Control Command ✅
 
-Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern as the Light Zone Control Command ([Section 24](#24-light-zone-control-command-)), but with a different register ID and slot.
+Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern as the Light Zone Control Command ([Section 25](#25-light-zone-control-command-)), but with a different register ID and slot.
 
 **Pattern:** `02 00 F0 FF FF 80 00 3A 0F B9`
 
@@ -1265,7 +1359,7 @@ Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern a
 
 ---
 
-### 28. Mode Control Command (Pool/Spa) ✅
+### 29. Mode Control Command (Pool/Spa) ✅
 
 Command to switch between Pool and Spa operating modes.
 
@@ -1467,7 +1561,7 @@ State values: `0x00` = Off, `0x01` = Auto, `0x02` = On
 | …        | …       | —             | —             | ✅ read-only   |
 | `0x93`   | 8       | —             | —             | ✅ read-only   |
 
-> Channel state is **read-only** via the register system. To change channel state, use the [Channel Toggle Command (§25)](#25-channel-toggle-command-).
+> Channel state is **read-only** via the register system. To change channel state, use the [Channel Toggle Command (§26)](#26-channel-toggle-command-).
 
 **Lighting Zones:**
 

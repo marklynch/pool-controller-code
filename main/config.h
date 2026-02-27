@@ -59,6 +59,7 @@
 
 #define MAX_CHANNELS                   8       // Maximum number of controllable channels
 #define MAX_LIGHT_ZONES                4       // Maximum number of light zones
+#define MAX_VALVE_SLOTS                2       // Maximum number of valve slots
 #define MAX_TIMERS                     16      // Maximum number of timers (registers 0x08-0x17)
 
 // ======================================================

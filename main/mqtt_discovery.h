@@ -11,4 +11,7 @@ void mqtt_publish_channel_discovery_single(int channel_num, const char *channel_
 // Publish individual light discovery (called when light first configured or name changes)
 void mqtt_publish_light_discovery_single(int zone_num, const char *zone_name);
 
+// Publish individual valve discovery (called when valve first configured or name changes)
+void mqtt_publish_valve_discovery_single(int valve_num, const char *valve_name);
+
 #endif // MQTT_DISCOVERY_H

@@ -47,6 +47,13 @@ typedef struct {
 } lighting_state_t;
 
 typedef struct {
+    char name[32];      // Label string (from register 0xD0+, Slot 0x02); empty if not yet received
+    uint8_t state;      // 0=Off, 1=Auto, 2=On (same encoding as channel state)
+    bool active;        // true if currently running
+    bool configured;    // true if this slot is occupied by a configured valve
+} valve_state_t;
+
+typedef struct {
     uint8_t timer_num;      // 1-based timer number
     uint8_t start_hour;
     uint8_t start_minute;
@@ -84,6 +91,10 @@ typedef struct {
     // Channels (up to MAX_CHANNELS)
     channel_state_t channels[MAX_CHANNELS];
     uint8_t num_channels;
+
+    // Valves (up to MAX_VALVE_SLOTS)
+    valve_state_t valves[MAX_VALVE_SLOTS];
+    uint8_t num_valve_slots;
 
     // Lighting (up to MAX_LIGHT_ZONES)
     lighting_state_t lighting[MAX_LIGHT_ZONES];

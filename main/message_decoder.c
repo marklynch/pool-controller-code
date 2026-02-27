@@ -70,6 +70,8 @@ static const char *MSG_TYPE_CONTROLLER_TIME =       "02 00 50 FF FF 80 00 FD 0F 
 static const char *MSG_TYPE_TOUCHSCREEN_VERSION =   "02 00 50 FF FF 80 00 0A 0E E8";
 static const char *MSG_TYPE_TOUCHSCREEN_UNKNOWN1 =  "02 00 50 FF FF 80 00 12 0E F0";
 static const char *MSG_TYPE_TOUCHSCREEN_UNKNOWN2 =  "02 00 50 FF FF 80 00 27 0D 04";
+static const char *MSG_TYPE_TOUCHSCREEN_UNKNOWN3 =  "02 00 50 FF FF 80 00 05 0D E2";
+static const char *MSG_TYPE_VALVE_STATE =           "02 00 50 FF FF 80 00 27 13 0A";
 
 // 62 Temperature sensor / Unknown subsystem
 static const char *MSG_TYPE_TEMP_READING =          "02 00 62 FF FF 80 00 16 0E 06";
@@ -420,6 +422,8 @@ static bool handle_valve_label(const uint8_t *data, int len, const uint8_t *payl
 static bool handle_register_label_generic(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_temp_setpoint(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_channel_count(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_valve_state(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_touchscreen_unknown3(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 
 /**
  * Register message dispatch table
@@ -841,17 +845,97 @@ static bool handle_touchscreen_unknown2(
     const char *addr_info,
     message_decoder_context_t *ctx)
 {
-    if (payload_len < 2) return false;
+    // Short form of valve state broadcast (startup / no valve state available)
+    ESP_LOGI(TAG, "%s Valve state broadcast (startup form)", addr_info);
+    return true;
+}
 
-    uint8_t data_byte1 = payload[0];
-    uint8_t data_byte2 = payload[1];
+/**
+ * Handler: Touchscreen unknown broadcast (CMD 0x05)
+ * Invariant across all captures: data byte always 0x01.
+ * Silenced here to avoid spurious "Unhandled" warnings.
+ */
+static bool handle_touchscreen_unknown3(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    ESP_LOGD(TAG, "%s Touchscreen unknown (CMD 0x05): 0x%02X", addr_info,
+             payload_len > 0 ? payload[0] : 0);
+    return true;
+}
 
-    if (data_byte1 != 0x00 || data_byte2 != 0x00) {
-        ESP_LOGW(TAG, "%s Controller status - UNEXPECTED VALUE: Byte1: 0x%02X (%d), Byte2: 0x%02X (%d) (expected 0x00 0x00)",
-                 addr_info, data_byte1, data_byte1, data_byte2, data_byte2);
-    } else {
-        ESP_LOGI(TAG, "%s Controller status - Byte1: 0x%02X (%d), Byte2: 0x%02X (%d)",
-                 addr_info, data_byte1, data_byte1, data_byte2, data_byte2);
+/**
+ * Handler: Valve state broadcast (long form)
+ * Pattern: "02 00 50 FF FF 80 00 27 13 0A"
+ * Byte 10: slot count; then 3 bytes per slot: [configured][state][active]
+ */
+static bool handle_valve_state(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 1) return false;
+
+    uint8_t slot_count = payload[0];
+    if (slot_count > MAX_VALVE_SLOTS) slot_count = MAX_VALVE_SLOTS;
+
+    if (payload_len < 1 + slot_count * 3) {
+        ESP_LOGW(TAG, "%s Valve state - truncated payload (slots=%d, payload_len=%d)",
+                 addr_info, slot_count, payload_len);
+        return true;
+    }
+
+    // Log each configured valve before taking the mutex
+    for (int i = 0; i < slot_count; i++) {
+        bool configured = (payload[1 + i * 3] == 0x01);
+        uint8_t state   = payload[2 + i * 3];
+        bool active     = (payload[3 + i * 3] == 0x01);
+        if (configured) {
+            const char *state_name = (state < CHANNEL_STATE_COUNT) ? CHANNEL_STATE_NAMES[state] : "Unknown";
+            ESP_LOGI(TAG, "%s Valve %d - %s (%s)", addr_info, i + 1,
+                     state_name, active ? "Active" : "Inactive");
+        }
+    }
+
+    bool changed = false;
+    bool new_valve_configured = false;
+    pool_state_t state_snapshot;
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ctx->pool_state->num_valve_slots = slot_count;
+        for (int i = 0; i < slot_count; i++) {
+            bool configured = (payload[1 + i * 3] == 0x01);
+            uint8_t state   = payload[2 + i * 3];
+            bool active     = (payload[3 + i * 3] == 0x01);
+            valve_state_t *v = &ctx->pool_state->valves[i];
+            if (!v->configured && configured) {
+                new_valve_configured = true;
+            }
+            if (v->configured != configured || v->state != state || v->active != active) {
+                v->configured = configured;
+                v->state      = state;
+                v->active     = active;
+                changed = true;
+            }
+        }
+        if (changed) {
+            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        }
+        state_snapshot = *ctx->pool_state;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    // Wake the register requester to fetch the label for any newly seen valve
+    if (new_valve_configured) {
+        register_requester_notify();
+    }
+
+    if (changed && ctx->enable_mqtt) {
+        for (int i = 0; i < slot_count; i++) {
+            mqtt_publish_valve(&state_snapshot, i + 1);
+        }
     }
 
     return true;
@@ -1770,6 +1854,14 @@ static bool handle_valve_label(
             ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
         }
 
+        // Also store directly in valve state for MQTT name-change detection
+        int valve_idx = reg_id - 0xD0;
+        if (valve_idx >= 0 && valve_idx < MAX_VALVE_SLOTS) {
+            strncpy(ctx->pool_state->valves[valve_idx].name, label,
+                    sizeof(ctx->pool_state->valves[valve_idx].name) - 1);
+            ctx->pool_state->valves[valve_idx].name[sizeof(ctx->pool_state->valves[valve_idx].name) - 1] = '\0';
+        }
+
         xSemaphoreGive(ctx->state_mutex);
     }
 
@@ -2169,8 +2261,16 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         return handle_touchscreen_unknown1(data, len, payload, payload_len, addr_info, ctx);
     }
 
+    if (match_pattern(data, len, MSG_TYPE_VALVE_STATE)) {
+        return handle_valve_state(data, len, payload, payload_len, addr_info, ctx);
+    }
+
     if (match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_UNKNOWN2)) {
         return handle_touchscreen_unknown2(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    if (match_pattern(data, len, MSG_TYPE_TOUCHSCREEN_UNKNOWN3)) {
+        return handle_touchscreen_unknown3(data, len, payload, payload_len, addr_info, ctx);
     }
 
     // No handler matched - log as unknown

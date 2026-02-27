@@ -632,6 +632,42 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         }
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "],");
 
+        // Valves section
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"valves\":[");
+        bool first_valve = true;
+        for (int i = 0; i < s_pool_state.num_valve_slots && i < MAX_VALVE_SLOTS; i++) {
+            if (!s_pool_state.valves[i].configured) continue;
+
+            if (!first_valve) len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
+            first_valve = false;
+
+            // Look up label from register_labels (reg_id 0xD0 = valve 1, 0xD1 = valve 2, ...)
+            uint8_t reg_id = 0xD0 + i;
+            const char *label = NULL;
+            for (int j = 0; j < 32; j++) {
+                if (s_pool_state.register_labels[j].valid &&
+                    s_pool_state.register_labels[j].reg_id == reg_id) {
+                    label = s_pool_state.register_labels[j].label;
+                    break;
+                }
+            }
+
+            char fallback[16];
+            if (!label) {
+                snprintf(fallback, sizeof(fallback), "Valve %d", i + 1);
+                label = fallback;
+            }
+
+            const char *state_name = (s_pool_state.valves[i].state < CHANNEL_STATE_COUNT) ?
+                                     CHANNEL_STATE_NAMES[s_pool_state.valves[i].state] : "Unknown";
+
+            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
+                           "{\"id\":%d,\"name\":\"%s\",\"state\":\"%s\",\"active\":%s}",
+                           i + 1, label, state_name,
+                           s_pool_state.valves[i].active ? "true" : "false");
+        }
+        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "],");
+
         // Chlorinator section
         len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"chlorinator\":{");
         if (s_pool_state.ph_valid) {

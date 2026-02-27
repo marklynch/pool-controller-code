@@ -12,10 +12,11 @@ static const char *TAG = "MQTT_PUBLISH";
 // Last published state (for change detection) - using pool_state_t as single source of truth
 static pool_state_t s_last_published_state = {0};
 
-// Track whether discovery has been published for each channel/light
+// Track whether discovery has been published for each channel/light/valve
 static struct {
-    bool channels[8];
-    bool lights[4];
+    bool channels[MAX_CHANNELS];
+    bool lights[MAX_LIGHT_ZONES];
+    bool valves[MAX_VALVE_SLOTS];
 } s_discovery_published = {0};
 
 // ======================================================
@@ -342,4 +343,76 @@ void mqtt_publish_chlorinator(const pool_state_t *current_state)
     ESP_LOGI(TAG, "Published chlorinator: pH=%.1f (sp=%.1f), ORP=%d (sp=%d)",
              current_state->ph_reading / 10.0, current_state->ph_setpoint / 10.0,
              current_state->orp_reading, current_state->orp_setpoint);
+}
+
+// ======================================================
+// Valve Publishing
+// ======================================================
+
+void mqtt_publish_valve(const pool_state_t *current_state, uint8_t valve_num)
+{
+    if (valve_num < 1 || valve_num > MAX_VALVE_SLOTS) {
+        return;
+    }
+
+    int idx = valve_num - 1;
+    const valve_state_t *valve = &current_state->valves[idx];
+
+    if (!valve->configured) {
+        ESP_LOGD(TAG, "Skipping unconfigured valve %d", valve_num);
+        return;
+    }
+
+    // Re-publish discovery if the valve name has changed since last publish
+    if (s_discovery_published.valves[idx] &&
+        strcmp(s_last_published_state.valves[idx].name, valve->name) != 0) {
+        s_discovery_published.valves[idx] = false;
+    }
+
+    // Publish discovery if this is the first time seeing this valve (or name changed)
+    if (!s_discovery_published.valves[idx]) {
+        mqtt_publish_valve_discovery_single(valve_num, valve->name[0] != '\0' ? valve->name : NULL);
+        s_discovery_published.valves[idx] = true;
+    }
+
+    // Check if anything changed
+    if (s_last_published_state.valves[idx].configured &&
+        s_last_published_state.valves[idx].state == valve->state &&
+        s_last_published_state.valves[idx].active == valve->active &&
+        strcmp(s_last_published_state.valves[idx].name, valve->name) == 0) {
+        return;  // No change, skip publish
+    }
+
+    char device_id[32];
+    mqtt_get_device_id(device_id, sizeof(device_id));
+
+    char topic[128];
+    snprintf(topic, sizeof(topic), "pool/%s/valve/%d/state", device_id, valve_num);
+
+    static const char *STATE_NAMES[] = {"Off", "Auto", "On"};
+    const char *state_name = (valve->state < 3) ? STATE_NAMES[valve->state] : "Unknown";
+
+    const char *display_name = (valve->name[0] != '\0') ? valve->name : NULL;
+    char fallback_name[16];
+    if (!display_name) {
+        snprintf(fallback_name, sizeof(fallback_name), "Valve %d", valve_num);
+        display_name = fallback_name;
+    }
+
+    char payload[128];
+    snprintf(payload, sizeof(payload),
+             "{\"state\":\"%s\",\"active\":%s,\"name\":\"%s\"}",
+             state_name, valve->active ? "true" : "false", display_name);
+
+    mqtt_publish(topic, payload, 0, true);
+
+    // Update last published state
+    s_last_published_state.valves[idx].state = valve->state;
+    s_last_published_state.valves[idx].active = valve->active;
+    strncpy(s_last_published_state.valves[idx].name, valve->name,
+            sizeof(s_last_published_state.valves[idx].name) - 1);
+    s_last_published_state.valves[idx].name[sizeof(s_last_published_state.valves[idx].name) - 1] = '\0';
+    s_last_published_state.valves[idx].configured = true;
+
+    ESP_LOGI(TAG, "Published valve %d: %s (%s)", valve_num, state_name, display_name);
 }

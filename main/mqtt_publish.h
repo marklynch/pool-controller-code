@@ -23,4 +23,7 @@ void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone);
 // Publish chlorinator data (pH and ORP) from pool state
 void mqtt_publish_chlorinator(const pool_state_t *current_state);
 
+// Publish valve state by number (1-based) from pool state
+void mqtt_publish_valve(const pool_state_t *current_state, uint8_t valve_num);
+
 #endif // MQTT_PUBLISH_H

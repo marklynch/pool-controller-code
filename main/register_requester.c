@@ -44,6 +44,8 @@ static void register_requester_task(void *arg)
         bool light_configured[MAX_LIGHT_ZONES] = {0};
         bool light_multicolor_valid[MAX_LIGHT_ZONES] = {0};
         bool light_name_valid[MAX_LIGHT_ZONES] = {0};
+        bool valve_configured[MAX_VALVE_SLOTS] = {0};
+        bool valve_label_valid[MAX_VALVE_SLOTS] = {0};
 
         if (s_pool_state_mutex &&
             xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
@@ -55,6 +57,17 @@ static void register_requester_task(void *arg)
                 light_configured[i]       = s_pool_state.lighting[i].configured;
                 light_multicolor_valid[i] = s_pool_state.lighting[i].multicolor_valid;
                 light_name_valid[i]       = s_pool_state.lighting[i].name_valid;
+            }
+            for (int i = 0; i < MAX_VALVE_SLOTS; i++) {
+                valve_configured[i] = s_pool_state.valves[i].configured;
+                uint8_t reg_id = 0xD0 + i;
+                for (int j = 0; j < 32; j++) {
+                    if (s_pool_state.register_labels[j].valid &&
+                        s_pool_state.register_labels[j].reg_id == reg_id) {
+                        valve_label_valid[i] = true;
+                        break;
+                    }
+                }
             }
             xSemaphoreGive(s_pool_state_mutex);
         }
@@ -91,6 +104,16 @@ static void register_requester_task(void *arg)
                     char desc[24];
                     snprintf(desc, sizeof(desc), "light %d name", i + 1);
                     send_request(0xB0 + i, 0x01, desc);
+                }
+            }
+
+            // Request missing valve labels for configured valves
+            for (int i = 0; i < MAX_VALVE_SLOTS; i++) {
+                if (!valve_configured[i]) continue;
+                if (!valve_label_valid[i]) {
+                    char desc[24];
+                    snprintf(desc, sizeof(desc), "valve %d label", i + 1);
+                    send_request(0xD0 + i, 0x02, desc);
                 }
             }
         }

@@ -500,6 +500,61 @@ void mqtt_publish_light_discovery_single(int zone_num, const char *zone_name)
 }
 
 // ======================================================
+// Valve Sensor Discovery
+// ======================================================
+
+static void publish_valve_discovery(const char *device_id, const char *mac_suffix,
+                                    int valve_num, const char *valve_name)
+{
+    char avail_topic[128];
+    char state_topic[128];
+    snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
+    snprintf(state_topic, sizeof(state_topic), "pool/%s/valve/%d/state", device_id, valve_num);
+
+    char device_json[512];
+    build_device_json(device_json, sizeof(device_json), device_id, mac_suffix);
+
+    char uid[64];
+    snprintf(uid, sizeof(uid), DISCOVERY_ID_PREFIX "_%s_valve%d", mac_suffix, valve_num);
+
+    char display_name[48];
+    if (valve_name && valve_name[0] != '\0') {
+        snprintf(display_name, sizeof(display_name), "%s", valve_name);
+    } else {
+        snprintf(display_name, sizeof(display_name), "Valve %d", valve_num);
+    }
+
+    char *config = malloc(MQTT_DISCOVERY_CONFIG_SIZE);
+    if (!config) {
+        ESP_LOGE(TAG, "Failed to allocate memory for valve discovery config");
+        return;
+    }
+
+    snprintf(config, MQTT_DISCOVERY_CONFIG_SIZE,
+             "{\"name\":\"%s\","
+             "\"state_topic\":\"%s\","
+             "\"value_template\":\"{{ value_json.state }}\","
+             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"availability_topic\":\"%s\",%s}",
+             display_name, state_topic, uid, uid, avail_topic, device_json);
+
+    publish_discovery("sensor", uid, config);
+    free(config);
+}
+
+void mqtt_publish_valve_discovery_single(int valve_num, const char *valve_name)
+{
+    char device_id[32];
+    mqtt_get_device_id(device_id, sizeof(device_id));
+
+    char mac_suffix[DEVICE_MAC_SUFFIX_LEN];
+    device_get_mac_suffix(mac_suffix, sizeof(mac_suffix));
+
+    ESP_LOGI(TAG, "Publishing discovery for valve %d: %s", valve_num, valve_name ? valve_name : "(unnamed)");
+    publish_valve_discovery(device_id, mac_suffix, valve_num, valve_name);
+}
+
+// ======================================================
 // Main Discovery Function
 // ======================================================
 
