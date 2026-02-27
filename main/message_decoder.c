@@ -419,6 +419,7 @@ static bool handle_light_zone_name(const uint8_t *data, int len, const uint8_t *
 static bool handle_valve_label(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_register_label_generic(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_temp_setpoint(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_channel_count(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 
 /**
  * Register message dispatch table
@@ -449,6 +450,7 @@ static const register_handler_t REGISTER_HANDLERS[] = {
 
     // Temperature setpoints (slot 0x00, registers 0xE7=Pool, 0xE8=Spa)
     {0xE7, 0xE8, 0x00, handle_temp_setpoint,          "Temperature Setpoint"},
+    {0xF4, 0xF4, 0x01, handle_channel_count,          "Channel Count"},
 };
 
 #define REGISTER_HANDLER_COUNT (sizeof(REGISTER_HANDLERS) / sizeof(REGISTER_HANDLERS[0]))
@@ -518,6 +520,33 @@ static bool handle_temp_setpoint(
 
     if (ctx->enable_mqtt) {
         mqtt_publish_temperature(&state_snapshot);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Channel count
+ * Register 0xF4, Slot 0x01
+ * Reports the total number of channels configured in the system.
+ */
+static bool handle_channel_count(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t count = payload[2];
+    if (count > MAX_CHANNELS) count = MAX_CHANNELS;
+
+    ESP_LOGI(TAG, "%s Channel count - %d", addr_info, count);
+
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ctx->pool_state->num_channels = count;
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        xSemaphoreGive(ctx->state_mutex);
     }
 
     return true;

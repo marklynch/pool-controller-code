@@ -1331,6 +1331,7 @@ The register ID and slot together determine the message meaning. The slot distin
 | `0xD0`–`0xD1`  | `0x02` | Valve Labels           | Null-terminated ASCII string                     |
 | `0xD0`–`0xD7`  | `0x01` | Light Zone Color       | 1-byte color code                                |
 | `0xE0`–`0xE7`  | `0x01` | Light Zone Active      | 1-byte binary (`0x00`=Inactive, `0x01`=Active)   |
+| `0xF4`         | `0x01` | Channel Count          | 1-byte total number of channels in the system    |
 | `0xE6`         | `0x00` | Heater State           | 1-byte (`0x00`=Off, `0x01`=On)                   |
 | `0xE7`         | `0x00` | Pool Temperature Setpoint | 1-byte °C value                               |
 | `0xE8`         | `0x00` | Spa Temperature Setpoint  | 1-byte °C value                               |

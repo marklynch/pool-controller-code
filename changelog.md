@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added checks for the header checksum and validate against field length
 - Added known command bytes section to the `PROTOCOL.md` file
 - Added register entries support for channel state  - Register range: `0x8C-0x93`, Slot: `0x02`
+- Added support for number of channels register: `0xF4` Slot: `0x01`
 
 ### Changed
 - Updated documentation based on new understanding of header checksum
