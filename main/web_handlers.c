@@ -245,7 +245,6 @@ static esp_err_t home_get_handler(httpd_req_t *req)
 
 // HTML page for WiFi provisioning
 const char WIFI_PAGE[] =
-    "<div class='container'>"
     "<h1>WiFi Configuration</h1>"
     "<form id='wifiForm'>"
     "<div data-field>"
@@ -261,7 +260,6 @@ const char WIFI_PAGE[] =
     "<button type='submit'>Connect</button>"
     "<div id='status' role='alert' hidden class='mt-4'></div>"
     "</form>"
-    "</div>"
     "<script>"
     "function showStatus(msg,isError){"
         "const s=document.getElementById('status');"
@@ -812,13 +810,11 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 static esp_err_t status_view_get_handler(httpd_req_t *req)
 {
     const char *status_view_page =
-        "<div class='container'>"
         "<h1>Pool Controller Status</h1>"
         "<p class='text-right'><small><a href='/status'>View raw JSON</a></small></p>"
         "<div id='status-error' role='alert' data-variant='danger' hidden></div>"
         "<pre><code id='status-content'>Loading status...</code></pre>"
         "<p id='time-info' class='text-lighter mt-4' hidden></p>"
-        "</div>"
         "<script>"
         "fetch('/status').then(r=>r.json()).then(data=>{"
         "const fmt=(obj,indent=0)=>{"
@@ -896,7 +892,6 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
     int display_port = config.port > 0 ? config.port : MQTT_DEFAULT_PORT;
 
     const char *html_start =
-        "<div class='container'>"
         "<h1>MQTT Configuration</h1>"
         "<form id='mqttForm'>";
 
@@ -928,7 +923,7 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
     const char *html_end =
         "<button type='submit'>Save Configuration</button>"
         "<div id='status' role='alert' hidden class='mt-4'></div>"
-        "</form></div>"
+        "</form>"
         "<script>"
         "document.getElementById('mqttForm').addEventListener('submit',function(e){"
         "e.preventDefault();"
@@ -1085,7 +1080,6 @@ static esp_err_t update_get_handler(httpd_req_t *req)
              update_partition ? update_partition->label : "unknown");
 
     const char *html_start =
-        "<div class='container'>"
         "<h1>Firmware Update</h1>"
         "<div role='alert'>"
         "<strong>Current Version:</strong> ";
@@ -1104,7 +1098,7 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "<div id='status' role='alert' hidden class='mt-4'></div>"
         "<progress id='progressBar' value='0' max='100' hidden class='mt-4'></progress>"
         "<p id='progressText' hidden class='text-center mt-2'></p>"
-        "</form></div>"
+        "</form>"
         "<script>"
         "document.getElementById('updateForm').addEventListener('submit',function(e){"
         "e.preventDefault();"

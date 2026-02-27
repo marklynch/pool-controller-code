@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+- Fixed inconsistent layout between pages by removing un-needed div container
 ### Security
 
 ## [0.7.0] - 2026-02-25
