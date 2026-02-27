@@ -1324,6 +1324,7 @@ The register ID and slot together determine the message meaning. The slot distin
 | `0x31`–`0x38`  | `0x03` | Favourite Labels       | Null-terminated ASCII string                     |
 | `0x6C`–`0x73`  | `0x02` | Channel Types          | 1-byte type code (see [Section 7](#7-channel-status-) channel types)   |
 | `0x7C`–`0x83`  | `0x02` | Channel Names          | Null-terminated ASCII string                     |
+| `0x8C`–`0x93`  | `0x02` | Channel State          | 1-byte value (0=Off, 1=Auto, 2=On) — read-only; writes ignored by controller |
 | `0xA0`–`0xA7`  | `0x01` | Light Zone Multicolor  | 1-byte flag (`0x00`=No, `0x01`=Yes)              |
 | `0xB0`–`0xB7`  | `0x01` | Light Zone Name        | 1-byte preset name code (see [name codes table](#light-zone-name-codes)) |
 | `0xC0`–`0xC7`  | `0x01` | Light Zone State       | 1-byte value (0=Off, 1=Auto, 2=On)               |
@@ -1359,6 +1360,19 @@ The register ID and slot together determine the message meaning. The slot distin
                                  ^^ Slot 0x02 (Name)
                                     F  i  l  t  e  r  \0
 ```
+
+**Channel State (`0x8C`–`0x93`, Slot `0x02`):**
+
+```
+02 00 50 FF FF 80 00 38 0F 17 8C 02 02 90 03
+                              ^^ Channel 1 (0x8C)
+                                 ^^ Slot 0x02 (State)
+                                    ^^ Value: 0x02 = On
+```
+
+State values: `0x00` = Off, `0x01` = Auto, `0x02` = On
+
+> Read-only — write commands (`0x3A`) targeting these registers are silently ignored.
 
 **Light Zone State (`0xC0`–`0xC7`, Slot `0x01`):**
 
@@ -1436,16 +1450,23 @@ The register ID and slot together determine the message meaning. The slot distin
 
 ### Register ID Mappings
 
-**Channels (`0x6C`–`0x73`):**
+**Channels:**
 
-- `0x6C`: Channel 1
-- `0x6D`: Channel 2
-- `0x6E`: Channel 3
-- `0x6F`: Channel 4
-- `0x70`: Channel 5
-- `0x71`: Channel 6
-- `0x72`: Channel 7
-- `0x73`: Channel 8
+| Register | Channel | Type (`0x02`) | Name (`0x02`) | State (`0x02`) |
+|----------|---------|---------------|---------------|----------------|
+| `0x6C`   | 1       | ✅            | —             | —              |
+| `0x6D`   | 2       | ✅            | —             | —              |
+| …        | …       | ✅            | —             | —              |
+| `0x73`   | 8       | ✅            | —             | —              |
+| `0x7C`   | 1       | —             | ✅            | —              |
+| …        | …       | —             | ✅            | —              |
+| `0x83`   | 8       | —             | ✅            | —              |
+| `0x8C`   | 1       | —             | —             | ✅ read-only   |
+| `0x8D`   | 2       | —             | —             | ✅ read-only   |
+| …        | …       | —             | —             | ✅ read-only   |
+| `0x93`   | 8       | —             | —             | ✅ read-only   |
+
+> Channel state is **read-only** via the register system. To change channel state, use the [Channel Toggle Command (§25)](#25-channel-toggle-command-).
 
 **Lighting Zones:**
 

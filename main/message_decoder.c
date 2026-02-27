@@ -410,6 +410,7 @@ typedef struct {
 static bool handle_timer(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_channel_type(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_channel_name(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_channel_state(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_light_zone_state(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_light_zone_color(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_light_zone_active(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
@@ -431,6 +432,7 @@ static const register_handler_t REGISTER_HANDLERS[] = {
     // Channel configuration
     {0x6C, 0x73, 0x02, handle_channel_type,       "Channel Type"},
     {0x7C, 0x83, 0x02, handle_channel_name,       "Channel Name"},
+    {0x8C, 0x93, 0x02, handle_channel_state,      "Channel State"},
 
     // Lighting zones
     {0xA0, 0xA7, 0x01, handle_light_zone_multicolor, "Light Zone Multicolor"},
@@ -1442,6 +1444,51 @@ static bool handle_channel_name(
             }
             xSemaphoreGive(ctx->state_mutex);
         }
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Channel state (read-only broadcast)
+ * Register range: 0x8C-0x93, Slot: 0x02
+ * Values: 0x00=Off, 0x01=Auto, 0x02=On
+ * Note: write commands (0x3A) targeting these registers are silently ignored by the controller.
+ *       Use the Channel Toggle Command to change channel state.
+ */
+static bool handle_channel_state(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    uint8_t state  = payload[2];
+    uint8_t ch_num = reg_id - 0x8C + 1;
+
+    const char *state_name = (state < CHANNEL_STATE_COUNT) ? CHANNEL_STATE_NAMES[state] : "Unknown";
+    ESP_LOGI(TAG, "%s Channel %d state - %s", addr_info, ch_num, state_name);
+
+    if (ch_num > MAX_CHANNELS) return true;
+
+    pool_state_t state_snapshot;
+    bool changed = false;
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        channel_state_t *ch = &ctx->pool_state->channels[ch_num - 1];
+        if (!ch->configured || ch->state != state) {
+            ch->state = state;
+            ch->configured = true;
+            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            changed = true;
+        }
+        state_snapshot = *ctx->pool_state;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    if (changed && ctx->enable_mqtt) {
+        mqtt_publish_channel(&state_snapshot, ch_num);
     }
 
     return true;
