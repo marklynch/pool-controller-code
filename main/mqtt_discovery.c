@@ -90,7 +90,7 @@ static void publish_temperature_discovery(const char *device_id, const char *mac
              "\"icon\":\"mdi:thermometer\","
              "\"state_topic\":\"%s\",\"unit_of_measurement\":\"°C\","
              "\"value_template\":\"{{ value_json.current }}\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"sensor.%s\","
              "\"availability_topic\":\"%s\",%s}",
              state_topic, uid, uid, avail_topic, device_json);
 
@@ -123,7 +123,7 @@ static void publish_pool_setpoint_discovery(const char *device_id, const char *m
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,\"mode\":\"box\","
              "\"value_template\":\"{{ value_json.pool_sp }}\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"number.%s\","
              "\"availability_topic\":\"%s\",%s}",
              state_topic, command_topic, uid, uid, avail_topic, device_json);
 
@@ -157,7 +157,7 @@ static void publish_spa_setpoint_discovery(const char *device_id, const char *ma
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,\"mode\":\"box\","
              "\"value_template\":\"{{ value_json.spa_sp }}\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"number.%s\","
              "\"availability_topic\":\"%s\",%s}",
              state_topic, command_topic, uid, uid, avail_topic, device_json);
 
@@ -189,7 +189,7 @@ static void publish_heater_discovery(const char *device_id, const char *mac_suff
              "{\"name\":\"Heater\",\"icon\":\"mdi:radiator\","
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"switch.%s\","
              "\"availability_topic\":\"%s\",%s}",
              state_topic, command_topic, uid, uid, avail_topic, device_json);
 
@@ -215,11 +215,11 @@ static void publish_mode_discovery(const char *device_id, const char *mac_suffix
     char uid[64];
     snprintf(uid, sizeof(uid), DISCOVERY_ID_PREFIX "_%s_mode", mac_suffix);
 
-    char config[1152];
+    char config[1280];
     snprintf(config, sizeof(config),
              "{\"name\":\"Mode\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"options\":[\"Pool\",\"Spa\"],"
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"select.%s\","
              "\"availability_topic\":\"%s\",%s}",
              state_topic, command_topic, uid, uid, avail_topic, device_json);
 
@@ -280,7 +280,7 @@ static void publish_channel_discovery(const char *device_id, const char *mac_suf
     snprintf(config, MQTT_DISCOVERY_CONFIG_SIZE,
              "{\"name\":\"%s\",\"state_topic\":\"%s\","
              "\"value_template\":\"{{ value_json.state }}\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"sensor.%s\","
              "\"availability_topic\":\"%s\",%s}",
              display_name, state_topic, sensor_uid, sensor_uid, avail_topic, device_json);
     publish_discovery("sensor", sensor_uid, config);
@@ -289,7 +289,7 @@ static void publish_channel_discovery(const char *device_id, const char *mac_suf
     snprintf(config, MQTT_DISCOVERY_CONFIG_SIZE,
              "{\"name\":\"%s\",\"command_topic\":\"%s\","
              "\"payload_press\":\"TOGGLE\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"button.%s\","
              "\"availability_topic\":\"%s\",%s}",
              display_name, command_topic, button_uid, button_uid, avail_topic, device_json);
     publish_discovery("button", button_uid, config);
@@ -335,7 +335,7 @@ static void publish_light_discovery(const char *device_id, const char *mac_suffi
              "{\"name\":\"%s\",\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
              "\"state_value_template\":\"{%% if value_json.state == 'On' %%}ON{%% else %%}OFF{%% endif %%}\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"light.%s\","
              "\"availability_topic\":\"%s\",%s}",
              display_name, state_topic, command_topic, uid, uid, avail_topic, device_json);
 
@@ -363,12 +363,11 @@ static void publish_ph_discovery(const char *device_id, const char *mac_suffix)
     char config[1152];
     snprintf(config, sizeof(config),
              "{\"name\":\"pH\","
+             "\"device_class\":\"ph\","
              "\"state_topic\":\"%s\","
              "\"state_class\":\"measurement\","
              "\"value_template\":\"{{ value_json.ph }}\","
-             "\"unit_of_measurement\":\"pH\","
-             "\"icon\":\"mdi:ph\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"sensor.%s\","
              "\"availability_topic\":\"%s\",%s}",
              state_topic, uid, uid, avail_topic, device_json);
 
@@ -400,7 +399,7 @@ static void publish_orp_discovery(const char *device_id, const char *mac_suffix)
              "\"state_class\":\"measurement\","
              "\"value_template\":\"{{ value_json.orp }}\","
              "\"unit_of_measurement\":\"mV\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"sensor.%s\","
              "\"availability_topic\":\"%s\",%s}",
              state_topic, uid, uid, avail_topic, device_json);
 
@@ -432,7 +431,7 @@ static void publish_ph_setpoint_discovery(const char *device_id, const char *mac
              "\"value_template\":\"{{ value_json.ph_setpoint }}\","
              "\"unit_of_measurement\":\"pH\","
              "\"icon\":\"mdi:ph\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"sensor.%s\","
              "\"availability_topic\":\"%s\",%s}",
              state_topic, uid, uid, avail_topic, device_json);
 
@@ -463,7 +462,7 @@ static void publish_orp_setpoint_discovery(const char *device_id, const char *ma
              "\"state_topic\":\"%s\","
              "\"value_template\":\"{{ value_json.orp_setpoint }}\","
              "\"unit_of_measurement\":\"mV\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"sensor.%s\","
              "\"availability_topic\":\"%s\",%s}",
              state_topic, uid, uid, avail_topic, device_json);
 
@@ -537,7 +536,7 @@ static void publish_valve_discovery(const char *device_id, const char *mac_suffi
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
              "\"options\":[\"Off\",\"Auto\",\"On\"],"
              "\"value_template\":\"{{ value_json.state }}\","
-             "\"unique_id\":\"%s\",\"object_id\":\"%s\","
+             "\"unique_id\":\"%s\",\"default_entity_id\":\"select.%s\","
              "\"availability_topic\":\"%s\",%s}",
              display_name, state_topic, command_topic, uid, uid, avail_topic, device_json);
 

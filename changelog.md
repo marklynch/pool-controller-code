@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed inconsistent layout between pages by removing un-needed div container
 - Fixed issue where web requests were enabled due to stale connections
+- Fixed MQTT discovery to use `default_entity_id` instead of deprecated `object_id` (breaking in HA 2026.4)
+- Fixed pH sensor discovery to use `device_class: ph` without `unit_of_measurement` (unit is invalid with this device class)
 
 ### Security
 
