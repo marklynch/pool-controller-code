@@ -14,6 +14,7 @@ Tested as working:
 - Temperature set points for pool and spa work ✅
 - Heater on/off works ✅
 - Channel switching working - toggle On/Auto/Off ✅
+- Valves reading and switching working ✅
 - Reading of timers ✅
 - Reading of ORP/PH settings ✅
 - Reading of water temperature ✅

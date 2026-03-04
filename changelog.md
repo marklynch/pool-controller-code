@@ -9,11 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [TODO]
 - Sometimes messages fail - likely clashing message on bus. Make them do a retry
-- Valves are not yet supported
 - Solar is not yet supported
 
 ## [Unreleased]
 ### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed
+### Security
+
+## [0.8.0] - 2026-03-04
+### Added
+- Added support for valves, including reading name, and showing a sensor for state.
+- Added support for changing valve state
 - Added support for E7/E8 slot 0 pool and spa set point temperature registers
 - Display total channels in the touchscreen section
 - Display Active state as well as status in logging of channel state
@@ -21,23 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added known command bytes section to the `PROTOCOL.md` file
 - Added register entries support for channel state  - Register range: `0x8C-0x93`, Slot: `0x02`
 - Added support for number of channels register: `0xF4` Slot: `0x01`
-- Added support for valves, including reading name, and showing a sensor for state.
-- Added support for changing valve state
 
 ### Changed
 - Updated documentation based on new understanding of header checksum
 - Combined register messages, timers, and register labels into a single section
 - Simplified per message validation now that full data structure is known
 
-### Deprecated
-### Removed
 ### Fixed
 - Fixed inconsistent layout between pages by removing un-needed div container
 - Fixed issue where web requests were enabled due to stale connections
 - Fixed MQTT discovery to use `default_entity_id` instead of deprecated `object_id` (breaking in HA 2026.4)
 - Fixed pH sensor discovery to use `device_class: ph` without `unit_of_measurement` (unit is invalid with this device class)
-
-### Security
 
 ## [0.7.0] - 2026-02-25
 ### Added
