@@ -17,7 +17,7 @@
 esp_err_t wifi_provisioning_init(void);
 
 /**
- * Save WiFi credentials to NVS
+ * Save WiFi credentials via the WiFi driver (persisted to flash automatically)
  *
  * @param ssid WiFi SSID
  * @param password WiFi password

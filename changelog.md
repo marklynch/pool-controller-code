@@ -14,12 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
-- Restructured partition table to fit 4MB flash: removed factory partition, expanded OTA slots to 1.875MB each (0x1E0000)
 ### Deprecated
 ### Removed
 ### Fixed
-- Fixed printf format specifier portability issues for cross-chip compatibility (ESP32-C3/C6): use `PRId32`/`PRIu32`/`PRIX32` for `int32_t`/`uint32_t` and `%zu` for `size_t` instead of `%d`/`%lu`
 ### Security
+
+## [0.8.1] - 2026-03-09
+### Changed
+- Restructured partition table to fit 4MB flash: removed factory partition, expanded OTA slots to 1.875MB each (0x1E0000)
+- Simplified WiFi credential storage to use the ESP-IDF WiFi driver's built-in flash persistence instead of a separate custom NVS store
+
+### Fixed
+- Fixed SoftAP provisioning mode not starting when flash is blank: detect missing credentials in `WIFI_EVENT_STA_START` and signal provisioning immediately rather than waiting for connection retries that never fire
+- Fixed printf format specifier portability issues for cross-chip compatibility (ESP32-C3/C6): use `PRId32`/`PRIu32`/`PRIX32` for `int32_t`/`uint32_t` and `%zu` for `size_t` instead of `%d`/`%lu`
+- Fixed MQTT discovery to use `default_entity_id` instead of deprecated `object_id` (breaking in HA 2026.4)
+- Fixed pH sensor discovery to use `device_class: ph` without `unit_of_measurement` (unit is invalid with this device class)
 
 ## [0.8.0] - 2026-03-04
 ### Added

@@ -15,7 +15,6 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_app_desc.h"
-#include "nvs.h"
 #include <esp_http_server.h>
 #include "mdns.h"
 
@@ -47,77 +46,12 @@ static esp_err_t start_provisioning(void);
 // WiFi Credential Management
 // ======================================================
 
-static bool wifi_credentials_exist(void)
-{
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
-    if (err != ESP_OK) {
-        return false;
-    }
-
-    size_t required_size = 0;
-    err = nvs_get_str(nvs_handle, WIFI_PROV_NVS_KEY_SSID, NULL, &required_size);
-    nvs_close(nvs_handle);
-
-    return (err == ESP_OK && required_size > 0);
-}
-
-static esp_err_t wifi_credentials_load(char *ssid, size_t ssid_len, char *password, size_t pass_len)
-{
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    size_t ssid_size = ssid_len;
-    size_t pass_size = pass_len;
-
-    err = nvs_get_str(nvs_handle, WIFI_PROV_NVS_KEY_SSID, ssid, &ssid_size);
-    if (err == ESP_OK) {
-        err = nvs_get_str(nvs_handle, WIFI_PROV_NVS_KEY_PASS, password, &pass_size);
-    }
-
-    nvs_close(nvs_handle);
-    return err;
-}
-
-static esp_err_t wifi_credentials_clear(void)
-{
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    nvs_erase_key(nvs_handle, WIFI_PROV_NVS_KEY_SSID);
-    nvs_erase_key(nvs_handle, WIFI_PROV_NVS_KEY_PASS);
-    nvs_commit(nvs_handle);
-    nvs_close(nvs_handle);
-
-    ESP_LOGI(TAG, "WiFi credentials cleared from NVS");
-    return ESP_OK;
-}
-
 esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 {
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    err = nvs_set_str(nvs_handle, WIFI_PROV_NVS_KEY_SSID, ssid);
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs_handle, WIFI_PROV_NVS_KEY_PASS, password);
-    }
-
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_handle);
-    }
-
-    nvs_close(nvs_handle);
-    return err;
+    wifi_config_t wifi_cfg = {0};
+    strncpy((char *)wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid) - 1);
+    strncpy((char *)wifi_cfg.sta.password, password, sizeof(wifi_cfg.sta.password) - 1);
+    return esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
 }
 
 // ======================================================
@@ -205,7 +139,14 @@ static void wifi_event_handler(void *arg,
                                void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
+        wifi_config_t cfg = {0};
+        esp_wifi_get_config(WIFI_IF_STA, &cfg);
+        if (cfg.sta.ssid[0] != '\0') {
+            esp_wifi_connect();
+        } else {
+            ESP_LOGW(TAG, "No WiFi credentials - starting provisioning");
+            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+        }
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_wifi_connected = false;
         s_device_ip_address[0] = '\0';
@@ -229,7 +170,8 @@ static void wifi_event_handler(void *arg,
                     // Re-connection failed after being previously connected - clear and restart
                     ESP_LOGE(TAG, "WiFi re-connection failed after %d attempts - clearing credentials and restarting",
                              WIFI_MAX_RETRY_ATTEMPTS);
-                    wifi_credentials_clear();
+                    wifi_config_t empty_cfg = {0};
+                    esp_wifi_set_config(WIFI_IF_STA, &empty_cfg);
                     vTaskDelay(pdMS_TO_TICKS(WIFI_RESTART_DELAY_MS));
                     esp_restart();
                 }
@@ -366,25 +308,14 @@ static esp_err_t start_softap_provisioning(void)
 
 static esp_err_t start_provisioning(void)
 {
-    // Load credentials from NVS if available and configure STA
-    if (wifi_credentials_exist()) {
-        char ssid[33] = {0};
-        char password[64] = {0};
-        esp_err_t err = wifi_credentials_load(ssid, sizeof(ssid), password, sizeof(password));
-        if (err == ESP_OK) {
-            wifi_config_t wifi_cfg = {0};
-            memcpy(wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid));
-            memcpy(wifi_cfg.sta.password, password, sizeof(wifi_cfg.sta.password));
-            ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
-            ESP_LOGI(TAG, "WiFi credentials found, connecting to SSID: %s", ssid);
-        } else {
-            ESP_LOGW(TAG, "Failed to load credentials from NVS: %s", esp_err_to_name(err));
-        }
+    wifi_config_t wifi_cfg = {0};
+    esp_wifi_get_config(WIFI_IF_STA, &wifi_cfg);
+    if (wifi_cfg.sta.ssid[0] != '\0') {
+        ESP_LOGI(TAG, "WiFi credentials found, connecting to SSID: %s", wifi_cfg.sta.ssid);
     } else {
-        ESP_LOGI(TAG, "No WiFi credentials in NVS, trying with driver's saved config...");
+        ESP_LOGI(TAG, "No WiFi credentials configured");
     }
 
-    // Always start in STA mode - SoftAP provisioning only starts if connection fails
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
     return ESP_OK;

@@ -309,22 +309,13 @@ static esp_err_t wifi_get_handler(httpd_req_t *req)
 
 static esp_err_t scan_get_handler(httpd_req_t *req)
 {
-    // Load current WiFi SSID from NVS to mark it in results
+    // Load current WiFi SSID from the driver to mark it in scan results.
     char current_ssid[33] = {0};
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(WIFI_PROV_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
-    if (err == ESP_OK) {
-        size_t ssid_len = sizeof(current_ssid);
-        err = nvs_get_str(nvs_handle, WIFI_PROV_NVS_KEY_SSID, current_ssid, &ssid_len);
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "Loaded current SSID from NVS: '%s' (len=%zu)", current_ssid, ssid_len);
-        } else {
-            ESP_LOGW(TAG, "Failed to read SSID from NVS: %s", esp_err_to_name(err));
-        }
-        nvs_close(nvs_handle);
-    } else {
-        ESP_LOGW(TAG, "Failed to open %s NVS: %s", WIFI_PROV_NVS_NAMESPACE, esp_err_to_name(err));
+    wifi_config_t wifi_cfg = {0};
+    if (esp_wifi_get_config(WIFI_IF_STA, &wifi_cfg) == ESP_OK) {
+        strncpy(current_ssid, (char *)wifi_cfg.sta.ssid, sizeof(current_ssid) - 1);
     }
+    ESP_LOGI(TAG, "Current SSID: '%s'", current_ssid);
 
     wifi_scan_config_t scan_config = {
         .ssid = NULL,

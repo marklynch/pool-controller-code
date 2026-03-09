@@ -41,9 +41,6 @@
 #define WIFI_PROV_SOFTAP_IP            "192.168.4.1"
 #define WIFI_PROV_SOFTAP_PASSWORD      "poolsetup"     // Default password for provisioning AP
 #define WIFI_PROV_SOFTAP_SSID_PREFIX   "POOL_"         // Prefix for SoftAP SSID (followed by MAC address)
-#define WIFI_PROV_NVS_NAMESPACE        "wifi_config"   // NVS namespace for WiFi credentials
-#define WIFI_PROV_NVS_KEY_SSID         "ssid"          // NVS key for SSID
-#define WIFI_PROV_NVS_KEY_PASS         "password"      // NVS key for password
 #define WIFI_MAX_RETRY_ATTEMPTS        5               // Max connection attempts before clearing credentials
 #define WIFI_RETRY_DELAY_MS            5000            // Delay between retry attempts
 #define WIFI_RESTART_DELAY_MS          1000            // Delay before restart after clearing credentials
