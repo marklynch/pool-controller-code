@@ -133,7 +133,7 @@ static esp_err_t home_get_handler(httpd_req_t *req)
     const char *mdns_host = wifi_get_mdns_hostname();
 
     // System info table
-    char sys_table[700];
+    char sys_table[1024];
     snprintf(sys_table, sizeof(sys_table),
         "<h1>Pool Controller</h1>"
         "<h2>System</h2>"
