@@ -379,34 +379,41 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         }
     }
 
-    // Build JSON response from unique list
-    char *json_resp = malloc(HTTP_WIFI_SCAN_BUFFER_SIZE);
-    if (json_resp == NULL) {
+    // Build JSON response from unique list using cJSON to correctly escape SSIDs
+    cJSON *root = cJSON_CreateArray();
+    if (!root) {
         free(ap_list);
         free(unique_aps);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
         return ESP_FAIL;
     }
 
-    int len = snprintf(json_resp, HTTP_WIFI_SCAN_BUFFER_SIZE, "[");
     for (int i = 0; i < unique_count && i < WIFI_SCAN_MAX_RESULTS; i++) {
         bool is_current = (strcmp(unique_aps[i].ssid, current_ssid) == 0);
         ESP_LOGI(TAG, "Comparing '%s' with '%s': %s", unique_aps[i].ssid, current_ssid, is_current ? "MATCH" : "no match");
-        len += snprintf(json_resp + len, HTTP_WIFI_SCAN_BUFFER_SIZE - len,
-                       "%s{\"ssid\":\"%s\",\"rssi\":%d,\"current\":%s}",
-                       i > 0 ? "," : "",
-                       unique_aps[i].ssid,
-                       unique_aps[i].rssi,
-                       is_current ? "true" : "false");
+        cJSON *entry = cJSON_CreateObject();
+        cJSON_AddStringToObject(entry, "ssid", unique_aps[i].ssid);
+        cJSON_AddNumberToObject(entry, "rssi", unique_aps[i].rssi);
+        cJSON_AddBoolToObject(entry, "current", is_current);
+        cJSON_AddItemToArray(root, entry);
     }
-    len += snprintf(json_resp + len, HTTP_WIFI_SCAN_BUFFER_SIZE - len, "]");
+
+    char *json_resp = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json_resp) {
+        free(ap_list);
+        free(unique_aps);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON serialisation failed");
+        return ESP_FAIL;
+    }
 
     httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json_resp, len);
+    httpd_resp_send(req, json_resp, strlen(json_resp));
 
+    cJSON_free(json_resp);
     free(ap_list);
     free(unique_aps);
-    free(json_resp);
     return ESP_OK;
 }
 
