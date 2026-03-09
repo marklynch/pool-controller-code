@@ -257,17 +257,17 @@ esp_err_t mqtt_client_init(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Generate device ID
-    char device_id[32];
+    // Generate device ID — static so the pointer remains valid for the lifetime of the MQTT client
+    static char device_id[32];
     mqtt_get_device_id(device_id, sizeof(device_id));
     ESP_LOGI(TAG, "Device ID: %s", device_id);
 
-    // Build broker URI
-    char broker_uri[192];
+    // Build broker URI — static for the same reason
+    static char broker_uri[192];
     snprintf(broker_uri, sizeof(broker_uri), "mqtt://%s:%d", config.broker, config.port);
 
-    // Build LWT topic
-    char lwt_topic[128];
+    // Build LWT topic — static for the same reason
+    static char lwt_topic[128];
     snprintf(lwt_topic, sizeof(lwt_topic), "pool/%s/availability", device_id);
 
     // Configure MQTT client

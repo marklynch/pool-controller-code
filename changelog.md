@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+- Fixed `broker_uri`, `lwt_topic`, and `device_id` in `mqtt_poolclient.c` declared as stack buffers then passed as pointers to `esp_mqtt_client_init` — made `static` so their lifetime is unambiguously valid for the lifetime of the MQTT client
 - Fixed single-digit-only channel/light/valve number parsing in MQTT command handler — replaced `cmd_topic[N] - '0'` with `strtol`, validating that the parsed number is followed by `/` so multi-digit numbers and malformed topics are rejected cleanly
 - Fixed fragile `hexLine` buffer arithmetic in `tcp_bridge.c` — buffer size, loop guard, and `\r\n` append now all reference the same `+3`/`-3` constant, and the append uses `hex_pos + 2` instead of mutating `hex_pos++`
 - Fixed `s_log_client_sock` race in `tcp_bridge.c`: the log vprintf callback and the TCP bridge task both sent to the same client socket fd without synchronisation, causing interleaved output — all sends to `client_sock` now go through a `send_to_client` helper that holds `s_log_mutex`, serialising them with the vprintf sends
