@@ -181,11 +181,11 @@ static bool extract_and_process_message(int client_sock)
             // Found complete message!
             int msg_len = pos + 3;  // Include checksum and end byte
 
-            // Format as hex string
-            char hexLine[3 * BUS_MESSAGE_MAX_SIZE + 4];
+            // Format as hex string — reserve 3 bytes at end for \r\n\0
+            char hexLine[3 * BUS_MESSAGE_MAX_SIZE + 3];
             int hex_pos = 0;
             for (int i = 0; i < msg_len; i++) {
-                if (hex_pos < (int)(sizeof(hexLine) - 4)) {
+                if (hex_pos < (int)(sizeof(hexLine) - 3)) {
                     hex_pos += snprintf(&hexLine[hex_pos], sizeof(hexLine) - hex_pos,
                                       "%02X ", s_msg_buffer[i]);
                 }
@@ -216,9 +216,9 @@ static bool extract_and_process_message(int client_sock)
 
             // Send to TCP client if connected
             if (client_sock >= 0) {
-                hexLine[hex_pos++] = '\r';
-                hexLine[hex_pos++] = '\n';
-                send_to_client(client_sock, hexLine, hex_pos);
+                hexLine[hex_pos]     = '\r';
+                hexLine[hex_pos + 1] = '\n';
+                send_to_client(client_sock, hexLine, hex_pos + 2);
             }
 
             // Remove processed message from buffer
