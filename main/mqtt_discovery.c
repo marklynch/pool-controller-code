@@ -121,11 +121,11 @@ static void publish_pool_setpoint_discovery(const char *device_id, const char *m
              "{\"name\":\"Pool Setpoint\",\"device_class\":\"temperature\","
              "\"icon\":\"mdi:thermometer\","
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
-             "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,\"mode\":\"box\","
+             "\"unit_of_measurement\":\"°C\",\"min\":%d,\"max\":%d,\"step\":1,\"mode\":\"box\","
              "\"value_template\":\"{{ value_json.pool_sp }}\","
              "\"unique_id\":\"%s\",\"default_entity_id\":\"number.%s\","
              "\"availability_topic\":\"%s\",%s}",
-             state_topic, command_topic, uid, uid, avail_topic, device_json);
+             state_topic, command_topic, TEMP_SETPOINT_MIN_C, TEMP_SETPOINT_MAX_C, uid, uid, avail_topic, device_json);
 
     ESP_LOGI(TAG, "Publishing pool setpoint discovery: %s", config);
     publish_discovery("number", uid, config);
@@ -155,11 +155,11 @@ static void publish_spa_setpoint_discovery(const char *device_id, const char *ma
              "{\"name\":\"Spa Setpoint\",\"device_class\":\"temperature\","
              "\"icon\":\"mdi:thermometer\","
              "\"state_topic\":\"%s\",\"command_topic\":\"%s\","
-             "\"unit_of_measurement\":\"°C\",\"min\":10,\"max\":40,\"step\":1,\"mode\":\"box\","
+             "\"unit_of_measurement\":\"°C\",\"min\":%d,\"max\":%d,\"step\":1,\"mode\":\"box\","
              "\"value_template\":\"{{ value_json.spa_sp }}\","
              "\"unique_id\":\"%s\",\"default_entity_id\":\"number.%s\","
              "\"availability_topic\":\"%s\",%s}",
-             state_topic, command_topic, uid, uid, avail_topic, device_json);
+             state_topic, command_topic, TEMP_SETPOINT_MIN_C, TEMP_SETPOINT_MAX_C, uid, uid, avail_topic, device_json);
 
     ESP_LOGI(TAG, "Publishing spa setpoint discovery: %s", config);
     publish_discovery("number", uid, config);

@@ -54,6 +54,9 @@
 // Pool Hardware Limits
 // ======================================================
 
+#define TEMP_SETPOINT_MIN_C            10      // Minimum allowable setpoint temperature (°C)
+#define TEMP_SETPOINT_MAX_C            42      // Maximum allowable setpoint temperature (°C)
+
 #define MAX_CHANNELS                   8       // Maximum number of controllable channels
 #define MAX_LIGHT_ZONES                4       // Maximum number of light zones
 #define MAX_VALVE_SLOTS                2       // Maximum number of valve slots

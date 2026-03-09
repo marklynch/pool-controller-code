@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `strcpy` after `malloc` in web handlers HTML footer helper — replaced with `memcpy` using the already-known length
 - Fixed partial UART write silently treated as success in `send_uart_command` — now logs an error if fewer bytes were written than requested
 - Fixed fragile `strstr`/`strchr` JSON parsing in WiFi provisioning and MQTT config HTTP handlers — replaced with cJSON for correct handling of field ordering, escaped characters, and malformed input
+- Fixed `tcp_bridge_stop()` leaking the log mutex and leaving `esp_log_set_vprintf` pointing at a stale callback — now restores original vprintf and deletes the mutex on stop
+- Fixed magic number temperature limits replaced with `TEMP_SETPOINT_MIN_C` (10°C) and `TEMP_SETPOINT_MAX_C` (42°C) constants shared across validation and MQTT discovery — also corrected the validation minimum which was incorrectly set to 15°C
 
 
 ## [0.8.1] - 2026-03-09

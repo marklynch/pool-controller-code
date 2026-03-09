@@ -210,8 +210,9 @@ static void handle_temperature_command(bool is_pool, const char *payload, int pa
     ESP_LOGI(TAG, "%s setpoint command: %ld°C", is_pool ? "Pool" : "Spa", temp_c);
 
     // Validate temperature range (Celsius)
-    if (temp_c < 15 || temp_c > 42) {
-        ESP_LOGE(TAG, "Temperature out of range: %ld°C (valid: 15-42)", temp_c);
+    if (temp_c < TEMP_SETPOINT_MIN_C || temp_c > TEMP_SETPOINT_MAX_C) {
+        ESP_LOGE(TAG, "Temperature out of range: %" PRId32 "°C (valid: %d-%d)",
+                 temp_c, TEMP_SETPOINT_MIN_C, TEMP_SETPOINT_MAX_C);
         return;
     }
 

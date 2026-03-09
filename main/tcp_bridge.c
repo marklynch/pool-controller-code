@@ -524,6 +524,17 @@ esp_err_t tcp_bridge_stop(void)
     vTaskDelete(s_bridge_task_handle);
     s_bridge_task_handle = NULL;
 
+    // Restore original vprintf and clean up log mutex
+    if (s_original_vprintf) {
+        esp_log_set_vprintf(s_original_vprintf);
+        s_original_vprintf = NULL;
+    }
+    if (s_log_mutex) {
+        tcp_bridge_set_log_client(-1);
+        vSemaphoreDelete(s_log_mutex);
+        s_log_mutex = NULL;
+    }
+
     ESP_LOGI(TAG, "TCP bridge stopped");
     return ESP_OK;
 }
