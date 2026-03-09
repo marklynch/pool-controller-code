@@ -4,6 +4,7 @@
 #include "register_requester.h"
 #include "esp_log.h"
 #include <string.h>
+#include <inttypes.h>
 
 static const char *TAG = "MSG_DECODER";
 
@@ -955,7 +956,7 @@ static bool handle_serial_number(
 
     // Serial number is in payload[1-4] (little endian)
     uint32_t serial = UINT32_LE(payload, 1);
-    ESP_LOGI(TAG, "%s Serial number - %lu (0x%08lX)", addr_info, (unsigned long)serial, (unsigned long)serial);
+    ESP_LOGI(TAG, "%s Serial number - %" PRIu32 " (0x%08" PRIX32 ")", addr_info, serial, serial);
 
     // Update state only (no MQTT publishing)
     if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {

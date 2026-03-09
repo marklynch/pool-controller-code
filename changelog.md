@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+- Fixed printf format specifier portability issues for cross-chip compatibility (ESP32-C3/C6): use `PRId32`/`PRIu32`/`PRIX32` for `int32_t`/`uint32_t` and `%zu` for `size_t` instead of `%d`/`%lu`
 ### Security
 
 ## [0.8.0] - 2026-03-04

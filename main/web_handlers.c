@@ -14,6 +14,7 @@
 #include "esp_partition.h"
 #include "nvs_flash.h"
 #include <string.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -316,7 +317,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         size_t ssid_len = sizeof(current_ssid);
         err = nvs_get_str(nvs_handle, WIFI_PROV_NVS_KEY_SSID, current_ssid, &ssid_len);
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "Loaded current SSID from NVS: '%s' (len=%d)", current_ssid, ssid_len);
+            ESP_LOGI(TAG, "Loaded current SSID from NVS: '%s' (len=%zu)", current_ssid, ssid_len);
         } else {
             ESP_LOGW(TAG, "Failed to read SSID from NVS: %s", esp_err_to_name(err));
         }

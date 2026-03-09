@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <inttypes.h>
 
 static const char *TAG = "MQTT_COMMANDS";
 
@@ -234,7 +235,7 @@ static void handle_temperature_command(bool is_pool, const char *payload, int pa
         0x03              // END
     };
 
-    ESP_LOGI(TAG, "Setting %s setpoint to %d°C", is_pool ? "pool" : "spa", temp_c);
+    ESP_LOGI(TAG, "Setting %s setpoint to %" PRId32 "°C", is_pool ? "pool" : "spa", temp_c);
     send_uart_command(cmd, sizeof(cmd));
 }
 
