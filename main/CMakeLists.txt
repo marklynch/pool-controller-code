@@ -33,4 +33,5 @@ idf_component_register(
         driver
         mqtt
         mdns
+        json
 )

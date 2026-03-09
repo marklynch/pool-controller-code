@@ -15,7 +15,7 @@
 static const char *TAG = "TCP_BRIDGE";
 
 // Loopback tracking for TX echo detection
-static uint8_t s_last_tx_msg[256];
+static uint8_t s_last_tx_msg[BUS_MESSAGE_MAX_SIZE];
 static int s_last_tx_len = 0;
 static TickType_t s_last_tx_time = 0;
 

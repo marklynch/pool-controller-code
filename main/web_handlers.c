@@ -15,6 +15,7 @@
 #include "nvs_flash.h"
 #include <string.h>
 #include <inttypes.h>
+#include "cJSON.h"
 #include <stdlib.h>
 #include <time.h>
 
@@ -91,9 +92,10 @@ char *get_page_nav(const char page) {
 
 char *get_page_footer(void) {
     const char *str = "</main></div></body></html>";
-    char *footer = malloc(strlen(str) + 1);
+    size_t len = strlen(str);
+    char *footer = malloc(len + 1);
     if (!footer) return NULL;
-    strcpy(footer, str);
+    memcpy(footer, str, len + 1);
     return footer;
 }
 
@@ -427,33 +429,20 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
     }
     content[ret] = '\0';
 
-    // Simple JSON parsing (looking for ssid and password fields)
     char ssid[33] = {0};
     char password[64] = {0};
 
-    char *ssid_start = strstr(content, "\"ssid\":\"");
-    char *pass_start = strstr(content, "\"password\":\"");
-
-    if (ssid_start && pass_start) {
-        ssid_start += 8; // Skip "ssid":"
-        char *ssid_end = strchr(ssid_start, '"');
-        if (ssid_end) {
-            int ssid_len = ssid_end - ssid_start;
-            if (ssid_len < sizeof(ssid)) {
-                memcpy(ssid, ssid_start, ssid_len);
-                ssid[ssid_len] = '\0';
-            }
+    cJSON *json = cJSON_Parse(content);
+    if (json) {
+        cJSON *ssid_item = cJSON_GetObjectItem(json, "ssid");
+        cJSON *pass_item = cJSON_GetObjectItem(json, "password");
+        if (cJSON_IsString(ssid_item) && ssid_item->valuestring) {
+            strncpy(ssid, ssid_item->valuestring, sizeof(ssid) - 1);
         }
-
-        pass_start += 12; // Skip "password":"
-        char *pass_end = strchr(pass_start, '"');
-        if (pass_end) {
-            int pass_len = pass_end - pass_start;
-            if (pass_len < sizeof(password)) {
-                memcpy(password, pass_start, pass_len);
-                password[pass_len] = '\0';
-            }
+        if (cJSON_IsString(pass_item) && pass_item->valuestring) {
+            strncpy(password, pass_item->valuestring, sizeof(password) - 1);
         }
+        cJSON_Delete(json);
     }
 
     if (strlen(ssid) == 0) {
@@ -1013,57 +1002,32 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
         config.port = MQTT_DEFAULT_PORT;
     }
 
-    char *enabled_start = strstr(content, "\"enabled\":");
-    if (enabled_start) {
-        enabled_start += 10;
-        config.enabled = (strncmp(enabled_start, "true", 4) == 0);
-    }
+    cJSON *json = cJSON_Parse(content);
+    if (json) {
+        cJSON *enabled_item  = cJSON_GetObjectItem(json, "enabled");
+        cJSON *broker_item   = cJSON_GetObjectItem(json, "broker");
+        cJSON *port_item     = cJSON_GetObjectItem(json, "port");
+        cJSON *username_item = cJSON_GetObjectItem(json, "username");
+        cJSON *password_item = cJSON_GetObjectItem(json, "password");
 
-    char *broker_start = strstr(content, "\"broker\":\"");
-    if (broker_start) {
-        broker_start += 10;
-        char *broker_end = strchr(broker_start, '"');
-        if (broker_end) {
-            int broker_len = broker_end - broker_start;
-            if (broker_len < sizeof(config.broker)) {
-                memcpy(config.broker, broker_start, broker_len);
-                config.broker[broker_len] = '\0';
-            }
+        if (cJSON_IsBool(enabled_item)) {
+            config.enabled = cJSON_IsTrue(enabled_item);
         }
-    }
-
-    char *port_start = strstr(content, "\"port\":");
-    if (port_start) {
-        port_start += 7;
-        config.port = atoi(port_start);
-    }
-
-    char *username_start = strstr(content, "\"username\":\"");
-    if (username_start) {
-        username_start += 12;
-        char *username_end = strchr(username_start, '"');
-        if (username_end) {
-            int username_len = username_end - username_start;
-            if (username_len < sizeof(config.username)) {
-                memcpy(config.username, username_start, username_len);
-                config.username[username_len] = '\0';
-            }
+        if (cJSON_IsString(broker_item) && broker_item->valuestring) {
+            strncpy(config.broker, broker_item->valuestring, sizeof(config.broker) - 1);
         }
-    }
-
-    char *password_start = strstr(content, "\"password\":\"");
-    if (password_start) {
-        password_start += 12;
-        char *password_end = strchr(password_start, '"');
-        if (password_end) {
-            int password_len = password_end - password_start;
-            // Only update password if a non-empty value was submitted
-            if (password_len > 0 && password_len < sizeof(config.password)) {
-                memcpy(config.password, password_start, password_len);
-                config.password[password_len] = '\0';
-            }
-            // If empty, keep existing password (already loaded from config)
+        if (cJSON_IsNumber(port_item)) {
+            config.port = (uint16_t)port_item->valueint;
         }
+        if (cJSON_IsString(username_item) && username_item->valuestring) {
+            strncpy(config.username, username_item->valuestring, sizeof(config.username) - 1);
+        }
+        // Only update password if a non-empty value was submitted; otherwise keep existing
+        if (cJSON_IsString(password_item) && password_item->valuestring &&
+            password_item->valuestring[0] != '\0') {
+            strncpy(config.password, password_item->valuestring, sizeof(config.password) - 1);
+        }
+        cJSON_Delete(json);
     }
 
     ESP_LOGI(TAG, "Received MQTT config: enabled=%d, broker=%s, port=%d",
