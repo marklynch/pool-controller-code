@@ -625,7 +625,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
             // Look up label from register_labels (reg_id 0xD0 = valve 1, 0xD1 = valve 2, ...)
             uint8_t reg_id = 0xD0 + i;
             const char *label = NULL;
-            for (int j = 0; j < 32; j++) {
+            for (int j = 0; j < MAX_REGISTER_LABELS; j++) {
                 if (s_pool_state.register_labels[j].valid &&
                     s_pool_state.register_labels[j].reg_id == reg_id) {
                     label = s_pool_state.register_labels[j].label;

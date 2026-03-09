@@ -61,7 +61,7 @@ static void register_requester_task(void *arg)
             for (int i = 0; i < MAX_VALVE_SLOTS; i++) {
                 valve_configured[i] = s_pool_state.valves[i].configured;
                 uint8_t reg_id = 0xD0 + i;
-                for (int j = 0; j < 32; j++) {
+                for (int j = 0; j < MAX_REGISTER_LABELS; j++) {
                     if (s_pool_state.register_labels[j].valid &&
                         s_pool_state.register_labels[j].reg_id == reg_id) {
                         valve_label_valid[i] = true;
