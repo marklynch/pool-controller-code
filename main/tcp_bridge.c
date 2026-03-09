@@ -41,6 +41,22 @@ static SemaphoreHandle_t s_log_mutex = NULL;
 static vprintf_like_t s_original_vprintf = NULL;
 
 /**
+ * Send data to the TCP client under the client mutex.
+ * All sends to client_sock must go through this to prevent interleaving
+ * with the log vprintf callback, which can fire from any task at any time.
+ */
+static void send_to_client(int sock, const void *data, int len)
+{
+    if (sock < 0 || len <= 0) {
+        return;
+    }
+    if (s_log_mutex && xSemaphoreTake(s_log_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        send(sock, data, len, 0);
+        xSemaphoreGive(s_log_mutex);
+    }
+}
+
+/**
  * Custom vprintf that outputs to both console and TCP client
  */
 static int tcp_bridge_vprintf(const char *fmt, va_list args)
@@ -55,12 +71,12 @@ static int tcp_bridge_vprintf(const char *fmt, va_list args)
         va_end(args_copy);
     }
 
-    // Format for TCP outside the mutex — vsnprintf is CPU-only, no reason to hold the lock for it
+    // Format outside the mutex — vsnprintf is CPU-only, no reason to hold the lock for it
     if (s_log_mutex) {
         char log_buf[256];
         int tcp_len = vsnprintf(log_buf, sizeof(log_buf), fmt, args);
 
-        // Lock only for the socket read + send
+        // Use timeout 0: log callbacks must never block, so drop the message on contention
         if (tcp_len > 0 && xSemaphoreTake(s_log_mutex, 0) == pdTRUE) {
             if (s_log_client_sock >= 0) {
                 send(s_log_client_sock, log_buf, tcp_len, MSG_DONTWAIT);
@@ -202,10 +218,7 @@ static bool extract_and_process_message(int client_sock)
             if (client_sock >= 0) {
                 hexLine[hex_pos++] = '\r';
                 hexLine[hex_pos++] = '\n';
-                int sent = send(client_sock, hexLine, hex_pos, 0);
-                if (sent < 0) {
-                    ESP_LOGD(TAG, "Client send error: errno %d", errno);
-                }
+                send_to_client(client_sock, hexLine, hex_pos);
             }
 
             // Remove processed message from buffer
@@ -310,7 +323,7 @@ static void tcp_bridge_task(void *pvParameters)
                     "UART bytes will be shown here in hex.\r\n"
                     "Decoded messages will also be shown.\r\n"
                     "Send hex strings (e.g., '02 00 50 FF FF 03') to transmit to the bus.\r\n\r\n";
-                send(client_sock, hello, strlen(hello), 0);
+                send_to_client(client_sock, hello, strlen(hello));
 
                 // Enable log forwarding for this client
                 tcp_bridge_set_log_client(client_sock);
@@ -356,7 +369,7 @@ static void tcp_bridge_task(void *pvParameters)
                     char c = tcp_buf[i];
 
                     // Echo the character back to the client
-                    send(client_sock, &c, 1, 0);
+                    send_to_client(client_sock, &c, 1);
 
                     if (c == '\n' || c == '\r') {
                         // End of line - process the accumulated command
@@ -389,7 +402,7 @@ static void tcp_bridge_task(void *pvParameters)
                             int sent = s_config.uart_write(line_buf);
                             if (sent > 0) {
                                 const char *ok_msg = "OK - sent\r\n";
-                                send(client_sock, ok_msg, strlen(ok_msg), 0);
+                                send_to_client(client_sock, ok_msg, strlen(ok_msg));
 
                                 // Decode the sent message (will be logged via custom vprintf)
                                 if (s_config.decode_message && s_last_tx_len > 0) {
@@ -402,7 +415,7 @@ static void tcp_bridge_task(void *pvParameters)
                                 }
                             } else {
                                 const char *err_msg = "ERROR - invalid hex string\r\n";
-                                send(client_sock, err_msg, strlen(err_msg), 0);
+                                send_to_client(client_sock, err_msg, strlen(err_msg));
                                 s_last_tx_len = 0;  // Clear on error
                             }
 
@@ -420,7 +433,7 @@ static void tcp_bridge_task(void *pvParameters)
                         } else {
                             // Buffer full - reset
                             const char *overflow_msg = "\r\nERROR - line too long\r\n";
-                            send(client_sock, overflow_msg, strlen(overflow_msg), 0);
+                            send_to_client(client_sock, overflow_msg, strlen(overflow_msg));
                             line_pos = 0;
                         }
                     }
