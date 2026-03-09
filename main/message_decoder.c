@@ -1839,7 +1839,7 @@ static bool handle_valve_label(
     pool_state_t state_snapshot;
     if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
         int slot = -1;
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < MAX_REGISTER_LABELS; i++) {
             if (ctx->pool_state->register_labels[i].valid && ctx->pool_state->register_labels[i].reg_id == reg_id) {
                 slot = i;
                 break;
@@ -1901,7 +1901,7 @@ static bool handle_register_label_generic(
     // Update pool state
     if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
         int slot = -1;
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < MAX_REGISTER_LABELS; i++) {
             if (ctx->pool_state->register_labels[i].valid && ctx->pool_state->register_labels[i].reg_id == reg_id) {
                 slot = i;
                 break;

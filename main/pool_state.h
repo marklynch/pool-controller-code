@@ -100,7 +100,7 @@ typedef struct {
     lighting_state_t lighting[MAX_LIGHT_ZONES];
 
     // Register labels (general storage for register names like favourites, etc.)
-    register_label_t register_labels[32];  // Support up to 32 different register labels
+    register_label_t register_labels[MAX_REGISTER_LABELS];
 
     // Device serial number
     uint32_t serial_number;
