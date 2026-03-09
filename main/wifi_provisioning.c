@@ -72,7 +72,11 @@ static void wifi_retry_timer_callback(TimerHandle_t xTimer)
 static void start_mdns_service(void)
 {
     // Initialize mDNS
-    ESP_ERROR_CHECK(mdns_init());
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "mDNS init failed (%s) — skipping mDNS", esp_err_to_name(err));
+        return;
+    }
 
     // Build unique hostname and instance names from last 3 MAC bytes
     uint8_t mac[6];
@@ -93,8 +97,10 @@ static void start_mdns_service(void)
     s_mdns_hostname[sizeof(s_mdns_hostname) - 1] = '\0';
 
     // ESP-IDF requires hostname to be set before instance name
-    ESP_ERROR_CHECK(mdns_hostname_set(hostname));
-    ESP_ERROR_CHECK(mdns_instance_name_set(instance_name));
+    if (mdns_hostname_set(hostname) != ESP_OK ||
+        mdns_instance_name_set(instance_name) != ESP_OK) {
+        ESP_LOGW(TAG, "mDNS hostname/instance setup failed — mDNS may be unavailable");
+    }
 
     ESP_LOGI(TAG, "mDNS started - accessible at %s.local (%s)", hostname, instance_name);
 
@@ -108,8 +114,10 @@ static void start_mdns_service(void)
         {"id", serial},
         {"fw", app_desc->version},
     };
-    ESP_ERROR_CHECK(mdns_service_add(instance_name, "_http", "_tcp", HTTP_SERVER_PORT,
-                                     http_txt, sizeof(http_txt) / sizeof(mdns_txt_item_t)));
+    if (mdns_service_add(instance_name, "_http", "_tcp", HTTP_SERVER_PORT,
+                         http_txt, sizeof(http_txt) / sizeof(mdns_txt_item_t)) != ESP_OK) {
+        ESP_LOGW(TAG, "mDNS: failed to register HTTP service");
+    }
     ESP_LOGI(TAG, "  - HTTP service: http://%s.local:%d", hostname, HTTP_SERVER_PORT);
 
     // Advertise TCP bridge service (custom service type)
@@ -119,8 +127,10 @@ static void start_mdns_service(void)
         {"id", serial},
         {"fw", app_desc->version},
     };
-    ESP_ERROR_CHECK(mdns_service_add(debug_instance_name, "_pool-bridge", "_tcp", TCP_BRIDGE_PORT,
-                                     tcp_bridge_txt, sizeof(tcp_bridge_txt) / sizeof(mdns_txt_item_t)));
+    if (mdns_service_add(debug_instance_name, "_pool-bridge", "_tcp", TCP_BRIDGE_PORT,
+                         tcp_bridge_txt, sizeof(tcp_bridge_txt) / sizeof(mdns_txt_item_t)) != ESP_OK) {
+        ESP_LOGW(TAG, "mDNS: failed to register pool-bridge service");
+    }
     ESP_LOGI(TAG, "  - Pool Bridge service: tcp://%s.local:%d (%s)", hostname, TCP_BRIDGE_PORT, debug_instance_name);
 }
 
