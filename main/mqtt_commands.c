@@ -311,11 +311,12 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
     // Parse command type
     if (strncmp(cmd_topic, "channel/", 8) == 0 && cmd_topic_len > 12) {
         // Extract channel number (format: "channel/N/set")
-        if (!isdigit((unsigned char)cmd_topic[8])) {
+        char *endptr;
+        int channel = (int)strtol(cmd_topic + 8, &endptr, 10);
+        if (endptr == cmd_topic + 8 || *endptr != '/') {
             ESP_LOGE(TAG, "Invalid channel topic format: %s", cmd_topic);
             return;
         }
-        int channel = cmd_topic[8] - '0';
         if (channel >= 1 && channel <= MAX_CHANNELS) {
             handle_channel_command(channel, data, data_len);
         } else {
@@ -324,11 +325,12 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
     }
     else if (strncmp(cmd_topic, "light/", 6) == 0 && cmd_topic_len > 10) {
         // Extract zone number (format: "light/N/set")
-        if (!isdigit((unsigned char)cmd_topic[6])) {
+        char *endptr;
+        int zone = (int)strtol(cmd_topic + 6, &endptr, 10);
+        if (endptr == cmd_topic + 6 || *endptr != '/') {
             ESP_LOGE(TAG, "Invalid light topic format: %s", cmd_topic);
             return;
         }
-        int zone = cmd_topic[6] - '0';
         if (zone >= 1 && zone <= MAX_LIGHT_ZONES) {
             handle_light_command(zone, data, data_len);
         } else {
@@ -337,11 +339,12 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
     }
     else if (strncmp(cmd_topic, "valve/", 6) == 0 && cmd_topic_len > 8) {
         // Extract valve number (format: "valve/N/set")
-        if (!isdigit((unsigned char)cmd_topic[6])) {
+        char *endptr;
+        int valve = (int)strtol(cmd_topic + 6, &endptr, 10);
+        if (endptr == cmd_topic + 6 || *endptr != '/') {
             ESP_LOGE(TAG, "Invalid valve topic format: %s", cmd_topic);
             return;
         }
-        int valve = cmd_topic[6] - '0';
         if (valve >= 1 && valve <= MAX_VALVE_SLOTS) {
             handle_valve_command(valve, data, data_len);
         } else {

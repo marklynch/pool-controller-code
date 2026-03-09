@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+- Fixed single-digit-only channel/light/valve number parsing in MQTT command handler — replaced `cmd_topic[N] - '0'` with `strtol`, validating that the parsed number is followed by `/` so multi-digit numbers and malformed topics are rejected cleanly
 - Fixed `s_log_client_sock` race in `tcp_bridge.c`: the log vprintf callback and the TCP bridge task both sent to the same client socket fd without synchronisation, causing interleaved output — all sends to `client_sock` now go through a `send_to_client` helper that holds `s_log_mutex`, serialising them with the vprintf sends
 - Fixed register label loop using hardcoded `32` instead of `MAX_REGISTER_LABELS` in `message_decoder.c`, `web_handlers.c`, and `register_requester.c` instead of a named constant — added `MAX_REGISTER_LABELS` to `config.h` and used it for the `pool_state_t` array declaration and both decoder loops
 - Fixed `ESP_ERROR_CHECK` on mDNS init and service registration in `wifi_provisioning.c` — mDNS is non-critical; failures now log a warning and continue rather than rebooting the device
