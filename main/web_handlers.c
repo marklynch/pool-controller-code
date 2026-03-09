@@ -491,339 +491,284 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
 
 static esp_err_t status_get_handler(httpd_req_t *req)
 {
-    // Allocate a buffer for JSON response
-    char *json_resp = malloc(HTTP_STATUS_BUFFER_SIZE);
-    if (json_resp == NULL) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
-        return ESP_FAIL;
-    }
-
-    int len = 0;
-
-    // Get firmware version
     const esp_app_desc_t *app_desc = esp_app_get_description();
 
-    // Lock the pool state and build JSON response
-    if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-        // Start JSON object
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "{");
-
-        // Firmware version section
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"firmware\":{");
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"version\":\"%s\",", app_desc->version);
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"project\":\"%s\",", app_desc->project_name);
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"compile_time\":\"%s %s\",", app_desc->date, app_desc->time);
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"idf_version\":\"%s\"", app_desc->idf_ver);
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
-
-        // Message decode counters
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
-            "\"message_counts\":{\"decoded\":%lu,\"unknown\":%lu},",
-            (unsigned long)tcp_bridge_get_decoded_count(),
-            (unsigned long)tcp_bridge_get_unknown_count());
-
-        // Temperature section
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"temperature\":{");
-        if (s_pool_state.temp_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"current\":%d,", s_pool_state.current_temp);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"current\":null,");
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"pool_setpoint\":%d,", s_pool_state.pool_setpoint);
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"spa_setpoint\":%d,", s_pool_state.spa_setpoint);
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"pool_setpoint_f\":%d,", s_pool_state.pool_setpoint_f);
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"spa_setpoint_f\":%d,", s_pool_state.spa_setpoint_f);
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"scale\":\"%s\"",
-                       s_pool_state.temp_scale_fahrenheit ? "Fahrenheit" : "Celsius");
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
-
-        // Heater section
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"heater\":{");
-        if (s_pool_state.heater_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"state\":\"%s\"",
-                           s_pool_state.heater_on ? "On" : "Off");
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"state\":null");
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
-
-        // Mode section
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"mode\":");
-        if (s_pool_state.mode_valid) {
-            const char *mode_str = (s_pool_state.mode == 0) ? "Spa" :
-                                   (s_pool_state.mode == 1) ? "Pool" : "Unknown";
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%s\",", mode_str);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
-        }
-
-        // Channels section (excludes light zone channels — those appear under "lighting")
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"channels\":[");
-        bool first_channel = true;
-        for (int i = 0; i < MAX_CHANNELS; i++) {
-            if (s_pool_state.channels[i].configured &&
-                s_pool_state.channels[i].type != CHANNEL_TYPE_HEATER &&
-                s_pool_state.channels[i].type != CHANNEL_TYPE_LIGHT_ZONE) {
-                if (!first_channel) {
-                    len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
-                }
-                first_channel = false;
-
-                const char *type_name = get_channel_type_name(s_pool_state.channels[i].type);
-                const char *state_name = (s_pool_state.channels[i].state < CHANNEL_STATE_COUNT) ?
-                                        CHANNEL_STATE_NAMES[s_pool_state.channels[i].state] : "Unknown";
-
-                len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
-                               "{\"id\":%d,\"name\":\"%s\",\"type\":\"%s\",\"state\":\"%s\"}",
-                               s_pool_state.channels[i].id,
-                               s_pool_state.channels[i].name[0] ? s_pool_state.channels[i].name : type_name,
-                               type_name,
-                               state_name);
-            }
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "],");
-
-        // Lighting section
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"lighting\":[");
-        bool first_light = true;
-        for (int i = 0; i < MAX_LIGHT_ZONES; i++) {
-            if (s_pool_state.lighting[i].configured) {
-                if (!first_light) {
-                    len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
-                }
-                first_light = false;
-
-                const char *state_name = (s_pool_state.lighting[i].state < LIGHTING_STATE_COUNT) ?
-                                        LIGHTING_STATE_NAMES[s_pool_state.lighting[i].state] : "Unknown";
-                const char *color_name = (s_pool_state.lighting[i].color < LIGHTING_COLOR_COUNT) ?
-                                        LIGHTING_COLOR_NAMES[s_pool_state.lighting[i].color] : "Unknown";
-                char name_json[48];
-                if (s_pool_state.lighting[i].name_valid &&
-                    s_pool_state.lighting[i].name_id < LIGHT_ZONE_NAME_COUNT) {
-                    snprintf(name_json, sizeof(name_json), "\"%s\"",
-                             LIGHT_ZONE_NAME_TABLE[s_pool_state.lighting[i].name_id]);
-                } else {
-                    snprintf(name_json, sizeof(name_json), "null");
-                }
-
-                len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
-                               "{\"zone\":%d,\"name\":%s,\"multicolor\":%s,\"state\":\"%s\",\"color\":\"%s\",\"active\":%s}",
-                               s_pool_state.lighting[i].zone,
-                               name_json,
-                               s_pool_state.lighting[i].multicolor_valid
-                                   ? (s_pool_state.lighting[i].multicolor ? "true" : "false")
-                                   : "null",
-                               state_name,
-                               color_name,
-                               s_pool_state.lighting[i].active ? "true" : "false");
-            }
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "],");
-
-        // Valves section
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"valves\":[");
-        bool first_valve = true;
-        for (int i = 0; i < s_pool_state.num_valve_slots && i < MAX_VALVE_SLOTS; i++) {
-            if (!s_pool_state.valves[i].configured) continue;
-
-            if (!first_valve) len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
-            first_valve = false;
-
-            // Look up label from register_labels (reg_id 0xD0 = valve 1, 0xD1 = valve 2, ...)
-            uint8_t reg_id = 0xD0 + i;
-            const char *label = NULL;
-            for (int j = 0; j < MAX_REGISTER_LABELS; j++) {
-                if (s_pool_state.register_labels[j].valid &&
-                    s_pool_state.register_labels[j].reg_id == reg_id) {
-                    label = s_pool_state.register_labels[j].label;
-                    break;
-                }
-            }
-
-            char fallback[16];
-            if (!label) {
-                snprintf(fallback, sizeof(fallback), "Valve %d", i + 1);
-                label = fallback;
-            }
-
-            const char *state_name = (s_pool_state.valves[i].state < CHANNEL_STATE_COUNT) ?
-                                     CHANNEL_STATE_NAMES[s_pool_state.valves[i].state] : "Unknown";
-
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
-                           "{\"id\":%d,\"name\":\"%s\",\"state\":\"%s\",\"active\":%s}",
-                           i + 1, label, state_name,
-                           s_pool_state.valves[i].active ? "true" : "false");
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "],");
-
-        // Chlorinator section
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"chlorinator\":{");
-        if (s_pool_state.ph_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"ph_setpoint\":%.1f,",
-                           s_pool_state.ph_setpoint / 10.0);
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"ph_reading\":%.1f,",
-                           s_pool_state.ph_reading / 10.0);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"ph_setpoint\":null,\"ph_reading\":null,");
-        }
-        if (s_pool_state.orp_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"orp_setpoint\":%d,",
-                           s_pool_state.orp_setpoint);
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"orp_reading\":%d",
-                           s_pool_state.orp_reading);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"orp_setpoint\":null,\"orp_reading\":null");
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
-
-        // Internet Gateway section
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"internet_gateway\":{");
-
-        // Serial number
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"serial_number\":");
-        if (s_pool_state.serial_number_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "%lu,", (unsigned long)s_pool_state.serial_number);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
-        }
-
-        // Firmware version
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"firmware_version\":");
-        if (s_pool_state.gateway_version_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%d.%d\",",
-                           s_pool_state.gateway_version_major,
-                           s_pool_state.gateway_version_minor);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
-        }
-
-        // IP address
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"ip\":");
-        if (s_pool_state.gateway_ip_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%d.%d.%d.%d\",",
-                           s_pool_state.gateway_ip[0], s_pool_state.gateway_ip[1],
-                           s_pool_state.gateway_ip[2], s_pool_state.gateway_ip[3]);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
-        }
-
-        // Signal level
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"signal_level\":");
-        if (s_pool_state.gateway_ip_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "%d,", s_pool_state.gateway_signal_level);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
-        }
-
-        // Comms status
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"comms_status\":");
-        if (s_pool_state.gateway_comms_status_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "%u,", s_pool_state.gateway_comms_status);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null,");
-        }
-
-        // Comms status text
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"comms_status_text\":");
-        if (s_pool_state.gateway_comms_status_valid) {
-            const char *status_text = get_gateway_comms_status_text(s_pool_state.gateway_comms_status);
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%s\"", status_text);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null");
-        }
-
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
-
-        // Touchscreen section
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"touchscreen\":{");
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"version\":");
-        if (s_pool_state.touchscreen_version_valid) {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"%d.%d\"",
-                           s_pool_state.touchscreen_version_major,
-                           s_pool_state.touchscreen_version_minor);
-        } else {
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "null");
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",\"num_channels\":%d",
-                       s_pool_state.num_channels);
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "},");
-
-        // Timers section (only configured timers)
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"timers\":[");
-        bool first_timer = true;
-        for (int i = 0; i < MAX_TIMERS; i++) {
-            timer_state_t *t = &s_pool_state.timers[i];
-            if (!t->valid) continue;
-            if (t->days == 0 && t->start_hour == 0 && t->start_minute == 0 &&
-                t->stop_hour == 0 && t->stop_minute == 0) continue;
-
-            if (!first_timer) len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",");
-            first_timer = false;
-
-            char days_str[8];
-            const char day_chars[] = "MTWTFSS";
-            for (int d = 0; d < 7; d++) {
-                days_str[d] = (t->days & (1 << d)) ? day_chars[d] : '-';
-            }
-            days_str[7] = '\0';
-
-            len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len,
-                "{\"num\":%d,\"start\":\"%02d:%02d\",\"stop\":\"%02d:%02d\",\"days\":\"%s\"}",
-                t->timer_num, t->start_hour, t->start_minute, t->stop_hour, t->stop_minute, days_str);
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "],");
-
-        // Last update timestamp
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "\"last_update_ms\":%lu",
-                       (unsigned long)s_pool_state.last_update_ms);
-
-        // Current system time in ms
-        uint64_t current_tick_count = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",\"current_ms\":%lu",
-                       (unsigned long)current_tick_count);
-
-        // Current wall-clock time as a human-readable string
-        time_t now = time(NULL);
-        char time_str[32];
-        if (now < 1000000000) {
-            snprintf(time_str, sizeof(time_str), "NTP not synced");
-        } else {
-            struct tm *tm_info = gmtime(&now);
-            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S UTC", tm_info);
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",\"current_time\":\"%s\"", time_str);
-
-        // Time since last update
-        char age_str[32];
-        if (s_pool_state.last_update_ms == 0) {
-            snprintf(age_str, sizeof(age_str), "Never");
-        } else {
-            uint32_t elapsed_sec = (uint32_t)((current_tick_count - s_pool_state.last_update_ms) / 1000);
-            if (elapsed_sec < 60) {
-                snprintf(age_str, sizeof(age_str), "%lus ago", (unsigned long)elapsed_sec);
-            } else if (elapsed_sec < 3600) {
-                snprintf(age_str, sizeof(age_str), "%lum %lus ago", (unsigned long)(elapsed_sec / 60), (unsigned long)(elapsed_sec % 60));
-            } else {
-                snprintf(age_str, sizeof(age_str), "%luh %lum ago", (unsigned long)(elapsed_sec / 3600), (unsigned long)((elapsed_sec % 3600) / 60));
-            }
-        }
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, ",\"time_since_last_update\":\"%s\"", age_str);
-
-        // Close JSON object
-        len += snprintf(json_resp + len, HTTP_STATUS_BUFFER_SIZE - len, "}");
-
-        xSemaphoreGive(s_pool_state_mutex);
-    } else {
-        free(json_resp);
+    if (xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to acquire state mutex");
         return ESP_FAIL;
     }
 
-    // Send JSON response
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json_resp, len);
+    cJSON *root = cJSON_CreateObject();
 
-    free(json_resp);
+    // Firmware
+    char compile_time[48];
+    snprintf(compile_time, sizeof(compile_time), "%s %s", app_desc->date, app_desc->time);
+    cJSON *firmware = cJSON_CreateObject();
+    cJSON_AddStringToObject(firmware, "version",      app_desc->version);
+    cJSON_AddStringToObject(firmware, "project",      app_desc->project_name);
+    cJSON_AddStringToObject(firmware, "compile_time", compile_time);
+    cJSON_AddStringToObject(firmware, "idf_version",  app_desc->idf_ver);
+    cJSON_AddItemToObject(root, "firmware", firmware);
+
+    // Message decode counters
+    cJSON *msg_counts = cJSON_CreateObject();
+    cJSON_AddNumberToObject(msg_counts, "decoded", tcp_bridge_get_decoded_count());
+    cJSON_AddNumberToObject(msg_counts, "unknown", tcp_bridge_get_unknown_count());
+    cJSON_AddItemToObject(root, "message_counts", msg_counts);
+
+    // Temperature
+    cJSON *temperature = cJSON_CreateObject();
+    if (s_pool_state.temp_valid) {
+        cJSON_AddNumberToObject(temperature, "current", s_pool_state.current_temp);
+    } else {
+        cJSON_AddNullToObject(temperature, "current");
+    }
+    cJSON_AddNumberToObject(temperature, "pool_setpoint",   s_pool_state.pool_setpoint);
+    cJSON_AddNumberToObject(temperature, "spa_setpoint",    s_pool_state.spa_setpoint);
+    cJSON_AddNumberToObject(temperature, "pool_setpoint_f", s_pool_state.pool_setpoint_f);
+    cJSON_AddNumberToObject(temperature, "spa_setpoint_f",  s_pool_state.spa_setpoint_f);
+    cJSON_AddStringToObject(temperature, "scale", s_pool_state.temp_scale_fahrenheit ? "Fahrenheit" : "Celsius");
+    cJSON_AddItemToObject(root, "temperature", temperature);
+
+    // Heater
+    cJSON *heater = cJSON_CreateObject();
+    if (s_pool_state.heater_valid) {
+        cJSON_AddStringToObject(heater, "state", s_pool_state.heater_on ? "On" : "Off");
+    } else {
+        cJSON_AddNullToObject(heater, "state");
+    }
+    cJSON_AddItemToObject(root, "heater", heater);
+
+    // Mode
+    if (s_pool_state.mode_valid) {
+        const char *mode_str = (s_pool_state.mode == 0) ? "Spa" :
+                               (s_pool_state.mode == 1) ? "Pool" : "Unknown";
+        cJSON_AddStringToObject(root, "mode", mode_str);
+    } else {
+        cJSON_AddNullToObject(root, "mode");
+    }
+
+    // Channels (excludes heater and light-zone channels — those appear in their own sections)
+    cJSON *channels = cJSON_CreateArray();
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (!s_pool_state.channels[i].configured ||
+            s_pool_state.channels[i].type == CHANNEL_TYPE_HEATER ||
+            s_pool_state.channels[i].type == CHANNEL_TYPE_LIGHT_ZONE) {
+            continue;
+        }
+        const char *type_name  = get_channel_type_name(s_pool_state.channels[i].type);
+        const char *state_name = (s_pool_state.channels[i].state < CHANNEL_STATE_COUNT) ?
+                                 CHANNEL_STATE_NAMES[s_pool_state.channels[i].state] : "Unknown";
+        cJSON *ch = cJSON_CreateObject();
+        cJSON_AddNumberToObject(ch, "id",    s_pool_state.channels[i].id);
+        cJSON_AddStringToObject(ch, "name",  s_pool_state.channels[i].name[0] ? s_pool_state.channels[i].name : type_name);
+        cJSON_AddStringToObject(ch, "type",  type_name);
+        cJSON_AddStringToObject(ch, "state", state_name);
+        cJSON_AddItemToArray(channels, ch);
+    }
+    cJSON_AddItemToObject(root, "channels", channels);
+
+    // Lighting
+    cJSON *lighting = cJSON_CreateArray();
+    for (int i = 0; i < MAX_LIGHT_ZONES; i++) {
+        if (!s_pool_state.lighting[i].configured) continue;
+        const char *state_name = (s_pool_state.lighting[i].state < LIGHTING_STATE_COUNT) ?
+                                 LIGHTING_STATE_NAMES[s_pool_state.lighting[i].state] : "Unknown";
+        const char *color_name = (s_pool_state.lighting[i].color < LIGHTING_COLOR_COUNT) ?
+                                 LIGHTING_COLOR_NAMES[s_pool_state.lighting[i].color] : "Unknown";
+        cJSON *zone = cJSON_CreateObject();
+        cJSON_AddNumberToObject(zone, "zone", s_pool_state.lighting[i].zone);
+        if (s_pool_state.lighting[i].name_valid &&
+            s_pool_state.lighting[i].name_id < LIGHT_ZONE_NAME_COUNT) {
+            cJSON_AddStringToObject(zone, "name", LIGHT_ZONE_NAME_TABLE[s_pool_state.lighting[i].name_id]);
+        } else {
+            cJSON_AddNullToObject(zone, "name");
+        }
+        if (s_pool_state.lighting[i].multicolor_valid) {
+            cJSON_AddBoolToObject(zone, "multicolor", s_pool_state.lighting[i].multicolor);
+        } else {
+            cJSON_AddNullToObject(zone, "multicolor");
+        }
+        cJSON_AddStringToObject(zone, "state",  state_name);
+        cJSON_AddStringToObject(zone, "color",  color_name);
+        cJSON_AddBoolToObject(zone,   "active", s_pool_state.lighting[i].active);
+        cJSON_AddItemToArray(lighting, zone);
+    }
+    cJSON_AddItemToObject(root, "lighting", lighting);
+
+    // Valves
+    cJSON *valves = cJSON_CreateArray();
+    for (int i = 0; i < s_pool_state.num_valve_slots && i < MAX_VALVE_SLOTS; i++) {
+        if (!s_pool_state.valves[i].configured) continue;
+
+        // Look up label from register_labels (reg_id 0xD0 = valve 1, 0xD1 = valve 2, ...)
+        uint8_t reg_id = 0xD0 + i;
+        const char *label = NULL;
+        for (int j = 0; j < MAX_REGISTER_LABELS; j++) {
+            if (s_pool_state.register_labels[j].valid &&
+                s_pool_state.register_labels[j].reg_id == reg_id) {
+                label = s_pool_state.register_labels[j].label;
+                break;
+            }
+        }
+        char fallback[16];
+        if (!label) {
+            snprintf(fallback, sizeof(fallback), "Valve %d", i + 1);
+            label = fallback;
+        }
+
+        const char *state_name = (s_pool_state.valves[i].state < CHANNEL_STATE_COUNT) ?
+                                 CHANNEL_STATE_NAMES[s_pool_state.valves[i].state] : "Unknown";
+        cJSON *valve = cJSON_CreateObject();
+        cJSON_AddNumberToObject(valve, "id",     i + 1);
+        cJSON_AddStringToObject(valve, "name",   label);
+        cJSON_AddStringToObject(valve, "state",  state_name);
+        cJSON_AddBoolToObject(valve,   "active", s_pool_state.valves[i].active);
+        cJSON_AddItemToArray(valves, valve);
+    }
+    cJSON_AddItemToObject(root, "valves", valves);
+
+    // Chlorinator
+    cJSON *chlorinator = cJSON_CreateObject();
+    if (s_pool_state.ph_valid) {
+        cJSON_AddNumberToObject(chlorinator, "ph_setpoint", s_pool_state.ph_setpoint / 10.0);
+        cJSON_AddNumberToObject(chlorinator, "ph_reading",  s_pool_state.ph_reading  / 10.0);
+    } else {
+        cJSON_AddNullToObject(chlorinator, "ph_setpoint");
+        cJSON_AddNullToObject(chlorinator, "ph_reading");
+    }
+    if (s_pool_state.orp_valid) {
+        cJSON_AddNumberToObject(chlorinator, "orp_setpoint", s_pool_state.orp_setpoint);
+        cJSON_AddNumberToObject(chlorinator, "orp_reading",  s_pool_state.orp_reading);
+    } else {
+        cJSON_AddNullToObject(chlorinator, "orp_setpoint");
+        cJSON_AddNullToObject(chlorinator, "orp_reading");
+    }
+    cJSON_AddItemToObject(root, "chlorinator", chlorinator);
+
+    // Internet Gateway
+    cJSON *gateway = cJSON_CreateObject();
+    if (s_pool_state.serial_number_valid) {
+        cJSON_AddNumberToObject(gateway, "serial_number", (double)s_pool_state.serial_number);
+    } else {
+        cJSON_AddNullToObject(gateway, "serial_number");
+    }
+    if (s_pool_state.gateway_version_valid) {
+        char fw_ver[16];
+        snprintf(fw_ver, sizeof(fw_ver), "%d.%d",
+                 s_pool_state.gateway_version_major, s_pool_state.gateway_version_minor);
+        cJSON_AddStringToObject(gateway, "firmware_version", fw_ver);
+    } else {
+        cJSON_AddNullToObject(gateway, "firmware_version");
+    }
+    if (s_pool_state.gateway_ip_valid) {
+        char ip_str[16];
+        snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d",
+                 s_pool_state.gateway_ip[0], s_pool_state.gateway_ip[1],
+                 s_pool_state.gateway_ip[2], s_pool_state.gateway_ip[3]);
+        cJSON_AddStringToObject(gateway, "ip",           ip_str);
+        cJSON_AddNumberToObject(gateway, "signal_level", s_pool_state.gateway_signal_level);
+    } else {
+        cJSON_AddNullToObject(gateway, "ip");
+        cJSON_AddNullToObject(gateway, "signal_level");
+    }
+    if (s_pool_state.gateway_comms_status_valid) {
+        cJSON_AddNumberToObject(gateway, "comms_status", s_pool_state.gateway_comms_status);
+        cJSON_AddStringToObject(gateway, "comms_status_text",
+                                get_gateway_comms_status_text(s_pool_state.gateway_comms_status));
+    } else {
+        cJSON_AddNullToObject(gateway, "comms_status");
+        cJSON_AddNullToObject(gateway, "comms_status_text");
+    }
+    cJSON_AddItemToObject(root, "internet_gateway", gateway);
+
+    // Touchscreen
+    cJSON *touchscreen = cJSON_CreateObject();
+    if (s_pool_state.touchscreen_version_valid) {
+        char ts_ver[16];
+        snprintf(ts_ver, sizeof(ts_ver), "%d.%d",
+                 s_pool_state.touchscreen_version_major, s_pool_state.touchscreen_version_minor);
+        cJSON_AddStringToObject(touchscreen, "version", ts_ver);
+    } else {
+        cJSON_AddNullToObject(touchscreen, "version");
+    }
+    cJSON_AddNumberToObject(touchscreen, "num_channels", s_pool_state.num_channels);
+    cJSON_AddItemToObject(root, "touchscreen", touchscreen);
+
+    // Timers (only non-empty entries)
+    cJSON *timers = cJSON_CreateArray();
+    for (int i = 0; i < MAX_TIMERS; i++) {
+        timer_state_t *t = &s_pool_state.timers[i];
+        if (!t->valid) continue;
+        if (t->days == 0 && t->start_hour == 0 && t->start_minute == 0 &&
+            t->stop_hour == 0 && t->stop_minute == 0) continue;
+
+        char start_str[9], stop_str[9];
+        snprintf(start_str, sizeof(start_str), "%02d:%02d", t->start_hour, t->start_minute);
+        snprintf(stop_str,  sizeof(stop_str),  "%02d:%02d", t->stop_hour,  t->stop_minute);
+
+        char days_str[8];
+        const char day_chars[] = "MTWTFSS";
+        for (int d = 0; d < 7; d++) {
+            days_str[d] = (t->days & (1 << d)) ? day_chars[d] : '-';
+        }
+        days_str[7] = '\0';
+
+        cJSON *timer = cJSON_CreateObject();
+        cJSON_AddNumberToObject(timer, "num",   t->timer_num);
+        cJSON_AddStringToObject(timer, "start", start_str);
+        cJSON_AddStringToObject(timer, "stop",  stop_str);
+        cJSON_AddStringToObject(timer, "days",  days_str);
+        cJSON_AddItemToArray(timers, timer);
+    }
+    cJSON_AddItemToObject(root, "timers", timers);
+
+    // Timestamps
+    uint64_t current_tick_ms = (uint64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+    cJSON_AddNumberToObject(root, "last_update_ms", (double)s_pool_state.last_update_ms);
+    cJSON_AddNumberToObject(root, "current_ms",     (double)current_tick_ms);
+
+    time_t now = time(NULL);
+    char time_str[32];
+    if (now < 1000000000) {
+        snprintf(time_str, sizeof(time_str), "NTP not synced");
+    } else {
+        struct tm *tm_info = gmtime(&now);
+        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S UTC", tm_info);
+    }
+    cJSON_AddStringToObject(root, "current_time", time_str);
+
+    char age_str[32];
+    if (s_pool_state.last_update_ms == 0) {
+        snprintf(age_str, sizeof(age_str), "Never");
+    } else {
+        uint32_t elapsed_sec = (uint32_t)((current_tick_ms - s_pool_state.last_update_ms) / 1000);
+        if (elapsed_sec < 60) {
+            snprintf(age_str, sizeof(age_str), "%lus ago", (unsigned long)elapsed_sec);
+        } else if (elapsed_sec < 3600) {
+            snprintf(age_str, sizeof(age_str), "%lum %lus ago",
+                     (unsigned long)(elapsed_sec / 60), (unsigned long)(elapsed_sec % 60));
+        } else {
+            snprintf(age_str, sizeof(age_str), "%luh %lum ago",
+                     (unsigned long)(elapsed_sec / 3600), (unsigned long)((elapsed_sec % 3600) / 60));
+        }
+    }
+    cJSON_AddStringToObject(root, "time_since_last_update", age_str);
+
+    xSemaphoreGive(s_pool_state_mutex);
+
+    char *json_resp = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json_resp) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON serialisation failed");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
+    httpd_resp_send(req, json_resp, strlen(json_resp));
+
+    cJSON_free(json_resp);
     return ESP_OK;
 }
 

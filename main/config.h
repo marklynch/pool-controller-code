@@ -107,7 +107,6 @@
 #define HTTP_PROVISION_BUFFER_SIZE     200     // Buffer for provisioning requests
 #define HTTP_MQTT_CONFIG_BUFFER_SIZE   512     // Buffer for MQTT config requests
 #define HTTP_WIFI_SCAN_BUFFER_SIZE     4096    // Buffer for WiFi scan results JSON
-#define HTTP_STATUS_BUFFER_SIZE        8192    // Buffer for pool status JSON
 #define HTTP_OTA_BUFFER_SIZE           4096    // Buffer for OTA firmware chunks
 
 // ======================================================
