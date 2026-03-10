@@ -300,6 +300,203 @@ void test_device_name_lookup(void)
 }
 
 /**
+ * Test: Heater status message (OFF)
+ * Real message: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03
+ */
+void test_decode_heater_off(void)
+{
+    init_test_context();
+
+    uint8_t msg[] = {
+        0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00,
+        0x12, 0x0F,  // Command / length (15)
+        0x03,        // Header checksum
+        0x00, 0x00, 0x08,  // Payload: state=0x00 (Off)
+        0x08,        // Data checksum
+        0x03
+    };
+
+    bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
+
+    TEST_ASSERT(decoded, "Heater OFF message should be decoded");
+    TEST_ASSERT(!test_pool_state.heaters[0].on, "Heater should be OFF");
+    TEST_ASSERT(test_pool_state.heaters[0].valid, "Heater valid flag should be set");
+}
+
+/**
+ * Test: Current temperature reading
+ * Real message: 02 00 62 FF FF 80 00 16 0E 06 1A 00 1A 03
+ * Temperature = 0x1A = 26°C
+ */
+void test_decode_temp_reading(void)
+{
+    init_test_context();
+
+    uint8_t msg[] = {
+        0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00,
+        0x16, 0x0E,  // Command / length (14)
+        0x06,        // Header checksum (sum bytes 0-8 = 774, & 0xFF = 0x06)
+        0x1A, 0x00,  // Payload: current_temp=26, unknown
+        0x1A,        // Data checksum
+        0x03
+    };
+
+    bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
+
+    TEST_ASSERT(decoded, "Temperature reading should be decoded");
+    TEST_ASSERT(test_pool_state.current_temp == 26, "Current temperature should be 26°C");
+    TEST_ASSERT(test_pool_state.temp_valid, "Temp valid flag should be set");
+}
+
+/**
+ * Test: Channel status message — all channels off
+ * Real message from bus capture (37 bytes):
+ * 02 00 50 FF FF 80 00 0B 25 00 08 01 00 00 02 00 00 FE 00 00 FE 00 00 0B 00 00 09 00 00 FD 00 00 00 00 00 18 03
+ * 8 channels: Filter/Off, Cleaning/Off, LightZone/Off, LightZone/Off, Jets/Off, Blower/Off, Heater/Off, Unused
+ */
+void test_decode_channel_status_all_off(void)
+{
+    init_test_context();
+
+    uint8_t msg[] = {
+        0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00,
+        0x0B, 0x25,  // Command / length (37)
+        0x00,        // Header checksum (sum bytes 0-8 = 768, & 0xFF = 0x00)
+        // payload[0]: num_channels = 8
+        0x08,
+        // Ch1: Filter(0x01), Off(0x00), Inactive(0x00)
+        0x01, 0x00, 0x00,
+        // Ch2: Cleaning(0x02), Off(0x00), Inactive(0x00)
+        0x02, 0x00, 0x00,
+        // Ch3: Light Zone(0xFE), Off(0x00), Inactive(0x00)
+        0xFE, 0x00, 0x00,
+        // Ch4: Light Zone(0xFE), Off(0x00), Inactive(0x00)
+        0xFE, 0x00, 0x00,
+        // Ch5: Jets(0x0B), Off(0x00), Inactive(0x00)
+        0x0B, 0x00, 0x00,
+        // Ch6: Blower(0x09), Off(0x00), Inactive(0x00)
+        0x09, 0x00, 0x00,
+        // Ch7: Heater(0xFD), Off(0x00), Inactive(0x00)
+        0xFD, 0x00, 0x00,
+        // Ch8: Unused(0x00)
+        0x00, 0x00, 0x00,
+        0x18,  // Data checksum
+        0x03
+    };
+
+    bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
+
+    TEST_ASSERT(decoded, "Channel status message should be decoded");
+    TEST_ASSERT(test_pool_state.num_channels == 8, "Should have 8 channels");
+
+    TEST_ASSERT(test_pool_state.channels[0].configured, "Ch1 should be configured");
+    TEST_ASSERT(test_pool_state.channels[0].type == 0x01, "Ch1 type should be Filter (0x01)");
+    TEST_ASSERT(test_pool_state.channels[0].state == 0, "Ch1 state should be Off");
+    TEST_ASSERT(!test_pool_state.channels[0].active, "Ch1 should be inactive");
+
+    TEST_ASSERT(test_pool_state.channels[1].configured, "Ch2 should be configured");
+    TEST_ASSERT(test_pool_state.channels[1].type == 0x02, "Ch2 type should be Cleaning (0x02)");
+
+    TEST_ASSERT(test_pool_state.channels[2].configured, "Ch3 should be configured");
+    TEST_ASSERT(test_pool_state.channels[2].type == 0xFE, "Ch3 type should be Light Zone (0xFE)");
+    TEST_ASSERT(!test_pool_state.channels[2].active, "Ch3 should be inactive");
+
+    TEST_ASSERT(test_pool_state.channels[6].configured, "Ch7 should be configured");
+    TEST_ASSERT(test_pool_state.channels[6].type == 0xFD, "Ch7 type should be Heater (0xFD)");
+
+    TEST_ASSERT(!test_pool_state.channels[7].configured, "Ch8 should be unconfigured (Unused)");
+}
+
+/**
+ * Test: Channel status message — light zones active
+ * Real message: 02 00 50 FF FF 80 00 0B 25 00 08 01 00 00 02 00 00 FE 02 01 FE 02 01 0B 00 00 09 00 00 FD 00 00 00 00 00 1E 03
+ * Ch3 and Ch4 (Light Zone): On(0x02), Active(0x01)
+ */
+void test_decode_channel_status_lights_active(void)
+{
+    init_test_context();
+
+    uint8_t msg[] = {
+        0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00,
+        0x0B, 0x25, 0x00,
+        0x08,
+        0x01, 0x00, 0x00,  // Ch1: Filter, Off, Inactive
+        0x02, 0x00, 0x00,  // Ch2: Cleaning, Off, Inactive
+        0xFE, 0x02, 0x01,  // Ch3: Light Zone, On, Active
+        0xFE, 0x02, 0x01,  // Ch4: Light Zone, On, Active
+        0x0B, 0x00, 0x00,  // Ch5: Jets, Off, Inactive
+        0x09, 0x00, 0x00,  // Ch6: Blower, Off, Inactive
+        0xFD, 0x00, 0x00,  // Ch7: Heater, Off, Inactive
+        0x00, 0x00, 0x00,  // Ch8: Unused
+        0x1E,  // Data checksum
+        0x03
+    };
+
+    bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
+
+    TEST_ASSERT(decoded, "Channel status (lights active) should be decoded");
+
+    TEST_ASSERT(test_pool_state.channels[2].state == 2, "Ch3 state should be On (2)");
+    TEST_ASSERT(test_pool_state.channels[2].active, "Ch3 should be active");
+
+    TEST_ASSERT(test_pool_state.channels[3].state == 2, "Ch4 state should be On (2)");
+    TEST_ASSERT(test_pool_state.channels[3].active, "Ch4 should be active");
+
+    TEST_ASSERT(test_pool_state.channels[0].state == 0, "Ch1 should remain Off");
+    TEST_ASSERT(!test_pool_state.channels[0].active, "Ch1 should remain inactive");
+}
+
+/**
+ * Test: Chlorinator pH setpoint
+ * Real message: 02 00 90 FF FF 80 00 1D 0F 3C 01 4E 00 4F 03
+ * pH setpoint = UINT16_LE(payload[1..2]) = 0x004E = 78 (= 7.8 pH)
+ */
+void test_decode_chlor_ph_setpoint(void)
+{
+    init_test_context();
+
+    uint8_t msg[] = {
+        0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00,
+        0x1D, 0x0F,  // length (15)
+        0x3C,        // Header checksum (sum bytes 0-8 = 828, & 0xFF = 0x3C)
+        0x01,        // Sub-type: pH setpoint
+        0x4E, 0x00,  // Value: 78 little-endian (pH 7.8)
+        0x4F,        // Data checksum (0x01+0x4E+0x00 = 0x4F)
+        0x03
+    };
+
+    bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
+
+    TEST_ASSERT(decoded, "Chlorinator pH setpoint should be decoded");
+    TEST_ASSERT(test_pool_state.ph_setpoint == 78, "pH setpoint should be 78 (7.8 pH)");
+}
+
+/**
+ * Test: Chlorinator ORP setpoint
+ * Real message: 02 00 90 FF FF 80 00 1D 0F 3C 02 8A 02 8E 03
+ * ORP setpoint = UINT16_LE(payload[1..2]) = 0x028A = 650 mV
+ */
+void test_decode_chlor_orp_setpoint(void)
+{
+    init_test_context();
+
+    uint8_t msg[] = {
+        0x02, 0x00, 0x90, 0xFF, 0xFF, 0x80, 0x00,
+        0x1D, 0x0F,  // length (15)
+        0x3C,        // Header checksum
+        0x02,        // Sub-type: ORP setpoint
+        0x8A, 0x02,  // Value: 650 little-endian
+        0x8E,        // Data checksum (0x02+0x8A+0x02 = 0x8E)
+        0x03
+    };
+
+    bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
+
+    TEST_ASSERT(decoded, "Chlorinator ORP setpoint should be decoded");
+    TEST_ASSERT(test_pool_state.orp_setpoint == 650, "ORP setpoint should be 650 mV");
+}
+
+/**
  * Run all tests
  */
 int main(void)
@@ -320,7 +517,19 @@ int main(void)
     test_decode_mode_spa();
     test_decode_mode_pool();
     test_decode_temperature_setting();
+    test_decode_temp_reading();
     test_decode_heater_on();
+    test_decode_heater_off();
+
+    // Channel status tests
+    printf("\n--- Channel Status Tests ---\n");
+    test_decode_channel_status_all_off();
+    test_decode_channel_status_lights_active();
+
+    // Chlorinator tests
+    printf("\n--- Chlorinator Tests ---\n");
+    test_decode_chlor_ph_setpoint();
+    test_decode_chlor_orp_setpoint();
 
     // Malformed message tests
     printf("\n--- Malformed Message Tests ---\n");

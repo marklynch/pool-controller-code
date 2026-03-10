@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Extended heater model to support up to `MAX_HEATERS` (2) heaters — replaced flat `heater_on`/`heater_valid` booleans in `pool_state_t` with a `pool_heater_t heaters[MAX_HEATERS]` array; MQTT topics are now indexed (`pool/{id}/heater/0/state`, `pool/{id}/heater/0/set`); heater discovery, state publishing, and `/status` JSON all follow the same lazy/on-discovery pattern used by channels and light zones; a stub for heater 1 logs a warning until its bus protocol is captured
+- Expanded unit test coverage in `test/test_message_decoder.c` — added 6 new tests: heater OFF, current temperature reading, channel status (all off), channel status (light zones active), chlorinator pH setpoint, and chlorinator ORP setpoint; all byte vectors taken directly from real bus captures
+- Added `.vscode/tasks.json` with a `Run Tests` task so the host-based test suite can be run from VS Code via Terminal → Run Task or `⇧⌘P` → Tasks: Run Test Task
 
 ### Changed
 ### Deprecated
