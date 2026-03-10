@@ -141,13 +141,13 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
 
     // Skip unconfigured/unused channels
     if (!channel->configured) {
-        ESP_LOGD(TAG, "Skipping unconfigured channel %d", channel_id);
+        ESP_LOGI(TAG, "Skipping unconfigured channel %d", channel_id);
         return;
     }
 
     // Skip heater and light zone channels — handled by their own publish functions
     if (channel->type == CHANNEL_TYPE_HEATER || channel->type == CHANNEL_TYPE_LIGHT_ZONE) {
-        ESP_LOGD(TAG, "Skipping heater/light channel %d (type 0x%02X)", channel_id, channel->type);
+        ESP_LOGI(TAG, "Skipping heater/light channel %d (type 0x%02X)", channel_id, channel->type);
         return;
     }
 
@@ -212,7 +212,7 @@ void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
 
     // Skip unconfigured/unused lighting zones
     if (!light->configured) {
-        ESP_LOGD(TAG, "Skipping unconfigured light zone %d", zone);
+        ESP_LOGI(TAG, "Skipping unconfigured light zone %d", zone);
         return;
     }
 
@@ -373,7 +373,7 @@ void mqtt_publish_valve(const pool_state_t *current_state, uint8_t valve_num)
     const valve_state_t *valve = &current_state->valves[idx];
 
     if (!valve->configured) {
-        ESP_LOGD(TAG, "Skipping unconfigured valve %d", valve_num);
+        ESP_LOGI(TAG, "Skipping unconfigured valve %d", valve_num);
         return;
     }
 

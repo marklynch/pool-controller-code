@@ -163,7 +163,7 @@ static void dns_server_task(void *pvParameters)
             if (sent < 0) {
                 ESP_LOGW(TAG, "Failed to send DNS response: errno %d", errno);
             } else {
-                ESP_LOGD(TAG, "Sent DNS response (%d bytes) -> %s", sent, WIFI_PROV_SOFTAP_IP);
+                ESP_LOGI(TAG, "Sent DNS response (%d bytes) -> %s", sent, WIFI_PROV_SOFTAP_IP);
             }
         }
     }

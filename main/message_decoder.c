@@ -875,7 +875,7 @@ static bool handle_touchscreen_unknown3(
     const char *addr_info,
     message_decoder_context_t *ctx)
 {
-    ESP_LOGD(TAG, "%s Touchscreen unknown (CMD 0x05): 0x%02X", addr_info,
+    ESP_LOGI(TAG, "%s Touchscreen unknown (CMD 0x05): 0x%02X", addr_info,
              payload_len > 0 ? payload[0] : 0);
     return true;
 }
@@ -2104,8 +2104,6 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         for (int i = 10; i < len - 2; i++) sum += data[i];
         ESP_LOGW(TAG, "Data checksum FAILED: expected 0x%02X, got 0x%02X",
                  (uint8_t)(sum & 0xFF), data[len - 2]);
-    } else {
-        ESP_LOGD(TAG, "Checksums OK");
     }
 
     // Extract data payload section (bytes 10 to len-3)

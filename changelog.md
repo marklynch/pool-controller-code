@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- Added sdkconfig.defaults to optimise build, formalise partition talbe, remove unused code like mdns_cli and enable use of mqtt 5
+- Added sdkconfig.defaults to optimise build, formalise partition table, remove unused code like mdns_cli and enable use of mqtt 5
+- Added log messages for discovery requests for valves and lights. Cleaned up logging messages to use info level
 
 ### Changed
 ### Deprecated

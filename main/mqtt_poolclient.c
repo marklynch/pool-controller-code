@@ -382,6 +382,5 @@ esp_err_t mqtt_publish(const char *topic, const char *payload, int qos, bool ret
         return ESP_FAIL;
     }
 
-    ESP_LOGD(TAG, "Published to %s: %s", topic, payload);
     return ESP_OK;
 }

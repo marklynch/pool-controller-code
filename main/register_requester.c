@@ -73,7 +73,7 @@ static void register_requester_task(void *arg)
         }
 
         if (gateway_present) {
-            ESP_LOGD(TAG, "Internet Gateway present, no requests needed");
+            ESP_LOGI(TAG, "Internet Gateway present, no requests needed");
         } else {
             // Request missing timers
             int missing_timers = 0;
@@ -96,11 +96,13 @@ static void register_requester_task(void *arg)
                 if (!light_configured[i]) continue;
 
                 if (!light_multicolor_valid[i]) {
+                    ESP_LOGI(TAG, "Requesting missing light %d zone multicolor", i + 1);
                     char desc[24];
                     snprintf(desc, sizeof(desc), "light %d multicolor", i + 1);
                     send_request(0xA0 + i, 0x01, desc);
                 }
                 if (!light_name_valid[i]) {
+                    ESP_LOGI(TAG, "Requesting missing light %d zone name", i + 1);
                     char desc[24];
                     snprintf(desc, sizeof(desc), "light %d name", i + 1);
                     send_request(0xB0 + i, 0x01, desc);
@@ -111,6 +113,7 @@ static void register_requester_task(void *arg)
             for (int i = 0; i < MAX_VALVE_SLOTS; i++) {
                 if (!valve_configured[i]) continue;
                 if (!valve_label_valid[i]) {
+                    ESP_LOGI(TAG, "Requesting missing valve %d label", i + 1);
                     char desc[24];
                     snprintf(desc, sizeof(desc), "valve %d label", i + 1);
                     send_request(0xD0 + i, 0x02, desc);
