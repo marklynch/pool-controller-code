@@ -13,11 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Extended heater model to support up to `MAX_HEATERS` (2) heaters — replaced flat `heater_on`/`heater_valid` booleans in `pool_state_t` with a `pool_heater_t heaters[MAX_HEATERS]` array; MQTT topics are now indexed (`pool/{id}/heater/0/state`, `pool/{id}/heater/0/set`); heater discovery, state publishing, and `/status` JSON all follow the same lazy/on-discovery pattern used by channels and light zones; a stub for heater 1 logs a warning until its bus protocol is captured
+
 ### Changed
 ### Deprecated
 ### Removed
 ### Fixed
-### Security
+- Fixed MQTT client logging a spurious "Client asked to stop, but was not started" warning on every WiFi disconnect — `mqtt_client_stop()` now tracks whether the client was ever started and skips the stop call if not, preventing the error from contributing to the retry counter
 
 
 ## [0.8.2] - 2026-03-10

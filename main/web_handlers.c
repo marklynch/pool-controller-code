@@ -186,7 +186,7 @@ static esp_err_t home_get_handler(httpd_req_t *req)
         "if(data.mode!==null)rows.push(['Mode',data.mode]);"
         "const t=data.temperature;"
         "if(t.current!==null)rows.push(['Temperature',t.current+'\u00b0'+(t.scale==='Fahrenheit'?'F':'C')]);"
-        "if(data.heater.state!==null)rows.push(['Heater',data.heater.state]);"
+        "data.heaters.forEach(h=>rows.push(['Heater '+(h.index+1),h.state]));"
         "data.channels.forEach(ch=>rows.push([ch.name||ch.type,ch.state]));"
         "data.lighting.forEach(lt=>{"
         "let s=lt.state;if(lt.active&&lt.color)s+=': '+lt.color;"
@@ -551,14 +551,18 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     cJSON_AddStringToObject(temperature, "scale", s_pool_state.temp_scale_fahrenheit ? "Fahrenheit" : "Celsius");
     cJSON_AddItemToObject(root, "temperature", temperature);
 
-    // Heater
-    cJSON *heater = cJSON_CreateObject();
-    if (s_pool_state.heater_valid) {
-        cJSON_AddStringToObject(heater, "state", s_pool_state.heater_on ? "On" : "Off");
-    } else {
-        cJSON_AddNullToObject(heater, "state");
+    // Heaters (only include discovered/valid heaters)
+    cJSON *heaters_arr = cJSON_CreateArray();
+    for (int i = 0; i < MAX_HEATERS; i++) {
+        if (!s_pool_state.heaters[i].valid) {
+            continue;
+        }
+        cJSON *heater = cJSON_CreateObject();
+        cJSON_AddNumberToObject(heater, "index", i);
+        cJSON_AddStringToObject(heater, "state", s_pool_state.heaters[i].on ? "On" : "Off");
+        cJSON_AddItemToArray(heaters_arr, heater);
     }
-    cJSON_AddItemToObject(root, "heater", heater);
+    cJSON_AddItemToObject(root, "heaters", heaters_arr);
 
     // Mode
     if (s_pool_state.mode_valid) {

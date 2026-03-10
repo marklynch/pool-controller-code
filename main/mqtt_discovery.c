@@ -213,20 +213,23 @@ static void publish_spa_setpoint_discovery(const char *device_id, const char *ma
 // Heater Switch Discovery
 // ======================================================
 
-static void publish_heater_discovery(const char *device_id, const char *mac_suffix)
+static void publish_heater_discovery(const char *device_id, const char *mac_suffix, int index)
 {
     char avail_topic[128];
     char state_topic[128];
     char command_topic[128];
     snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
-    snprintf(state_topic, sizeof(state_topic), "pool/%s/heater/state", device_id);
-    snprintf(command_topic, sizeof(command_topic), "pool/%s/heater/set", device_id);
+    snprintf(state_topic, sizeof(state_topic), "pool/%s/heater/%d/state", device_id, index);
+    snprintf(command_topic, sizeof(command_topic), "pool/%s/heater/%d/set", device_id, index);
 
     char uid[64];
-    snprintf(uid, sizeof(uid), DISCOVERY_ID_PREFIX "_%s_heater", mac_suffix);
+    snprintf(uid, sizeof(uid), DISCOVERY_ID_PREFIX "_%s_heater_%d", mac_suffix, index);
+
+    char display_name[32];
+    snprintf(display_name, sizeof(display_name), "Heater %d", index + 1);
 
     cJSON *root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "name", "Heater");
+    cJSON_AddStringToObject(root, "name", display_name);
     cJSON_AddStringToObject(root, "icon", "mdi:radiator");
     cJSON_AddStringToObject(root, "state_topic", state_topic);
     cJSON_AddStringToObject(root, "command_topic", command_topic);
@@ -246,6 +249,18 @@ static void publish_heater_discovery(const char *device_id, const char *mac_suff
     publish_discovery("switch", uid, json_str);
     cJSON_free(json_str);
     cJSON_Delete(root);
+}
+
+void mqtt_publish_heater_discovery_single(int index)
+{
+    char device_id[32];
+    mqtt_get_device_id(device_id, sizeof(device_id));
+
+    char mac_suffix[DEVICE_MAC_SUFFIX_LEN];
+    device_get_mac_suffix(mac_suffix, sizeof(mac_suffix));
+
+    ESP_LOGI(TAG, "Publishing discovery for heater %d", index);
+    publish_heater_discovery(device_id, mac_suffix, index);
 }
 
 // ======================================================
@@ -683,8 +698,8 @@ void mqtt_publish_discovery(void)
     publish_pool_setpoint_discovery(device_id, mac_suffix);
     publish_spa_setpoint_discovery(device_id, mac_suffix);
 
-    // Heater
-    publish_heater_discovery(device_id, mac_suffix);
+    // Note: Heaters are NOT published here.
+    // They are published individually when first seen (see mqtt_publish.c)
 
     // Mode
     publish_mode_discovery(device_id, mac_suffix);

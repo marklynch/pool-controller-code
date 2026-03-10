@@ -27,6 +27,7 @@ static const char *TAG = "MQTT_CLIENT";
 // Global MQTT client handle
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static volatile bool s_mqtt_connected = false;
+static volatile bool s_mqtt_started = false;
 static char s_device_id[32] = {0};
 
 // Forward declarations
@@ -182,9 +183,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
         }
 
-        // Subscribe to heater command
-        snprintf(topic, sizeof(topic), "pool/%s/heater/set", device_id);
-        esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
+        // Subscribe to heater commands (heater/0/set, heater/1/set, ...)
+        for (int i = 0; i < MAX_HEATERS; i++) {
+            snprintf(topic, sizeof(topic), "pool/%s/heater/%d/set", device_id, i);
+            esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
+        }
 
         // Subscribe to mode command
         snprintf(topic, sizeof(topic), "pool/%s/mode/set", device_id);
@@ -323,17 +326,19 @@ esp_err_t mqtt_client_start(void)
         return err;
     }
 
+    s_mqtt_started = true;
     ESP_LOGI(TAG, "MQTT client started");
     return ESP_OK;
 }
 
 esp_err_t mqtt_client_stop(void)
 {
-    if (s_mqtt_client == NULL) {
+    if (s_mqtt_client == NULL || !s_mqtt_started) {
         return ESP_OK;
     }
 
     s_mqtt_connected = false;
+    s_mqtt_started = false;
 
     esp_err_t err = esp_mqtt_client_stop(s_mqtt_client);
     if (err != ESP_OK) {

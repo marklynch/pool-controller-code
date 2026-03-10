@@ -112,9 +112,14 @@ static void handle_light_command(int zone, const char *payload, int payload_len)
 // Heater Control
 // ======================================================
 
-static void handle_heater_command(const char *payload, int payload_len)
+static void handle_heater_command(const char *payload, int payload_len, int index)
 {
-    ESP_LOGI(TAG, "Heater command: %.*s", payload_len, payload);
+    ESP_LOGI(TAG, "Heater %d command: %.*s", index, payload_len, payload);
+
+    if (index != 0) {
+        ESP_LOGW(TAG, "Heater %d command not yet supported", index);
+        return;
+    }
 
     uint8_t state;
     if (strncmp(payload, "ON", payload_len) == 0) {
@@ -135,7 +140,7 @@ static void handle_heater_command(const char *payload, int payload_len)
         0xFF, 0xFF,       // DEST: Broadcast
         0x80, 0x00,       // CONTROL
         0x3A, 0x0F, 0xB9, // Command pattern
-        0xE6,             // Register ID (heater)
+        0xE6,             // Register ID (heater 0)
         0x00,             // Slot
         state,            // State (0x00=Off, 0x01=On)
         (0xE6 + 0x00 + state) & 0xFF, // Checksum
@@ -351,8 +356,15 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
             ESP_LOGE(TAG, "Invalid valve number: %d", valve);
         }
     }
-    else if (strncmp(cmd_topic, "heater/set", 10) == 0) {
-        handle_heater_command(data, data_len);
+    else if (strncmp(cmd_topic, "heater/", 7) == 0) {
+        char *endptr;
+        int idx = (int)strtol(cmd_topic + 7, &endptr, 10);
+        if (endptr == cmd_topic + 7 || strncmp(endptr, "/set", 4) != 0
+            || idx < 0 || idx >= MAX_HEATERS) {
+            ESP_LOGE(TAG, "Invalid heater topic: %s", cmd_topic);
+        } else {
+            handle_heater_command(data, data_len, idx);
+        }
     }
     else if (strncmp(cmd_topic, "mode/set", 8) == 0) {
         handle_mode_command(data, data_len);

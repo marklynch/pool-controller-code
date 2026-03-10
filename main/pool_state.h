@@ -54,6 +54,11 @@ typedef struct {
 } valve_state_t;
 
 typedef struct {
+    bool on;
+    bool valid;
+} pool_heater_t;
+
+typedef struct {
     uint8_t timer_num;      // 1-based timer number
     uint8_t start_hour;
     uint8_t start_minute;
@@ -80,9 +85,8 @@ typedef struct {
     bool temp_scale_fahrenheit;
     bool temp_valid;
 
-    // Heater
-    bool heater_on;
-    bool heater_valid;
+    // Heaters (up to MAX_HEATERS)
+    pool_heater_t heaters[MAX_HEATERS];
 
     // Mode
     uint8_t mode;  // 0=Spa, 1=Pool

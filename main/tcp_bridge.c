@@ -319,7 +319,7 @@ static void tcp_bridge_task(void *pvParameters)
                 ESP_LOGI(TAG, "Client connected from %s", addr_str);
 
                 const char *hello =
-                    "Connected to ESP32-C6 pool bus bridge.\r\n"
+                    "Connected to pool control bus bridge.\r\n"
                     "UART bytes will be shown here in hex.\r\n"
                     "Decoded messages will also be shown.\r\n"
                     "Send hex strings (e.g., '02 00 50 FF FF 03') to transmit to the bus.\r\n\r\n";

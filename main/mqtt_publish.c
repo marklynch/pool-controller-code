@@ -12,11 +12,12 @@ static const char *TAG = "MQTT_PUBLISH";
 // Last published state (for change detection) - using pool_state_t as single source of truth
 static pool_state_t s_last_published_state = {0};
 
-// Track whether discovery has been published for each channel/light/valve
+// Track whether discovery has been published for each channel/light/valve/heater
 static struct {
     bool channels[MAX_CHANNELS];
     bool lights[MAX_LIGHT_ZONES];
     bool valves[MAX_VALVE_SLOTS];
+    bool heaters[MAX_HEATERS];
 } s_discovery_published = {0};
 
 // ======================================================
@@ -62,27 +63,40 @@ void mqtt_publish_temperature(const pool_state_t *current_state)
 // Heater Publishing
 // ======================================================
 
-void mqtt_publish_heater(const pool_state_t *current_state)
+void mqtt_publish_heater(const pool_state_t *current_state, int index)
 {
+    if (index < 0 || index >= MAX_HEATERS) {
+        return;
+    }
+
+    const pool_heater_t *heater = &current_state->heaters[index];
+
     // Check if anything changed
-    if (s_last_published_state.heater_valid && s_last_published_state.heater_on == current_state->heater_on) {
+    if (s_last_published_state.heaters[index].valid &&
+        s_last_published_state.heaters[index].on == heater->on) {
         return;  // No change, skip publish
+    }
+
+    // Publish discovery on first publish
+    if (!s_discovery_published.heaters[index]) {
+        mqtt_publish_heater_discovery_single(index);
+        s_discovery_published.heaters[index] = true;
     }
 
     char device_id[32];
     mqtt_get_device_id(device_id, sizeof(device_id));
 
     char topic[128];
-    snprintf(topic, sizeof(topic), "pool/%s/heater/state", device_id);
+    snprintf(topic, sizeof(topic), "pool/%s/heater/%d/state", device_id, index);
 
-    const char *payload = current_state->heater_on ? "ON" : "OFF";
+    const char *payload = heater->on ? "ON" : "OFF";
     mqtt_publish(topic, payload, 0, false);
 
     // Update last published state
-    s_last_published_state.heater_on = current_state->heater_on;
-    s_last_published_state.heater_valid = true;
+    s_last_published_state.heaters[index].on = heater->on;
+    s_last_published_state.heaters[index].valid = true;
 
-    ESP_LOGI(TAG, "Published heater: %s", payload);
+    ESP_LOGI(TAG, "Published heater %d: %s", index, payload);
 }
 
 // ======================================================

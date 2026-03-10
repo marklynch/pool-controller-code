@@ -35,7 +35,7 @@ For example, if you provisioned via the `POOL_A1B2C3` network, the device will b
 Example on a mac using nc (netcat)
 ```
 % nc poolcontrol-A1B2C3.local 7373
-Connected to ESP32-C6 pool bus bridge.
+Connected to pool control bus bridge.
 UART bytes will be shown here in hex.
 Bytes you send will be forwarded to the bus.
 

@@ -8,8 +8,8 @@
 // Publish temperature data from pool state
 void mqtt_publish_temperature(const pool_state_t *current_state);
 
-// Publish heater state from pool state
-void mqtt_publish_heater(const pool_state_t *current_state);
+// Publish heater state from pool state (index 0-based)
+void mqtt_publish_heater(const pool_state_t *current_state, int index);
 
 // Publish mode (Pool/Spa) from pool state
 void mqtt_publish_mode(const pool_state_t *current_state);

@@ -620,14 +620,14 @@ static bool handle_heater(
         ESP_LOGW(TAG, "Failed to acquire mutex for heater");
         return true;
     }
-    ctx->pool_state->heater_on = (heater_state != 0);
-    ctx->pool_state->heater_valid = true;
+    ctx->pool_state->heaters[0].on = (heater_state != 0);
+    ctx->pool_state->heaters[0].valid = true;
     ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     snapshot = *ctx->pool_state;
     xSemaphoreGive(ctx->state_mutex);
 
     if (ctx->enable_mqtt) {
-        mqtt_publish_heater(&snapshot);
+        mqtt_publish_heater(&snapshot, 0);
     }
 
     return true;
