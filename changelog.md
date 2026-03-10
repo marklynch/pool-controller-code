@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed
+
+## [0.9.0] - 2026-03-10
+### Added
 - Extended heater model to support up to `MAX_HEATERS` (2) heaters — replaced flat `heater_on`/`heater_valid` booleans in `pool_state_t` with a `pool_heater_t heaters[MAX_HEATERS]` array; MQTT topics are now indexed (`pool/{id}/heater/0/state`, `pool/{id}/heater/0/set`); heater discovery, state publishing, and `/status` JSON all follow the same lazy/on-discovery pattern used by channels and light zones; a stub for heater 1 logs a warning until its bus protocol is captured
 - Expanded unit test coverage in `test/test_message_decoder.c` — added 6 new tests: heater OFF, current temperature reading, channel status (all off), channel status (light zones active), chlorinator pH setpoint, and chlorinator ORP setpoint; all byte vectors taken directly from real bus captures
 - Added `test/test_mqtt_commands.c` — 42 host-based unit tests for `mqtt_commands.c` covering heater ON/OFF, heater-1 stub rejection, out-of-range/malformed topic handling, channel toggle, mode switch (Pool/Spa), temperature setpoint (pool and spa), light zone ON/OFF, valve On/Auto, wrong device ID routing, and unknown topic rejection; uses a UART spy to verify the exact bytes written to the bus
