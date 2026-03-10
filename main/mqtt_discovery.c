@@ -333,16 +333,21 @@ static void publish_channel_discovery(const char *device_id, const char *mac_suf
     // Build unique IDs
     char sensor_uid[64];
     char button_uid[64];
+    char active_uid[64];
     if (norm_name[0] != '\0') {
         snprintf(sensor_uid, sizeof(sensor_uid),
                  DISCOVERY_ID_PREFIX "_%s_ch%d_%s", mac_suffix, channel_num, norm_name);
         snprintf(button_uid, sizeof(button_uid),
                  DISCOVERY_ID_PREFIX "_%s_ch%d_%s_toggle", mac_suffix, channel_num, norm_name);
+        snprintf(active_uid, sizeof(active_uid),
+                 DISCOVERY_ID_PREFIX "_%s_ch%d_%s_active", mac_suffix, channel_num, norm_name);
     } else {
         snprintf(sensor_uid, sizeof(sensor_uid),
                  DISCOVERY_ID_PREFIX "_%s_ch%d", mac_suffix, channel_num);
         snprintf(button_uid, sizeof(button_uid),
                  DISCOVERY_ID_PREFIX "_%s_ch%d_toggle", mac_suffix, channel_num);
+        snprintf(active_uid, sizeof(active_uid),
+                 DISCOVERY_ID_PREFIX "_%s_ch%d_active", mac_suffix, channel_num);
     }
 
     // Sensor for state
@@ -385,6 +390,31 @@ static void publish_channel_discovery(const char *device_id, const char *mac_suf
             return;
         }
         publish_discovery("button", button_uid, json_str);
+        cJSON_free(json_str);
+        cJSON_Delete(root);
+    }
+
+    // Binary sensor for active state
+    {
+        char active_name[80];
+        snprintf(active_name, sizeof(active_name), "%s Active", display_name);
+
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "name", active_name);
+        cJSON_AddStringToObject(root, "state_topic", state_topic);
+        cJSON_AddStringToObject(root, "value_template", "{{ 'ON' if value_json.active else 'OFF' }}");
+        cJSON_AddStringToObject(root, "unique_id", active_uid);
+        cJSON_AddStringToObject(root, "default_entity_id", active_uid);
+        cJSON_AddStringToObject(root, "availability_topic", avail_topic);
+        cJSON_AddItemToObject(root, "device", build_device_cjson(device_id, mac_suffix));
+
+        char *json_str = cJSON_PrintUnformatted(root);
+        if (!json_str) {
+            ESP_LOGE(TAG, "Failed to print channel active binary sensor discovery JSON");
+            cJSON_Delete(root);
+            return;
+        }
+        publish_discovery("binary_sensor", active_uid, json_str);
         cJSON_free(json_str);
         cJSON_Delete(root);
     }

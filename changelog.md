@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added sdkconfig.defaults to optimise build, formalise partition table, remove unused code like mdns_cli and enable use of mqtt 5
 - Added log messages for discovery requests for valves and lights. Cleaned up logging messages to use info level
+- Added binary sensor per channel for active state (`Filter Pump Active: ON/OFF`) alongside the existing mode sensor (`Off/Auto/On/…`) — both read from the same retained MQTT state topic using `value_json.state` and `value_json.active` respectively
 
 ### Changed
 ### Deprecated
