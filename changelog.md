@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 ### Fixed
 - Fixed MQTT client logging a spurious "Client asked to stop, but was not started" warning on every WiFi disconnect — `mqtt_client_stop()` now tracks whether the client was ever started and skips the stop call if not, preventing the error from contributing to the retry counter
+- Fixed host-based unit tests failing to compile after heater model refactor — updated `mqtt_publish_heater` mock signature, field references (`heaters[0].on`/`heaters[0].valid`), and added missing `mqtt_publish_valve` and `register_requester_notify` mocks
+- Fixed test message fixtures in `test_message_decoder.c` using `0x00` for byte[9] (header checksum) — temperature and heater messages now use correct real-world byte values so patterns match and handlers execute; corrected expected device name for `0x0050` from `"Controller"` to `"Touch Screen"`
+- Fixed missing `#include <stdlib.h>` in `message_decoder.c` — `strtoul`/`malloc`/`free` were relying on ESP-IDF transitive includes, causing host-based test builds to fail
 
 
 ## [0.8.2] - 2026-03-10

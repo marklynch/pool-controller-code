@@ -36,10 +36,14 @@ void xSemaphoreGive(SemaphoreHandle_t xSemaphore)
 // Mock MQTT functions (disabled in tests)
 void mqtt_publish_mode(const pool_state_t *state) {}
 void mqtt_publish_temperature(const pool_state_t *state) {}
-void mqtt_publish_heater(const pool_state_t *state) {}
+void mqtt_publish_heater(const pool_state_t *state, int index) {}
 void mqtt_publish_chlorinator(const pool_state_t *state) {}
 void mqtt_publish_light(const pool_state_t *state, uint8_t zone) {}
 void mqtt_publish_channel(const pool_state_t *state, uint8_t channel) {}
+void mqtt_publish_valve(const pool_state_t *state, uint8_t valve_num) {}
+
+// Mock register requester
+void register_requester_notify(void) {}
 
 // Test context
 static pool_state_t test_pool_state;
@@ -179,62 +183,69 @@ void test_decode_mode_pool(void)
 
 /**
  * Test: Temperature setting message
+ * Real message: 02 00 50 FF FF 80 00 17 10 F7 25 1D 63 54 F9 03
+ * Payload: spa_c=0x25(37), pool_c=0x1D(29), spa_f=0x63(99), pool_f=0x54(84)
+ * Byte[8]=0x10 (length=16), Byte[9]=0xF7 (header checksum = sum(bytes 0-8) & 0xFF)
+ * Data checksum = (0x25+0x1D+0x63+0x54) & 0xFF = 0xF9
  */
 void test_decode_temperature_setting(void)
 {
     // Reset test state
     init_test_context();
 
-    // Temperature setting message
-    // Data starts at byte 10 (spa setpoint) and byte 11 (pool setpoint)
     uint8_t msg[] = {
         0x02,                   // Byte 0: Start
-        0x00, 0x50,             // Bytes 1-2: Source: Controller
+        0x00, 0x50,             // Bytes 1-2: Source: Touch Screen
         0xFF, 0xFF,             // Bytes 3-4: Dest: Broadcast
         0x80, 0x00,             // Bytes 5-6: Control
-        0x17, 0x10,             // Bytes 7-8: Command (Temperature setting)
-        0x00,                   // Byte 9: Padding/extra data
-        75,                     // Byte 10: Spa setpoint: 75°F
-        80,                     // Byte 11: Pool setpoint: 80°F
-        155,                    // Byte 12: Checksum (75 + 80 = 155 = 0x9B)
-        0x03                    // Byte 13: End
+        0x17, 0x10,             // Bytes 7-8: Command / length (16)
+        0xF7,                   // Byte 9: Header checksum (sum bytes 0-8)
+        0x25,                   // Byte 10: Spa setpoint 37°C
+        0x1D,                   // Byte 11: Pool setpoint 29°C
+        0x63,                   // Byte 12: Spa setpoint 99°F
+        0x54,                   // Byte 13: Pool setpoint 84°F
+        0xF9,                   // Byte 14: Data checksum
+        0x03                    // Byte 15: End
     };
 
     bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
 
     TEST_ASSERT(decoded, "Temperature setting message should be decoded");
-    TEST_ASSERT(test_pool_state.spa_setpoint == 75, "Spa setpoint should be 75");
-    TEST_ASSERT(test_pool_state.pool_setpoint == 80, "Pool setpoint should be 80");
+    TEST_ASSERT(test_pool_state.spa_setpoint == 37, "Spa setpoint should be 37°C");
+    TEST_ASSERT(test_pool_state.pool_setpoint == 29, "Pool setpoint should be 29°C");
 }
 
 /**
- * Test: Heater status message
+ * Test: Heater status message (ON)
+ * Real OFF message: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03
+ * Byte[8]=0x0F (length=15), Byte[9]=0x03 (header checksum = sum(bytes 0-8) & 0xFF)
+ * Heater state = payload[1]. ON = 0x01.
+ * Data checksum = (0x00+0x01+0x08) & 0xFF = 0x09
  */
 void test_decode_heater_on(void)
 {
     // Reset test state
     init_test_context();
 
-    // Heater status message (ON)
-    // Checksum is sum of data bytes from index 10 to (len-3)
     uint8_t msg[] = {
         0x02,                   // Byte 0: Start
         0x00, 0x62,             // Bytes 1-2: Source: Temp Sensor
         0xFF, 0xFF,             // Bytes 3-4: Dest: Broadcast
         0x80, 0x00,             // Bytes 5-6: Control
-        0x12, 0x0F,             // Bytes 7-8: Command (Heater)
-        0x00,                   // Byte 9: Padding
-        0x00,                   // Byte 10: Data
-        0x01,                   // Byte 11: Heater ON
-        0x01,                   // Byte 12: Checksum (0x00 + 0x01 = 0x01)
-        0x03                    // Byte 13: End
+        0x12, 0x0F,             // Bytes 7-8: Command / length (15)
+        0x03,                   // Byte 9: Header checksum (sum bytes 0-8)
+        0x00,                   // Byte 10: Payload[0]
+        0x01,                   // Byte 11: Payload[1] = heater state ON
+        0x08,                   // Byte 12: Payload[2]
+        0x09,                   // Byte 13: Data checksum
+        0x03                    // Byte 14: End
     };
 
     bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
 
     TEST_ASSERT(decoded, "Heater message should be decoded");
-    TEST_ASSERT(test_pool_state.heater_on, "Heater should be ON");
-    TEST_ASSERT(test_pool_state.heater_valid, "Heater valid flag should be set");
+    TEST_ASSERT(test_pool_state.heaters[0].on, "Heater should be ON");
+    TEST_ASSERT(test_pool_state.heaters[0].valid, "Heater valid flag should be set");
 }
 
 /**
@@ -273,7 +284,7 @@ void test_device_name_lookup(void)
     const char *name;
 
     name = get_device_name(0x00, 0x50);
-    TEST_ASSERT(strcmp(name, "Controller") == 0, "0x0050 should be 'Controller'");
+    TEST_ASSERT(strcmp(name, "Touch Screen") == 0, "0x0050 should be 'Touch Screen'");
 
     name = get_device_name(0x00, 0x62);
     TEST_ASSERT(strcmp(name, "Temp Sensor") == 0, "0x0062 should be 'Temp Sensor'");

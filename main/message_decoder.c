@@ -3,6 +3,7 @@
 #include "mqtt_publish.h"
 #include "register_requester.h"
 #include "esp_log.h"
+#include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
 
