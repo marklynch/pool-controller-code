@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Migrated `/status` HTTP handler in `web_handlers.c` from ~80 `snprintf` calls to cJSON — eliminates silent truncation against a fixed 8192-byte buffer and correctly escapes channel names, valve labels, and other user-configurable strings that could contain `"` or `\`; removes `HTTP_STATUS_BUFFER_SIZE` from `config.h`
 - Fixed WiFi scan results JSON in `web_handlers.c` building SSID strings with raw `snprintf` — SSIDs containing `"` or `\` produced malformed JSON; replaced with cJSON so all SSID characters are correctly escaped
+- Fixed WiFi scan page not handling non-200 responses — a 500 from the server caused a cryptic JS `SyntaxError` instead of a readable message; added `r.ok` check, a "Retry Scan" button that appears on failure, and a "No networks found" fallback in the select
 - Fixed `broker_uri`, `lwt_topic`, and `device_id` in `mqtt_poolclient.c` declared as stack buffers then passed as pointers to `esp_mqtt_client_init` — made `static` so their lifetime is unambiguously valid for the lifetime of the MQTT client
 - Fixed `sys_table` buffer in `web_handlers.c` undersized at 700 bytes for its HTML format string — increased to 1024 to prevent silent truncation producing malformed HTML
 - Fixed uninitialized `pool_state_t snapshot` passed to MQTT publish on mutex timeout in 12 handlers in `message_decoder.c` — restructured each to early-return on mutex failure so `mqtt_publish_*` is only reached when the snapshot was actually populated
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `s_log_client_sock` race in `tcp_bridge.c`: the log vprintf callback and the TCP bridge task both sent to the same client socket fd without synchronisation, causing interleaved output — all sends to `client_sock` now go through a `send_to_client` helper that holds `s_log_mutex`, serialising them with the vprintf sends
 - Fixed register label loop using hardcoded `32` instead of `MAX_REGISTER_LABELS` in `message_decoder.c`, `web_handlers.c`, and `register_requester.c` instead of a named constant — added `MAX_REGISTER_LABELS` to `config.h` and used it for the `pool_state_t` array declaration and both decoder loops
 - Fixed `ESP_ERROR_CHECK` on mDNS init and service registration in `wifi_provisioning.c` — mDNS is non-critical; failures now log a warning and continue rather than rebooting the device
+- Fixed `ESP_ERROR_CHECK` on WiFi scan start and result retrieval in `web_handlers.c` — a scan failure now returns HTTP 500 to the client rather than rebooting the device
 ### Security
 - Fixed `s_last_tx_msg` loopback buffer using hardcoded `256` instead of `BUS_MESSAGE_MAX_SIZE`, which would cause silent truncation if max message size was changed
 - Fixed `strcpy` after `malloc` in web handlers HTML footer helper — replaced with `memcpy` using the already-known length

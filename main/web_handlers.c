@@ -261,6 +261,7 @@ const char WIFI_PAGE[] =
         "<input type='password' id='password' name='password' placeholder='Enter network password' required>"
     "</div>"
     "<button type='submit'>Connect</button>"
+    "<button type='button' id='retryScan' hidden onclick='scanWiFi()'>Retry Scan</button>"
     "<div id='status' role='alert' hidden class='mt-4'></div>"
     "</form>"
     "<script>"
@@ -269,12 +270,21 @@ const char WIFI_PAGE[] =
         "s.textContent=msg;"
         "s.setAttribute('data-variant',isError?'danger':'success');"
         "s.removeAttribute('hidden');}"
-    "function scanWiFi(){fetch('/scan').then(r=>r.json()).then(data=>{"
-        "const s=document.getElementById('ssid');s.innerHTML='';"
-        "data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
-        "o.text=n.ssid+' ('+n.rssi+' dBm)'+(n.current?' - Current':'');"
-        "if(n.current)o.selected=true;s.appendChild(o);});}).catch(e=>{"
-        "showStatus('Scan failed: '+e,true);});}"
+    "function scanWiFi(){"
+        "const s=document.getElementById('ssid');"
+        "s.innerHTML='<option value=\"\">Scanning...</option>';"
+        "document.getElementById('retryScan').setAttribute('hidden','');"
+        "fetch('/scan')"
+        ".then(r=>{if(!r.ok)throw new Error('Scan failed ('+r.status+')');return r.json();})"
+        ".then(data=>{"
+            "s.innerHTML='';"
+            "data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
+            "o.text=n.ssid+' ('+n.rssi+' dBm)'+(n.current?' \\u2713':'');"
+            "if(n.current)o.selected=true;s.appendChild(o);});})"
+        ".catch(e=>{"
+            "s.innerHTML='<option value=\"\">No networks found</option>';"
+            "showStatus(e.message,true);"
+            "document.getElementById('retryScan').removeAttribute('hidden');});}"
     "document.getElementById('wifiForm').onsubmit=function(e){"
         "e.preventDefault();const ssid=document.getElementById('ssid').value;"
         "const pass=document.getElementById('password').value;"
@@ -329,7 +339,12 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         .scan_time.active.max = WIFI_SCAN_TIME_MAX_MS,
     };
 
-    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
+    esp_err_t scan_err = esp_wifi_scan_start(&scan_config, true);
+    if (scan_err != ESP_OK) {
+        ESP_LOGW(TAG, "WiFi scan failed: %s", esp_err_to_name(scan_err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "WiFi scan failed");
+        return ESP_FAIL;
+    }
 
     uint16_t ap_count = 0;
     esp_wifi_scan_get_ap_num(&ap_count);
@@ -340,7 +355,13 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_count, ap_list));
+    esp_err_t get_err = esp_wifi_scan_get_ap_records(&ap_count, ap_list);
+    if (get_err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to get scan results: %s", esp_err_to_name(get_err));
+        free(ap_list);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to get scan results");
+        return ESP_FAIL;
+    }
 
     // Deduplicate - track unique SSIDs and their best RSSI
     typedef struct {
