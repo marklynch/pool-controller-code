@@ -1835,7 +1835,7 @@ static bool handle_light_zone_active(
 
 /**
  * Handler: Valve labels
- * Register range: 0xD0-0xD1, Slot: 0x03
+ * Register range: 0xD0-0xD1, Slot: 0x02
  */
 static bool handle_valve_label(
     const uint8_t *data, int len,
