@@ -14,9 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
-- Migrated `mqtt_discovery.c` JSON construction from manual `snprintf` format strings to cJSON — eliminates fragile buffer sizing, stack-allocated `char device_json[512]` buffers, and heap `malloc`/`free` blocks in channel/light/valve discovery; removes `MQTT_DISCOVERY_CONFIG_SIZE` from `config.h`
 ### Deprecated
 ### Removed
+### Fixed
+### Security
+
+
+## [0.8.2] - 2026-03-10
+### Changed
+- Migrated `mqtt_discovery.c` JSON construction from manual `snprintf` format strings to cJSON — eliminates fragile buffer sizing, stack-allocated `char device_json[512]` buffers, and heap `malloc`/`free` blocks in channel/light/valve discovery; removes `MQTT_DISCOVERY_CONFIG_SIZE` from `config.h`
+
 ### Fixed
 - Migrated `/status` HTTP handler in `web_handlers.c` from ~80 `snprintf` calls to cJSON — eliminates silent truncation against a fixed 8192-byte buffer and correctly escapes channel names, valve labels, and other user-configurable strings that could contain `"` or `\`; removes `HTTP_STATUS_BUFFER_SIZE` from `config.h`
 - Fixed WiFi scan results JSON in `web_handlers.c` building SSID strings with raw `snprintf` — SSIDs containing `"` or `\` produced malformed JSON; replaced with cJSON so all SSID characters are correctly escaped
@@ -27,9 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed single-digit-only channel/light/valve number parsing in MQTT command handler — replaced `cmd_topic[N] - '0'` with `strtol`, validating that the parsed number is followed by `/` so multi-digit numbers and malformed topics are rejected cleanly
 - Fixed fragile `hexLine` buffer arithmetic in `tcp_bridge.c` — buffer size, loop guard, and `\r\n` append now all reference the same `+3`/`-3` constant, and the append uses `hex_pos + 2` instead of mutating `hex_pos++`
 - Fixed `s_log_client_sock` race in `tcp_bridge.c`: the log vprintf callback and the TCP bridge task both sent to the same client socket fd without synchronisation, causing interleaved output — all sends to `client_sock` now go through a `send_to_client` helper that holds `s_log_mutex`, serialising them with the vprintf sends
-- Fixed register label loop using hardcoded `32` instead of `MAX_REGISTER_LABELS` in `message_decoder.c`, `web_handlers.c`, and `register_requester.c` instead of a named constant — added `MAX_REGISTER_LABELS` to `config.h` and used it for the `pool_state_t` array declaration and both decoder loops
+- Fixed register label loop using hardcoded `32` instead of `MAX_REGISTER_LABELS` in `message_decoder.c`, `web_handlers.c`, and `register_requester.c` — added `MAX_REGISTER_LABELS` to `config.h` and used it for the `pool_state_t` array declaration and both decoder loops
 - Fixed `ESP_ERROR_CHECK` on mDNS init and service registration in `wifi_provisioning.c` — mDNS is non-critical; failures now log a warning and continue rather than rebooting the device
 - Fixed `ESP_ERROR_CHECK` on WiFi scan start and result retrieval in `web_handlers.c` — a scan failure now returns HTTP 500 to the client rather than rebooting the device
+
 ### Security
 - Fixed `s_last_tx_msg` loopback buffer using hardcoded `256` instead of `BUS_MESSAGE_MAX_SIZE`, which would cause silent truncation if max message size was changed
 - Fixed `strcpy` after `malloc` in web handlers HTML footer helper — replaced with `memcpy` using the already-known length
