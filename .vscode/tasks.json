@@ -4,7 +4,7 @@
         {
             "label": "Run Tests",
             "type": "shell",
-            "command": "gcc -I. -I.. -o test_decoder test_message_decoder.c ../main/message_decoder.c && ./test_decoder",
+            "command": "./run_tests.sh",
             "options": {
                 "cwd": "${workspaceFolder}/test"
             },

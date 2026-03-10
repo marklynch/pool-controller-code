@@ -207,19 +207,20 @@ static void handle_temperature_command(bool is_pool, const char *payload, int pa
     temp_str[payload_len] = '\0';
 
     char *endptr;
-    long temp_c = strtol(temp_str, &endptr, 10);
+    long temp_parsed = strtol(temp_str, &endptr, 10);
     if (endptr == temp_str || *endptr != '\0') {
         ESP_LOGE(TAG, "Invalid temperature value: \"%s\"", temp_str);
         return;
     }
-    ESP_LOGI(TAG, "%s setpoint command: %ld°C", is_pool ? "Pool" : "Spa", temp_c);
+    ESP_LOGI(TAG, "%s setpoint command: %ld°C", is_pool ? "Pool" : "Spa", temp_parsed);
 
     // Validate temperature range (Celsius)
-    if (temp_c < TEMP_SETPOINT_MIN_C || temp_c > TEMP_SETPOINT_MAX_C) {
-        ESP_LOGE(TAG, "Temperature out of range: %" PRId32 "°C (valid: %d-%d)",
-                 temp_c, TEMP_SETPOINT_MIN_C, TEMP_SETPOINT_MAX_C);
+    if (temp_parsed < TEMP_SETPOINT_MIN_C || temp_parsed > TEMP_SETPOINT_MAX_C) {
+        ESP_LOGE(TAG, "Temperature out of range: %ld°C (valid: %d-%d)",
+                 temp_parsed, TEMP_SETPOINT_MIN_C, TEMP_SETPOINT_MAX_C);
         return;
     }
+    int32_t temp_c = (int32_t)temp_parsed;  // safe: range-checked above
 
     // Build UART command
     // Pattern: 02 00 F0 FF FF 80 00 19 0F 98 [TARGET] [TEMP_C] [TEMP_C] [CHECKSUM] 03
