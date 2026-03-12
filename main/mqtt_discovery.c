@@ -710,6 +710,91 @@ void mqtt_publish_valve_discovery_single(int valve_num, const char *valve_name)
 }
 
 // ======================================================
+// Favourite Select Discovery
+// ======================================================
+
+static void publish_favourite_discovery(const char *device_id, const char *mac_suffix,
+                                        const pool_state_t *state)
+{
+    char avail_topic[128];
+    char state_topic[128];
+    char command_topic[128];
+    snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
+    snprintf(state_topic, sizeof(state_topic), "pool/%s/favourite/state", device_id);
+    snprintf(command_topic, sizeof(command_topic), "pool/%s/favourite/set", device_id);
+
+    char uid[64];
+    snprintf(uid, sizeof(uid), DISCOVERY_ID_PREFIX "_%s_favourite", mac_suffix);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "name", "Favourite");
+    cJSON_AddStringToObject(root, "icon", "mdi:pool");
+    cJSON_AddStringToObject(root, "state_topic", state_topic);
+    cJSON_AddStringToObject(root, "command_topic", command_topic);
+
+    cJSON *opts = cJSON_CreateArray();
+
+    // Pool (index 0)
+    if (state && state->favourites[0].name_valid && state->favourites[0].name[0] != '\0') {
+        cJSON_AddItemToArray(opts, cJSON_CreateString(state->favourites[0].name));
+    } else {
+        cJSON_AddItemToArray(opts, cJSON_CreateString("Pool"));
+    }
+
+    // Spa (index 1)
+    if (state && state->favourites[1].name_valid && state->favourites[1].name[0] != '\0') {
+        cJSON_AddItemToArray(opts, cJSON_CreateString(state->favourites[1].name));
+    } else {
+        cJSON_AddItemToArray(opts, cJSON_CreateString("Spa"));
+    }
+
+    // User favourites (indices 2–7)
+    for (int i = 2; i < MAX_FAVOURITES; i++) {
+        if (!state || !state->favourites[i].enabled_valid || !state->favourites[i].enabled) {
+            continue;
+        }
+        if (state->favourites[i].name_valid && state->favourites[i].name[0] != '\0') {
+            cJSON_AddItemToArray(opts, cJSON_CreateString(state->favourites[i].name));
+        } else {
+            char fallback[24];
+            snprintf(fallback, sizeof(fallback), "Favourite %d", i - 1);
+            cJSON_AddItemToArray(opts, cJSON_CreateString(fallback));
+        }
+    }
+
+    // All Auto (always available)
+    cJSON_AddItemToArray(opts, cJSON_CreateString("All Auto"));
+
+    cJSON_AddItemToObject(root, "options", opts);
+    cJSON_AddStringToObject(root, "unique_id", uid);
+    cJSON_AddStringToObject(root, "default_entity_id", uid);
+    cJSON_AddStringToObject(root, "availability_topic", avail_topic);
+    cJSON_AddItemToObject(root, "device", build_device_cjson(device_id, mac_suffix));
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    if (!json_str) {
+        ESP_LOGE(TAG, "Failed to print favourite discovery JSON");
+        cJSON_Delete(root);
+        return;
+    }
+    publish_discovery("select", uid, json_str);
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+}
+
+void mqtt_publish_favourite_discovery_single(const pool_state_t *state)
+{
+    char device_id[32];
+    mqtt_get_device_id(device_id, sizeof(device_id));
+
+    char mac_suffix[DEVICE_MAC_SUFFIX_LEN];
+    device_get_mac_suffix(mac_suffix, sizeof(mac_suffix));
+
+    ESP_LOGI(TAG, "Publishing discovery for favourite select");
+    publish_favourite_discovery(device_id, mac_suffix, state);
+}
+
+// ======================================================
 // Main Discovery Function
 // ======================================================
 
@@ -736,6 +821,17 @@ void mqtt_publish_discovery(void)
 
     // Note: Channels and lights are NOT published here.
     // They are published individually when first configured (see mqtt_publish.c)
+
+    // Favourite/mode select (snapshot state for dynamic options)
+    {
+        pool_state_t snapshot = {0};
+        if (s_pool_state_mutex &&
+            xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+            snapshot = s_pool_state;
+            xSemaphoreGive(s_pool_state_mutex);
+        }
+        publish_favourite_discovery(device_id, mac_suffix, &snapshot);
+    }
 
     // Chemistry
     publish_ph_discovery(device_id, mac_suffix);

@@ -46,6 +46,8 @@ static void register_requester_task(void *arg)
         bool light_name_valid[MAX_LIGHT_ZONES] = {0};
         bool valve_configured[MAX_VALVE_SLOTS] = {0};
         bool valve_label_valid[MAX_VALVE_SLOTS] = {0};
+        bool fav_enabled_valid[MAX_FAVOURITES] = {0};
+        bool fav_name_valid[MAX_FAVOURITES] = {0};
 
         if (s_pool_state_mutex &&
             xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
@@ -68,6 +70,10 @@ static void register_requester_task(void *arg)
                         break;
                     }
                 }
+            }
+            for (int i = 0; i < MAX_FAVOURITES; i++) {
+                fav_enabled_valid[i] = s_pool_state.favourites[i].enabled_valid;
+                fav_name_valid[i]    = s_pool_state.favourites[i].name_valid;
             }
             xSemaphoreGive(s_pool_state_mutex);
         }
@@ -117,6 +123,20 @@ static void register_requester_task(void *arg)
                     char desc[24];
                     snprintf(desc, sizeof(desc), "valve %d label", i + 1);
                     send_request(0xD0 + i, 0x02, desc);
+                }
+            }
+
+            // Request missing favourite enable flags and labels (all 8 slots)
+            for (int i = 0; i < MAX_FAVOURITES; i++) {
+                if (!fav_enabled_valid[i]) {
+                    char desc[32];
+                    snprintf(desc, sizeof(desc), "favourite %d enable", i);
+                    send_request(0x21 + i, 0x03, desc);
+                }
+                if (!fav_name_valid[i]) {
+                    char desc[32];
+                    snprintf(desc, sizeof(desc), "favourite %d label", i);
+                    send_request(0x31 + i, 0x03, desc);
                 }
             }
         }

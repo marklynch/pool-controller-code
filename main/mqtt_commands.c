@@ -152,6 +152,62 @@ static void handle_heater_command(const char *payload, int payload_len, int inde
 }
 
 // ======================================================
+// Favourite/Mode Control
+// ======================================================
+
+static void handle_favourite_command(const char *payload, int payload_len)
+{
+    ESP_LOGI(TAG, "Favourite command: %.*s", payload_len, payload);
+
+    uint8_t value;
+    if (strncmp(payload, "Pool", payload_len) == 0 && payload_len == 4) {
+        value = 0x00;
+    } else if (strncmp(payload, "Spa", payload_len) == 0 && payload_len == 3) {
+        value = 0x01;
+    } else if (strncmp(payload, "All Auto", payload_len) == 0 && payload_len == 8) {
+        value = 0x81;
+    } else {
+        // Search enabled user favourites (indices 2–7 → values 0x02–0x07)
+        value = 0xFF;
+        if (s_pool_state_mutex &&
+            xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+            for (int i = 2; i < MAX_FAVOURITES; i++) {
+                const favourite_t *fav = &s_pool_state.favourites[i];
+                if (fav->enabled_valid && fav->enabled &&
+                    fav->name_valid &&
+                    (int)strlen(fav->name) == payload_len &&
+                    strncmp(payload, fav->name, payload_len) == 0) {
+                    value = (uint8_t)i;
+                    break;
+                }
+            }
+            xSemaphoreGive(s_pool_state_mutex);
+        }
+        if (value == 0xFF) {
+            ESP_LOGE(TAG, "Unknown favourite: %.*s", payload_len, payload);
+            return;
+        }
+    }
+
+    // Build CMD 0x2A to Touchscreen (0x0050)
+    // Pattern: 02 00 F0 00 50 80 00 2A 0D F9 [VALUE] [CHECKSUM] 03
+    // Checksum = value (only data byte)
+    uint8_t cmd[] = {
+        0x02,       // START
+        0x00, 0xF0, // SOURCE: Internet Gateway
+        0x00, 0x50, // DEST: Touchscreen
+        0x80, 0x00, // CONTROL
+        0x2A, 0x0D, 0xF9, // Command pattern
+        value,      // Mode/favourite value
+        value,      // Checksum (= value)
+        0x03        // END
+    };
+
+    ESP_LOGI(TAG, "Sending favourite/mode command 0x%02X", value);
+    send_uart_command(cmd, sizeof(cmd));
+}
+
+// ======================================================
 // Mode Control
 // ======================================================
 
@@ -369,6 +425,9 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
     }
     else if (strncmp(cmd_topic, "mode/set", 8) == 0) {
         handle_mode_command(data, data_len);
+    }
+    else if (strncmp(cmd_topic, "favourite/set", 13) == 0) {
+        handle_favourite_command(data, data_len);
     }
     else if (strncmp(cmd_topic, "temperature/pool/set", 20) == 0) {
         handle_temperature_command(true, data, data_len);

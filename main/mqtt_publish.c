@@ -12,12 +12,13 @@ static const char *TAG = "MQTT_PUBLISH";
 // Last published state (for change detection) - using pool_state_t as single source of truth
 static pool_state_t s_last_published_state = {0};
 
-// Track whether discovery has been published for each channel/light/valve/heater
+// Track whether discovery has been published for each channel/light/valve/heater/favourite
 static struct {
     bool channels[MAX_CHANNELS];
     bool lights[MAX_LIGHT_ZONES];
     bool valves[MAX_VALVE_SLOTS];
     bool heaters[MAX_HEATERS];
+    bool favourite;
 } s_discovery_published = {0};
 
 // ======================================================
@@ -429,4 +430,84 @@ void mqtt_publish_valve(const pool_state_t *current_state, uint8_t valve_num)
     s_last_published_state.valves[idx].configured = true;
 
     ESP_LOGI(TAG, "Published valve %d: %s (%s)", valve_num, state_name, display_name);
+}
+
+// ======================================================
+// Favourite Publishing
+// ======================================================
+
+// Map active_favourite value to the matching option name string.
+// Uses the pool_state favourites[] to get the registered name where available.
+static const char *get_favourite_option_name(const pool_state_t *state, uint8_t value,
+                                             char *buf, size_t buf_len)
+{
+    if (value == 0x81) {
+        return "All Auto";
+    }
+    if (value < MAX_FAVOURITES) {
+        if (state->favourites[value].name_valid && state->favourites[value].name[0] != '\0') {
+            return state->favourites[value].name;
+        }
+        // Fallback names
+        if (value == 0x00) return "Pool";
+        if (value == 0x01) return "Spa";
+        snprintf(buf, buf_len, "Favourite %d", value - 1);
+        return buf;
+    }
+    snprintf(buf, buf_len, "Unknown (0x%02X)", value);
+    return buf;
+}
+
+void mqtt_publish_favourite(const pool_state_t *state)
+{
+    // Re-publish discovery if the options (favourites array) changed
+    if (s_discovery_published.favourite) {
+        for (int i = 0; i < MAX_FAVOURITES; i++) {
+            const favourite_t *cur  = &state->favourites[i];
+            const favourite_t *last = &s_last_published_state.favourites[i];
+            if (cur->enabled       != last->enabled       ||
+                cur->enabled_valid != last->enabled_valid ||
+                cur->name_valid    != last->name_valid    ||
+                strcmp(cur->name, last->name) != 0) {
+                s_discovery_published.favourite = false;
+                break;
+            }
+        }
+    }
+
+    if (!s_discovery_published.favourite) {
+        mqtt_publish_favourite_discovery_single(state);
+        s_discovery_published.favourite = true;
+        // Update last-published favourites snapshot
+        for (int i = 0; i < MAX_FAVOURITES; i++) {
+            s_last_published_state.favourites[i] = state->favourites[i];
+        }
+    }
+
+    // Skip state publish until we have an active favourite
+    if (!state->active_favourite_valid) {
+        return;
+    }
+
+    // Change-detect
+    if (s_last_published_state.active_favourite_valid &&
+        s_last_published_state.active_favourite == state->active_favourite) {
+        return;
+    }
+
+    char device_id[32];
+    mqtt_get_device_id(device_id, sizeof(device_id));
+
+    char topic[128];
+    snprintf(topic, sizeof(topic), "pool/%s/favourite/state", device_id);
+
+    char fallback[32];
+    const char *name = get_favourite_option_name(state, state->active_favourite,
+                                                 fallback, sizeof(fallback));
+    mqtt_publish(topic, name, 0, false);
+
+    s_last_published_state.active_favourite = state->active_favourite;
+    s_last_published_state.active_favourite_valid = true;
+
+    ESP_LOGI(TAG, "Published favourite: %s (0x%02X)", name, state->active_favourite);
 }

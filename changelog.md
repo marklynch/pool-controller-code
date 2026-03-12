@@ -13,13 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- Added sdkconfig.defaults to optimise build, formalise partition table, remove unused code like mdns_cli and enable use of mqtt 5
-- Added log messages for discovery requests for valves and lights. Cleaned up logging messages to use info level
-- Added binary sensor per channel for active state (`Filter Pump Active: ON/OFF`) alongside the existing mode sensor (`Off/Auto/On/…`) — both read from the same retained MQTT state topic using `value_json.state` and `value_json.active` respectively
-
 ### Changed
 ### Deprecated
 ### Removed
+### Fixed
+### Security
+
+## [0.10.0] - 2026-03-12
+### Added
+- Added sdkconfig.defaults to optimise build, formalise partition table, remove unused code like mdns_cli and enable use of mqtt 5
+- Added log messages for discovery requests for valves and lights. Cleaned up logging messages to use info level
+- Added binary sensor per channel for active state (`Filter Pump Active: ON/OFF`) alongside the existing mode sensor (`Off/Auto/On/…`) — both read from the same retained MQTT state topic using `value_json.state` and `value_json.active` respectively
+- Added Favourites / mode select for Home Assistant — `select` entity with dynamic options: Pool, Spa, All Auto, plus any enabled user Favourites by name; options update automatically as register data arrives
+- Added decoder for favourite name registers (0x31–0x38, slot 0x03) and enable-flag registers (0x21–0x28, slot 0x03); names and enabled states stored in `pool_state_t`
+- Added favourite polling to `register_requester` — requests missing name and enable-flag registers when no Internet Gateway is present
+- Added favourites to `/status` JSON (enabled favourites only, showing index and name)
+- Added `active_favourite` tracking: CMD 0x2A (IG→Touchscreen) decoded to record which mode/favourite is currently active; state published to `pool/{id}/favourite/state`
+- Added MQTT command topic `pool/{id}/favourite/set` — accepts Pool, Spa, All Auto, or any enabled favourite name and sends the corresponding CMD 0x2A to the bus
+- Added favourite discovery re-publishing when names or enable flags change
+- Documented CMD 0x2A Mode/Favourite Control command and register layout (0x21–0x28, 0x31–0x38) in `PROTOCOL.md`
+
+### Removed
+- Removed dead `handle_register_label_generic` handler — superseded by the specific `handle_favourite_label` and `handle_favourite_enable` handlers; was never re-registered in `REGISTER_HANDLERS` after that refactor
 ### Fixed
 
 ## [0.9.0] - 2026-03-10
@@ -29,9 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `test/test_mqtt_commands.c` — 42 host-based unit tests for `mqtt_commands.c` covering heater ON/OFF, heater-1 stub rejection, out-of-range/malformed topic handling, channel toggle, mode switch (Pool/Spa), temperature setpoint (pool and spa), light zone ON/OFF, valve On/Auto, wrong device ID routing, and unknown topic rejection; uses a UART spy to verify the exact bytes written to the bus
 - Added `.vscode/tasks.json` with a `Run Tests` task so the host-based test suite can be run from VS Code via Terminal → Run Task or `⇧⌘P` → Tasks: Run Test Task
 
-### Changed
-### Deprecated
-### Removed
 ### Fixed
 - Fixed MQTT client logging a spurious "Client asked to stop, but was not started" warning on every WiFi disconnect — `mqtt_client_stop()` now tracks whether the client was ever started and skips the stop call if not, preventing the error from contributing to the retry counter
 - Fixed host-based unit tests failing to compile after heater model refactor — updated `mqtt_publish_heater` mock signature, field references (`heaters[0].on`/`heaters[0].valid`), and added missing `mqtt_publish_valve` and `register_requester_notify` mocks

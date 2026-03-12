@@ -61,6 +61,7 @@
 #define MAX_HEATERS                    2       // Maximum number of heaters
 #define MAX_LIGHT_ZONES                4       // Maximum number of light zones
 #define MAX_VALVE_SLOTS                2       // Maximum number of valve slots
+#define MAX_FAVOURITES                 8       // Pool + Spa (built-ins) + Favourites 1–6 (user)
 #define MAX_TIMERS                     16      // Maximum number of timers (registers 0x08-0x17)
 #define MAX_REGISTER_LABELS            32      // Maximum number of register label entries
 

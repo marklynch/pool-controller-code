@@ -75,6 +75,14 @@ typedef struct {
     bool valid;          // True if this entry has been populated
 } register_label_t;
 
+// Favourite/mode slot (indices 0–7: Pool, Spa, Fav1–Fav6)
+typedef struct {
+    char name[32];        // Label from register 0x31+index, slot 0x03
+    bool enabled;         // Enable flag from register 0x21+index, slot 0x03
+    bool name_valid;      // True once label has been received
+    bool enabled_valid;   // True once enable flag has been received
+} favourite_t;
+
 typedef struct {
     // Temperature
     uint8_t current_temp;
@@ -105,6 +113,11 @@ typedef struct {
 
     // Register labels (general storage for register names like favourites, etc.)
     register_label_t register_labels[MAX_REGISTER_LABELS];
+
+    // Favourites / mode slots (Pool, Spa, Fav1–Fav6)
+    favourite_t favourites[MAX_FAVOURITES];
+    uint8_t active_favourite;    // 0x00=Pool, 0x01=Spa, 0x02-0x07=Fav1-6, 0x81=AllAuto
+    bool active_favourite_valid;
 
     // Device serial number
     uint32_t serial_number;

@@ -40,7 +40,7 @@ This document describes the proprietary serial protocol used by the Connect 10 p
   - [26. Channel Toggle Command ✅](#26-channel-toggle-command-)
   - [27. Temperature Setpoint Command ✅](#27-temperature-setpoint-command-)
   - [28. Heater Control Command ✅](#28-heater-control-command-)
-  - [29. Mode Control Command (Pool/Spa) ✅](#29-mode-control-command-poolspa-)
+  - [29. Mode/Favourite Control Command ✅](#29-modefavourite-control-command-)
   - [30. Valve Control Command ✅](#30-valve-control-command-)
 - [Appendix A: Register Dispatch Table](#appendix-a-register-dispatch-table)
 - [Implementation Notes](#implementation-notes)
@@ -177,7 +177,7 @@ The command byte (byte 7) identifies the message type. Some command values are s
 | `0x10` | Channel Toggle            | [§26](#26-channel-toggle-command-) |
 | `0x19` | Temperature Setpoint      | [§27](#27-temperature-setpoint-command-) |
 | `0x28` | Valve Control             | [§30](#30-valve-control-command-) |
-| `0x2A` | Mode Control (Pool/Spa)   | [§29](#29-mode-control-command-poolspa-) |
+| `0x2A` | Mode/Favourite Control    | [§29](#29-modefavourite-control-command-) |
 | `0x39` | Register Read Request     | [§19](#19-register-read-requestresponse) |
 | `0x3A` | Register Write            | [§25](#25-light-zone-control-command-), [§28](#28-heater-control-command-) |
 
@@ -218,7 +218,7 @@ The command byte (byte 7) identifies the message type. Some command values are s
 | 26 | Channel Toggle Command            | `0x00F0` | `02 00 F0 FF FF 80 00 10 0D 8D`           | ✅     |                                     |
 | 27 | Temperature Setpoint Command      | `0x00F0` | `02 00 F0 FF FF 80 00 19 0F 98`           | ✅     |                                     |
 | 28 | Heater Control Command            | `0x00F0` | `02 00 F0 FF FF 80 00 3A 0F B9`           | ✅     | Same pattern as [§25](#25-light-zone-control-command-); different reg |
-| 29 | Mode Control Command              | `0x00F0` | `02 00 F0 00 50 80 00 2A 0D F9`           | ✅     | Dst=`0x0050` (not broadcast)        |
+| 29 | Mode/Favourite Control Command    | `0x00F0` | `02 00 F0 00 50 80 00 2A 0D F9`           | ✅     | Dst=`0x0050`; 0x00=Pool, 0x01=Spa, 0x02–0x07=Fav 1–6, 0x81=All Auto |
 | 30 | Valve Control Command             | `0x00F0` | `02 00 F0 FF FF 80 00 28 0E A6`           | ✅     |                                     |
 
 ---
@@ -1362,50 +1362,52 @@ Command to turn the heater on or off. Uses the same `3A 0F B9` command pattern a
 
 ---
 
-### 29. Mode Control Command (Pool/Spa) ✅
+### 29. Mode/Favourite Control Command ✅
 
-Command to switch between Pool and Spa operating modes.
+Command sent by the Internet Gateway to the Touch Screen to switch modes or activate a stored Favourite preset. A single data byte encodes the target mode or favourite index.
 
 **Pattern:** `02 00 F0 00 50 80 00 2A 0D F9`
 
-**Example - Switch to Spa mode:**
+**Examples:**
 
 ```
-02 00 F0 00 50 80 00 2A 0D F9 01 01 03
-                              ^^ Mode value (0x01 = Switch to Spa)
-                                 ^^ Checksum (0x01)
-```
-
-**Example - Switch to Pool mode:**
-
-```
-02 00 F0 00 50 80 00 2A 0D F9 00 00 03
-                              ^^ Mode value (0x00 = Switch to Pool)
-                                 ^^ Checksum (0x00)
+02 00 F0 00 50 80 00 2A 0D F9 00 00 03   Pool mode (all extras off)
+02 00 F0 00 50 80 00 2A 0D F9 01 01 03   Spa mode
+02 00 F0 00 50 80 00 2A 0D F9 02 02 03   Activate Favourite 1
+02 00 F0 00 50 80 00 2A 0D F9 81 81 03   All Auto mode
+                              ^^ Mode/favourite byte
+                                 ^^ Data checksum (equals the mode byte)
 ```
 
 **Data Fields:**
 
-- Bytes 0: `02 00` - Start
-- Bytes 1-2: `00 F0` - Source (Internet Gateway = 0x00F0)
-- Bytes 3-4: `00 50` - Destination (Touch Screen = 0x0050) - **Not broadcast!**
-- Bytes 5-6: `80 00` - Control bytes
-- Bytes 7-9: `2A 0D F9` - Command pattern for mode control
-- Byte 10: Mode value (`0x00` = Pool, `0x01` = Spa)
-- Byte 11: Checksum (byte 10)
-- Byte 12: `03` - End byte
+- Bytes 1-2: `00 F0` - Source (Internet Gateway = `0x00F0`)
+- Bytes 3-4: `00 50` - Destination (Touch Screen = `0x0050`) — **not broadcast**
+- Byte 10: Mode/favourite value (see table below)
+- Byte 11: Data checksum (equals byte 10 since it is the only data byte)
 
-**Mode Values:**
+**Mode/Favourite Values:**
 
-- `0x00`: Switch to Pool mode
-- `0x01`: Switch to Spa mode
+| Value  | Meaning       | Label register (slot `0x03`) | Enable register (slot `0x03`) |
+|--------|---------------|------------------------------|-------------------------------|
+| `0x00` | Pool mode     | `0x31` — always `"Pool"`     | `0x21` — always `0x01`        |
+| `0x01` | Spa mode      | `0x32` — always `"Spa"`      | `0x22` — always `0x01`        |
+| `0x02` | Favourite 1   | `0x33` — user-defined label  | `0x23` — `0x01`=enabled, `0x00`=disabled |
+| `0x03` | Favourite 2   | `0x34` — user-defined label  | `0x24` — `0x01`=enabled, `0x00`=disabled |
+| `0x04` | Favourite 3   | `0x35` — user-defined label  | `0x25` — `0x01`=enabled, `0x00`=disabled |
+| `0x05` | Favourite 4   | `0x36` — user-defined label  | `0x26` — `0x01`=enabled, `0x00`=disabled |
+| `0x06` | Favourite 5   | `0x37` — user-defined label  | `0x27` — `0x01`=enabled, `0x00`=disabled |
+| `0x07` | Favourite 6   | `0x38` — user-defined label  | `0x28` — `0x01`=enabled, `0x00`=disabled |
+| `0x81` | All Auto mode | — (no label register)        | — (always available)          |
 
 **Notes:**
 
-- **Destination is Touch Screen (0x0050), not broadcast** — Unlike light commands, this is addressed specifically to the touch screen controller
-- **Command values are inverted from status values** — In status messages ([§1 Mode Message](#1-mode-message-spapool-)), Spa=0x00 and Pool=0x01, but in control commands, Spa=0x01 and Pool=0x00
-- This command requires the sender to impersonate the Internet Gateway (source address 0x00F0)
-- The controller will switch modes and broadcast the new mode status to all devices
+- **Destination is Touch Screen (`0x0050`), not broadcast** — This is addressed specifically to the touch screen, which holds the stored Favourite presets and applies them
+- **Command values are inverted from status values** — In status messages ([§1 Mode Message](#1-mode-message-spapool-)), Spa=`0x00` and Pool=`0x01`; in this command, Pool=`0x00` and Spa=`0x01`
+- The Touch Screen acknowledges each activation with an immediate CMD `0x05` broadcast (value `0x01`) followed by the relevant mode, active-channel, and channel-status broadcasts
+- Up to 6 user Favourites are supported (`0x02`–`0x07`). The labels for all 8 slots (including the Pool and Spa built-ins) are stored in registers `0x31`–`0x38` (slot `0x03`), readable via the register protocol (§8)
+- Each slot's enabled/disabled state is stored in registers `0x21`–`0x28` (slot `0x03`), with `0x01` = enabled and `0x00` = disabled. Pool (`0x21`) and Spa (`0x22`) are always `0x01`. All Auto (`0x81`) has no corresponding enable register and is always available
+- This command requires the sender to impersonate the Internet Gateway (source address `0x00F0`)
 
 ---
 
@@ -1448,7 +1450,8 @@ The register ID and slot together determine the message meaning. The slot distin
 | Register Range  | Slot   | Purpose                | Data Format                                      |
 |-----------------|--------|------------------------|--------------------------------------------------|
 | `0x08`–`0x17`  | `0x04` | Timers 1–16            | start/stop time + days bitmask (see [§8 Timer Registers](#timer-registers-slot-0x04))   |
-| `0x31`–`0x38`  | `0x03` | Favourite Labels       | Null-terminated ASCII string                     |
+| `0x21`–`0x28`  | `0x03` | Favourite/Mode Enable  | 1-byte flag (`0x01`=enabled, `0x00`=disabled). Maps to CMD `0x2A` values `0x00`–`0x07` in order. Pool (`0x21`) and Spa (`0x22`) are always `0x01`. |
+| `0x31`–`0x38`  | `0x03` | Favourite/Mode Labels  | Null-terminated ASCII string. Maps to CMD `0x2A` values `0x00`–`0x07` in order. `0x31`=Pool, `0x32`=Spa, `0x33`–`0x38`=user Favourites 1–6. |
 | `0x6C`–`0x73`  | `0x02` | Channel Types          | 1-byte type code (see [Section 7](#7-channel-status-) channel types)   |
 | `0x7C`–`0x83`  | `0x02` | Channel Names          | Null-terminated ASCII string                     |
 | `0x8C`–`0x93`  | `0x02` | Channel State          | 1-byte value (0=Off, 1=Auto, 2=On) — read-only; writes ignored by controller |

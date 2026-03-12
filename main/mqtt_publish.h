@@ -26,4 +26,7 @@ void mqtt_publish_chlorinator(const pool_state_t *current_state);
 // Publish valve state by number (1-based) from pool state
 void mqtt_publish_valve(const pool_state_t *current_state, uint8_t valve_num);
 
+// Publish favourite/mode select state; re-triggers discovery if options changed
+void mqtt_publish_favourite(const pool_state_t *state);
+
 #endif // MQTT_PUBLISH_H

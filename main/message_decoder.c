@@ -421,7 +421,8 @@ static bool handle_light_zone_active(const uint8_t *data, int len, const uint8_t
 static bool handle_light_zone_multicolor(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_light_zone_name(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_valve_label(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
-static bool handle_register_label_generic(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_favourite_label(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_favourite_enable(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_temp_setpoint(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_channel_count(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_valve_state(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
@@ -451,8 +452,11 @@ static const register_handler_t REGISTER_HANDLERS[] = {
     // Valve labels (slot 0x02)
     {0xD0, 0xD1, 0x02, handle_valve_label,        "Valve Label"},
 
-    // Labels (slot 0x03) - only specific ranges we've observed
-    {0x31, 0x38, 0x03, handle_register_label_generic, "Favourite Label"},
+    // Favourite/mode enable flags (slot 0x03, registers 0x21-0x28 = Pool,Spa,Fav1-6)
+    {0x21, 0x28, 0x03, handle_favourite_enable,       "Favourite Enable"},
+
+    // Favourite/mode labels (slot 0x03, registers 0x31-0x38 = Pool,Spa,Fav1-6)
+    {0x31, 0x38, 0x03, handle_favourite_label,        "Favourite Label"},
 
     // Temperature setpoints (slot 0x00, registers 0xE7=Pool, 0xE8=Spa)
     {0xE7, 0xE8, 0x00, handle_temp_setpoint,          "Temperature Setpoint"},
@@ -1238,13 +1242,23 @@ static bool handle_mode_control_cmd(
     if (payload_len < 1) return false;
 
     uint8_t mode_value = payload[0];
-    const char *mode_name = (mode_value == 0x00) ? "Pool" : (mode_value == 0x01) ? "Spa" : "Unknown";
+    const char *mode_name;
+    if (mode_value == 0x00)      mode_name = "Pool";
+    else if (mode_value == 0x01) mode_name = "Spa";
+    else if (mode_value == 0x81) mode_name = "All Auto";
+    else if (mode_value >= 0x02 && mode_value <= 0x07) mode_name = "Favourite";
+    else mode_name = "Unknown";
 
-    ESP_LOGI(TAG, "%s Gateway mode control command - Switch to %s mode (0x%02X)",
+    ESP_LOGI(TAG, "%s Gateway mode control command - %s (0x%02X)",
              addr_info, mode_name, mode_value);
 
-    // No state update needed - this is a command message, not status
-    // The controller will respond with a mode status update
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        ctx->pool_state->active_favourite = mode_value;
+        ctx->pool_state->active_favourite_valid = true;
+        xSemaphoreGive(ctx->state_mutex);
+    }
+
+    mqtt_publish_favourite(ctx->pool_state);
     return true;
 }
 
@@ -1901,10 +1915,11 @@ static bool handle_valve_label(
 }
 
 /**
- * Handler: Generic register label (catch-all for other label types)
- * Register range: 0x00-0xFF, Slot: 0x03
+ * Handler: Favourite/mode label
+ * Register range: 0x31–0x38, Slot: 0x03
+ * Index 0=Pool, 1=Spa, 2–7=Favourites 1–6
  */
-static bool handle_register_label_generic(
+static bool handle_favourite_label(
     const uint8_t *data, int len,
     const uint8_t *payload, int payload_len,
     const char *addr_info,
@@ -1913,38 +1928,64 @@ static bool handle_register_label_generic(
     if (payload_len < 3) return false;
 
     uint8_t reg_id = payload[0];
+    int index = reg_id - 0x31;
+    if (index < 0 || index >= MAX_FAVOURITES) return false;
 
-    // Safely copy string from payload — protocol does not guarantee null termination
     char label[32] = {0};
     int str_len = payload_len - 2;
     if (str_len > (int)sizeof(label) - 1) str_len = (int)sizeof(label) - 1;
     memcpy(label, &payload[2], str_len);
 
-    ESP_LOGI(TAG, "%s Register 0x%02X label - \"%s\"", addr_info, reg_id, label);
+    ESP_LOGI(TAG, "%s Favourite %d label (0x%02X) - \"%s\"", addr_info, index, reg_id, label);
 
-    // Update pool state
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-        int slot = -1;
-        for (int i = 0; i < MAX_REGISTER_LABELS; i++) {
-            if (ctx->pool_state->register_labels[i].valid && ctx->pool_state->register_labels[i].reg_id == reg_id) {
-                slot = i;
-                break;
-            } else if (!ctx->pool_state->register_labels[i].valid && slot == -1) {
-                slot = i;
-            }
-        }
-
-        if (slot >= 0) {
-            ctx->pool_state->register_labels[slot].reg_id = reg_id;
-            strncpy(ctx->pool_state->register_labels[slot].label, label, sizeof(ctx->pool_state->register_labels[slot].label) - 1);
-            ctx->pool_state->register_labels[slot].label[sizeof(ctx->pool_state->register_labels[slot].label) - 1] = '\0';
-            ctx->pool_state->register_labels[slot].valid = true;
-            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        }
-
-        xSemaphoreGive(ctx->state_mutex);
+    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to acquire mutex for favourite label");
+        return true;
     }
+    strncpy(ctx->pool_state->favourites[index].name, label,
+            sizeof(ctx->pool_state->favourites[index].name) - 1);
+    ctx->pool_state->favourites[index].name[sizeof(ctx->pool_state->favourites[index].name) - 1] = '\0';
+    ctx->pool_state->favourites[index].name_valid = true;
+    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    xSemaphoreGive(ctx->state_mutex);
 
+    mqtt_publish_favourite(ctx->pool_state);
+    return true;
+}
+
+/**
+ * Handler: Favourite/mode enable flag
+
+ * Register range: 0x21–0x28, Slot: 0x03
+ * Index 0=Pool, 1=Spa, 2–7=Favourites 1–6
+ */
+static bool handle_favourite_enable(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 3) return false;
+
+    uint8_t reg_id = payload[0];
+    int index = reg_id - 0x21;
+    if (index < 0 || index >= MAX_FAVOURITES) return false;
+
+    bool enabled = (payload[2] != 0x00);
+
+    ESP_LOGI(TAG, "%s Favourite %d (0x%02X) - %s", addr_info, index, reg_id,
+             enabled ? "enabled" : "disabled");
+
+    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to acquire mutex for favourite enable");
+        return true;
+    }
+    ctx->pool_state->favourites[index].enabled = enabled;
+    ctx->pool_state->favourites[index].enabled_valid = true;
+    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    xSemaphoreGive(ctx->state_mutex);
+
+    mqtt_publish_favourite(ctx->pool_state);
     return true;
 }
 

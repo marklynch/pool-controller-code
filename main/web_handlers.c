@@ -653,6 +653,18 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     }
     cJSON_AddItemToObject(root, "valves", valves);
 
+    // Favourites
+    cJSON *favourites = cJSON_CreateArray();
+    for (int i = 0; i < MAX_FAVOURITES; i++) {
+        const favourite_t *fav = &s_pool_state.favourites[i];
+        if (!fav->enabled_valid || !fav->enabled) continue;
+        cJSON *f = cJSON_CreateObject();
+        cJSON_AddNumberToObject(f, "index", i);
+        cJSON_AddStringToObject(f, "name", fav->name_valid ? fav->name : "");
+        cJSON_AddItemToArray(favourites, f);
+    }
+    cJSON_AddItemToObject(root, "favourites", favourites);
+
     // Chlorinator
     cJSON *chlorinator = cJSON_CreateObject();
     if (s_pool_state.ph_valid) {
