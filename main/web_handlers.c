@@ -1300,7 +1300,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Firmware size: %d bytes", remaining);
 
     while (remaining > 0) {
-        size_t recv_size = (remaining < buf_size) ? remaining : buf_size;
+        size_t recv_size = MIN(remaining, buf_size);
         int recv_len = httpd_req_recv(req, buf, recv_size);
         if (recv_len < 0) {
             if (recv_len == HTTPD_SOCK_ERR_TIMEOUT) {

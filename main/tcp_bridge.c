@@ -79,7 +79,8 @@ static int tcp_bridge_vprintf(const char *fmt, va_list args)
         // Use timeout 0: log callbacks must never block, so drop the message on contention
         if (tcp_len > 0 && xSemaphoreTake(s_log_mutex, 0) == pdTRUE) {
             if (s_log_client_sock >= 0) {
-                send(s_log_client_sock, log_buf, tcp_len, MSG_DONTWAIT);
+                int send_len = MIN(tcp_len, (int)sizeof(log_buf) - 1);
+                send(s_log_client_sock, log_buf, send_len, MSG_DONTWAIT);
             }
             xSemaphoreGive(s_log_mutex);
         }
@@ -125,7 +126,7 @@ static bool extract_and_process_message(int client_sock)
         if (s_msg_buffer_len > 0) {
             char hex_str[100];
             int hex_pos = 0;
-            int dump_len = (s_msg_buffer_len < 32) ? s_msg_buffer_len : 32;
+            int dump_len = MIN(s_msg_buffer_len, 32);
             for (int i = 0; i < dump_len && hex_pos < (int)sizeof(hex_str) - 3; i++) {
                 hex_pos += snprintf(&hex_str[hex_pos], sizeof(hex_str) - hex_pos, "%02X ", s_msg_buffer[i]);
             }
@@ -152,7 +153,7 @@ static bool extract_and_process_message(int client_sock)
     if (s_msg_buffer[5] != 0x80 || s_msg_buffer[6] != 0x00) {
         char hex_str[100];
         int hex_pos = 0;
-        int dump_len = (s_msg_buffer_len < 32) ? s_msg_buffer_len : 32;
+        int dump_len = MIN(s_msg_buffer_len, 32);
         for (int i = 0; i < dump_len && hex_pos < (int)sizeof(hex_str) - 3; i++) {
             hex_pos += snprintf(&hex_str[hex_pos], sizeof(hex_str) - hex_pos, "%02X ", s_msg_buffer[i]);
         }
