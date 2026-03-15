@@ -270,7 +270,7 @@ esp_err_t mqtt_client_init(void)
     ESP_LOGI(TAG, "Device ID: %s", device_id);
 
     // Build broker URI — static so the pointer remains valid for the lifetime of the MQTT client
-    static char broker_uri[192];
+    static char broker_uri[256];
     snprintf(broker_uri, sizeof(broker_uri), "mqtt://%s:%d", config.broker, config.port);
 
     // Build LWT topic — static for the same reason
