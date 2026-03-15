@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 
 static const char *TAG = "LED_HELPER";
 static led_strip_handle_t s_led_strip = NULL;
@@ -16,9 +17,15 @@ typedef struct {
     uint8_t blue;
 } led_rgb_t;
 
+typedef enum {
+    LED_FLASH_RX,
+    LED_FLASH_TX,
+} led_flash_type_t;
+
 static led_rgb_t s_current_state = {0, 0, 0};
 static led_persistent_state_t s_persistent_state = LED_STATE_STARTUP;
 static SemaphoreHandle_t s_led_mutex = NULL;
+static QueueHandle_t s_flash_queue = NULL;
 
 // Helper function to set LED and save state
 static void set_led_state(uint8_t green, uint8_t red, uint8_t blue, led_persistent_state_t state)
@@ -36,12 +43,25 @@ static void set_led_state(uint8_t green, uint8_t red, uint8_t blue, led_persiste
     }
 }
 
+static void led_flash_task(void *arg);
+
 // Initialize the LED strip
 esp_err_t led_init(void)
 {
     s_led_mutex = xSemaphoreCreateMutex();
     if (s_led_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create LED mutex");
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_flash_queue = xQueueCreate(4, sizeof(led_flash_type_t));
+    if (s_flash_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create LED flash queue");
+        return ESP_ERR_NO_MEM;
+    }
+
+    if (xTaskCreate(led_flash_task, "led_flash", 2048, NULL, 2, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create LED flash task");
         return ESP_ERR_NO_MEM;
     }
 
@@ -78,48 +98,54 @@ void led_set_startup(void)
     ESP_LOGI(TAG, "LED: Startup (Blue)");
 }
 
-// Flash LED when receiving from UART (cyan flash)
-void led_flash_rx(void)
+// Dedicated low-priority task that performs LED flashes without blocking callers
+static void led_flash_task(void *arg)
 {
-    if (s_led_strip == NULL) return;
+    led_flash_type_t flash_type;
+    while (true) {
+        if (xQueueReceive(s_flash_queue, &flash_type, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
 
-    if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-        led_strip_set_pixel(s_led_strip, 0, 32, 0, 32);  // Cyan (G=32, R=0, B=32)
-        led_strip_refresh(s_led_strip);
-        xSemaphoreGive(s_led_mutex);
-    }
+        if (s_led_strip == NULL) continue;
 
-    vTaskDelay(pdMS_TO_TICKS(LED_FLASH_DURATION_MS));
+        // Set flash colour
+        if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+            if (flash_type == LED_FLASH_RX) {
+                led_strip_set_pixel(s_led_strip, 0, 32, 0, 32);  // Cyan (G=32, R=0, B=32)
+            } else {
+                led_strip_set_pixel(s_led_strip, 0, 0, 32, 32);  // Magenta (G=0, R=32, B=32)
+            }
+            led_strip_refresh(s_led_strip);
+            xSemaphoreGive(s_led_mutex);
+        }
 
-    // Restore current state — read after the delay so we pick up any set_led_state()
-    // call that happened during the flash, rather than overwriting it with a stale snapshot
-    if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-        led_strip_set_pixel(s_led_strip, 0, s_current_state.green, s_current_state.red, s_current_state.blue);
-        led_strip_refresh(s_led_strip);
-        xSemaphoreGive(s_led_mutex);
+        vTaskDelay(pdMS_TO_TICKS(LED_FLASH_DURATION_MS));
+
+        // Restore persistent state — read after delay to pick up any state change
+        // that occurred during the flash rather than overwriting with a stale snapshot
+        if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+            led_strip_set_pixel(s_led_strip, 0, s_current_state.green, s_current_state.red, s_current_state.blue);
+            led_strip_refresh(s_led_strip);
+            xSemaphoreGive(s_led_mutex);
+        }
     }
 }
 
-// Flash LED when transmitting to UART (magenta flash)
+// Flash LED when receiving from UART (cyan flash) — non-blocking
+void led_flash_rx(void)
+{
+    if (s_flash_queue == NULL) return;
+    led_flash_type_t flash_type = LED_FLASH_RX;
+    xQueueSend(s_flash_queue, &flash_type, 0);
+}
+
+// Flash LED when transmitting to UART (magenta flash) — non-blocking
 void led_flash_tx(void)
 {
-    if (s_led_strip == NULL) return;
-
-    if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-        led_strip_set_pixel(s_led_strip, 0, 0, 32, 32);  // Magenta (G=0, R=32, B=32)
-        led_strip_refresh(s_led_strip);
-        xSemaphoreGive(s_led_mutex);
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(LED_FLASH_DURATION_MS));
-
-    // Restore current state — read after the delay so we pick up any set_led_state()
-    // call that happened during the flash, rather than overwriting it with a stale snapshot
-    if (xSemaphoreTake(s_led_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-        led_strip_set_pixel(s_led_strip, 0, s_current_state.green, s_current_state.red, s_current_state.blue);
-        led_strip_refresh(s_led_strip);
-        xSemaphoreGive(s_led_mutex);
-    }
+    if (s_flash_queue == NULL) return;
+    led_flash_type_t flash_type = LED_FLASH_TX;
+    xQueueSend(s_flash_queue, &flash_type, 0);
 }
 
 // Set LED to unconfigured state (purple)
