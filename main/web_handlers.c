@@ -413,6 +413,12 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     uint16_t ap_count = 0;
     esp_wifi_scan_get_ap_num(&ap_count);
 
+    if (ap_count == 0) {
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
+        httpd_resp_sendstr(req, "[]");
+        return ESP_OK;
+    }
+
     wifi_ap_record_t *ap_list = malloc(sizeof(wifi_ap_record_t) * ap_count);
     if (ap_list == NULL) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
