@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed out-of-bounds array writes in light zone register handlers (`handle_light_zone_state`, `_color`, `_active`, `_multicolor`, `_name`) — zone index derived from bus `reg_id` was not bounds-checked before indexing `lighting[MAX_LIGHT_ZONES]`, allowing a crafted or malformed bus packet to corrupt adjacent fields in `pool_state_t`; dispatch table `reg_end` values tightened to `base + MAX_LIGHT_ZONES - 1` and an explicit bounds check added in each handler
 - Fixed potential silent truncation of MQTT broker URI — increased `broker_uri` static buffer from 192 to 256 bytes in `mqtt_poolclient.c`; the previous margin was tight enough that a max-length broker hostname with port would silently truncate the URI passed to the MQTT client
 - Fixed magic number `8` used as array size for `channels_to_publish` in `handle_channel_status` — replaced with `MAX_CHANNELS` so the array size stays in sync if the constant is ever changed
+- Fixed `volatile bool` used for `s_mqtt_connected` and `s_mqtt_started` in `mqtt_poolclient.c` — replaced with `atomic_bool` (`<stdatomic.h>`) which provides correct memory-ordering guarantees on all architectures; `volatile` provides no such guarantees and would be unsafe on multi-core targets
 
 ## [0.10.0] - 2026-03-12
 ### Added

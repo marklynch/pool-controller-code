@@ -5,6 +5,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include <string.h>
+#include <stdatomic.h>
 
 // ESP-IDF MQTT component
 #include <mqtt_client.h>
@@ -26,8 +27,8 @@ static const char *TAG = "MQTT_CLIENT";
 
 // Global MQTT client handle
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
-static volatile bool s_mqtt_connected = false;
-static volatile bool s_mqtt_started = false;
+static atomic_bool s_mqtt_connected = false;
+static atomic_bool s_mqtt_started = false;
 static char s_device_id[32] = {0};
 
 // Forward declarations
