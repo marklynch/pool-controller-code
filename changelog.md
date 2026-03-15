@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 ### Fixed
 ### Security
+- Fixed silent truncation of home page system info, WiFi, and MQTT rows — replaced fixed-size stack buffers (`sys_table[1024]`, `wifi_row[96]`, `mqtt_row[256]`) with heap-allocated buffers sized via `snprintf(NULL, 0, ...)`, matching the pattern used by `get_page_header`/`get_page_nav`; also explicitly null-terminates `ap_info.ssid` before use
 - Fixed OTA handler accepting zero, negative, or oversized `Content-Length` values — added validation that rejects requests outside the range 1–`OTA_MAX_FIRMWARE_SIZE` (0x1E0000, matching the partition table) before entering the receive loop
 - Fixed race condition in `handle_mode_control_cmd`, `handle_favourite_label`, and `handle_favourite_enable` — `mqtt_publish_favourite` was called with a raw pointer to shared pool state after the mutex was released; all three now capture a snapshot inside the mutex and pass `&state_snapshot`, consistent with every other publish call in the decoder
 - Fixed out-of-bounds array writes in light zone register handlers (`handle_light_zone_state`, `_color`, `_active`, `_multicolor`, `_name`) — zone index derived from bus `reg_id` was not bounds-checked before indexing `lighting[MAX_LIGHT_ZONES]`, allowing a crafted or malformed bus packet to corrupt adjacent fields in `pool_state_t`; dispatch table `reg_end` values tightened to `base + MAX_LIGHT_ZONES - 1` and an explicit bounds check added in each handler

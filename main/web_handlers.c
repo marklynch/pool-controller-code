@@ -133,8 +133,7 @@ static esp_err_t home_get_handler(httpd_req_t *req)
     const char *mdns_host = wifi_get_mdns_hostname();
 
     // System info table
-    char sys_table[1024];
-    snprintf(sys_table, sizeof(sys_table),
+    static const char sys_table_fmt[] =
         "<h1>Pool Controller</h1>"
         "<h2>System</h2>"
         "<table><tbody id='sys-body'>"
@@ -144,33 +143,54 @@ static esp_err_t home_get_handler(httpd_req_t *req)
         "<tr><th>Built</th><td>%s %s</td></tr>"
         "<tr><th>Uptime</th><td>%s</td></tr>"
         "<tr><th>IP Address</th><td>%s</td></tr>"
-        "<tr><th>Hostname</th><td><a href='http://%s.local/'>%s.local</a></td></tr>",
+        "<tr><th>Hostname</th><td><a href='http://%s.local/'>%s.local</a></td></tr>";
+    const char *device_ip = wifi_get_device_ip();
+    int sys_table_len = snprintf(NULL, 0, sys_table_fmt,
         serial,
         app_desc->version, app_desc->project_name,
         app_desc->date, app_desc->time,
-        uptime_str, wifi_get_device_ip(),
+        uptime_str, device_ip,
         mdns_host, mdns_host);
+    char *sys_table = (sys_table_len > 0) ? malloc((size_t)sys_table_len + 1) : NULL;
+    if (sys_table) {
+        snprintf(sys_table, (size_t)sys_table_len + 1, sys_table_fmt,
+            serial,
+            app_desc->version, app_desc->project_name,
+            app_desc->date, app_desc->time,
+            uptime_str, device_ip,
+            mdns_host, mdns_host);
+    }
 
     // WiFi row
-    char wifi_row[96];
-    if (wifi_info_ok) {
-        snprintf(wifi_row, sizeof(wifi_row),
-            "<tr><th>WiFi</th><td>%s (%d dBm)</td></tr>",
-            (char *)ap_info.ssid, ap_info.rssi);
-    } else {
-        snprintf(wifi_row, sizeof(wifi_row), "<tr><th>WiFi</th><td>Not connected</td></tr>");
+    char wifi_ssid[33];
+    memcpy(wifi_ssid, ap_info.ssid, sizeof(wifi_ssid) - 1);
+    wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';
+    static const char wifi_row_fmt[] = "<tr><th>WiFi</th><td>%s (%d dBm)</td></tr>";
+    static const char wifi_row_none[] = "<tr><th>WiFi</th><td>Not connected</td></tr>";
+    int wifi_row_len = wifi_info_ok ? snprintf(NULL, 0, wifi_row_fmt, wifi_ssid, ap_info.rssi) : (int)sizeof(wifi_row_none) - 1;
+    char *wifi_row = (wifi_row_len > 0) ? malloc((size_t)wifi_row_len + 1) : NULL;
+    if (wifi_row) {
+        if (wifi_info_ok) {
+            snprintf(wifi_row, (size_t)wifi_row_len + 1, wifi_row_fmt, wifi_ssid, ap_info.rssi);
+        } else {
+            memcpy(wifi_row, wifi_row_none, (size_t)wifi_row_len + 1);
+        }
     }
 
     // MQTT row
-    char mqtt_row[256];
-    if (!mqtt_enabled) {
-        snprintf(mqtt_row, sizeof(mqtt_row), "<tr><th>MQTT</th><td>Disabled</td></tr></tbody></table>");
-    } else if (mqtt_connected) {
-        snprintf(mqtt_row, sizeof(mqtt_row),
-            "<tr><th>MQTT</th><td>Connected (%s)</td></tr></tbody></table>", mqtt_config.broker);
-    } else {
-        snprintf(mqtt_row, sizeof(mqtt_row),
-            "<tr><th>MQTT</th><td>Disconnected (%s)</td></tr></tbody></table>", mqtt_config.broker);
+    static const char mqtt_row_fmt[] = "<tr><th>MQTT</th><td>%s (%s)</td></tr></tbody></table>";
+    static const char mqtt_row_disabled[] = "<tr><th>MQTT</th><td>Disabled</td></tr></tbody></table>";
+    const char *mqtt_state_str = mqtt_connected ? "Connected" : "Disconnected";
+    int mqtt_row_len = mqtt_enabled
+        ? snprintf(NULL, 0, mqtt_row_fmt, mqtt_state_str, mqtt_config.broker)
+        : (int)sizeof(mqtt_row_disabled) - 1;
+    char *mqtt_row = (mqtt_row_len > 0) ? malloc((size_t)mqtt_row_len + 1) : NULL;
+    if (mqtt_row) {
+        if (mqtt_enabled) {
+            snprintf(mqtt_row, (size_t)mqtt_row_len + 1, mqtt_row_fmt, mqtt_state_str, mqtt_config.broker);
+        } else {
+            memcpy(mqtt_row, mqtt_row_disabled, (size_t)mqtt_row_len + 1);
+        }
     }
 
     // Pool summary — loaded from /status via JS
@@ -229,13 +249,16 @@ static esp_err_t home_get_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, sys_table, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, wifi_row, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, mqtt_row, HTTPD_RESP_USE_STRLEN);
+    if (sys_table) httpd_resp_send_chunk(req, sys_table, HTTPD_RESP_USE_STRLEN);
+    if (wifi_row)  httpd_resp_send_chunk(req, wifi_row,  HTTPD_RESP_USE_STRLEN);
+    if (mqtt_row)  httpd_resp_send_chunk(req, mqtt_row,  HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, pool_section, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
 
+    free(mqtt_row);
+    free(wifi_row);
+    free(sys_table);
     free(footer);
     free(nav);
     free(header);
