@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed race condition in `handle_mode_control_cmd`, `handle_favourite_label`, and `handle_favourite_enable` — `mqtt_publish_favourite` was called with a raw pointer to shared pool state after the mutex was released; all three now capture a snapshot inside the mutex and pass `&state_snapshot`, consistent with every other publish call in the decoder
 - Fixed out-of-bounds array writes in light zone register handlers (`handle_light_zone_state`, `_color`, `_active`, `_multicolor`, `_name`) — zone index derived from bus `reg_id` was not bounds-checked before indexing `lighting[MAX_LIGHT_ZONES]`, allowing a crafted or malformed bus packet to corrupt adjacent fields in `pool_state_t`; dispatch table `reg_end` values tightened to `base + MAX_LIGHT_ZONES - 1` and an explicit bounds check added in each handler
 - Fixed potential silent truncation of MQTT broker URI — increased `broker_uri` static buffer from 192 to 256 bytes in `mqtt_poolclient.c`; the previous margin was tight enough that a max-length broker hostname with port would silently truncate the URI passed to the MQTT client
+- Fixed magic number `8` used as array size for `channels_to_publish` in `handle_channel_status` — replaced with `MAX_CHANNELS` so the array size stays in sync if the constant is ever changed
 
 ## [0.10.0] - 2026-03-12
 ### Added

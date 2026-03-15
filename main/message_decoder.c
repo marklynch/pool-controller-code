@@ -2071,7 +2071,7 @@ static bool handle_channel_status(
     int payload_idx = 1;  // Channel data starts at payload[1]
     int ch_num = 1;
     bool past_end = false;
-    uint8_t channels_to_publish[8] = {0};
+    uint8_t channels_to_publish[MAX_CHANNELS] = {0};
     int num_to_publish = 0;
 
     // Update pool state
