@@ -2,8 +2,8 @@
 #include "config.h"
 #include "mqtt_poolclient.h"
 #include "pool_state.h"
+#include "bus.h"
 #include "esp_log.h"
-#include "driver/uart.h"
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -18,13 +18,8 @@ static const char *TAG = "MQTT_COMMANDS";
 // Send raw UART message to pool bus
 static void send_uart_command(const uint8_t *data, size_t len)
 {
-    int written = uart_write_bytes(BUS_UART_NUM, (const char *)data, len);
-    if (written < 0) {
-        ESP_LOGE(TAG, "Failed to write to UART");
-    } else if ((size_t)written < len) {
-        ESP_LOGE(TAG, "Partial UART write: %d of %zu bytes sent", written, len);
-    } else {
-        ESP_LOGI(TAG, "Sent UART command (%d bytes)", written);
+    if (bus_send_bytes(data, len) < 0) {
+        ESP_LOGE(TAG, "Failed to send UART command");
     }
 }
 

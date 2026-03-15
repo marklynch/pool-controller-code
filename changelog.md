@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+- Fixed `send_uart_command` in `mqtt_commands.c` bypassing `bus_send_message` — now calls `bus_send_bytes` (extracted from `bus_send_message`) so MQTT commands get TX-wait, TX LED flash, and hex logging consistent with all other bus writes; removed direct `uart_write_bytes` call and `driver/uart.h` include from `mqtt_commands.c`
 - Fixed `/status` handler holding the pool state mutex for the entire JSON build — now takes a snapshot immediately after acquiring the mutex and releases it before any cJSON allocation, eliminating contention with the message decoder under load
 ### Security
 - Fixed out-of-bounds read in `tcp_bridge_vprintf` — `vsnprintf` returns the would-be length when the buffer is too small, and that uncapped value was passed directly to `send`, reading past the end of the 256-byte stack buffer; capped to buffer size before sending

@@ -75,6 +75,53 @@ int bus_read(uint8_t *buffer, size_t max_len, uint32_t timeout_ms)
 // Bus send
 // ======================================================
 
+int bus_send_bytes(const uint8_t *data, size_t len)
+{
+    if (data == NULL || len == 0) {
+        ESP_LOGE(TAG, "bus_send_bytes: null or empty buffer");
+        return -1;
+    }
+
+    // Format message for logging
+    char hex_log[3 * BUS_MESSAGE_MAX_SIZE + 4];
+    int pos = 0;
+    for (size_t i = 0; i < len; i++) {
+        int remaining = (int)sizeof(hex_log) - pos;
+        if (remaining < 4) break;
+        int written = snprintf(&hex_log[pos], remaining, "%02X ", data[i]);
+        if (written < 0) break;
+        pos += written;
+        if (pos >= (int)sizeof(hex_log)) {
+            pos = (int)sizeof(hex_log) - 1;
+            break;
+        }
+    }
+    if (pos >= (int)sizeof(hex_log)) pos = (int)sizeof(hex_log) - 1;
+    hex_log[pos] = '\0';
+
+    ESP_LOGI(TAG, "TX: %s(%zu bytes)", hex_log, len);
+
+    // Send to UART
+    int written = uart_write_bytes(BUS_UART_NUM, (const char *)data, len);
+    if (written < 0) {
+        ESP_LOGE(TAG, "bus_send_bytes: uart_write_bytes failed");
+        return -1;
+    }
+
+    // Wait for TX to complete
+    esp_err_t tx_err = uart_wait_tx_done(BUS_UART_NUM, pdMS_TO_TICKS(UART_TX_TIMEOUT_MS));
+    if (tx_err != ESP_OK) {
+        ESP_LOGE(TAG, "bus_send_bytes: uart_wait_tx_done failed: %s", esp_err_to_name(tx_err));
+        return -1;
+    }
+
+    ESP_LOGI(TAG, "TX complete: %d bytes written and transmitted", written);
+
+    led_flash_tx();
+
+    return written;
+}
+
 int bus_send_message(const char *hex_string)
 {
     if (hex_string == NULL || hex_string[0] == '\0') {
@@ -126,49 +173,5 @@ int bus_send_message(const char *hex_string)
         return -1;
     }
 
-    // Format message for logging
-    char hex_log[3 * sizeof(msg_buf) + 4];
-    int pos = 0;
-    for (int i = 0; i < msg_len; i++) {
-        int remaining = sizeof(hex_log) - pos;
-        if (remaining < 4) {
-            break;
-        }
-        int written = snprintf(&hex_log[pos], remaining, "%02X ", msg_buf[i]);
-        if (written < 0) {
-            ESP_LOGE(TAG, "bus_send_message: snprintf encoding error");
-            break;
-        }
-        pos += written;
-        if (pos >= (int)sizeof(hex_log)) {
-            pos = sizeof(hex_log) - 1;
-            break;
-        }
-    }
-    if (pos >= (int)sizeof(hex_log)) {
-        pos = sizeof(hex_log) - 1;
-    }
-    hex_log[pos] = '\0';
-
-    ESP_LOGI(TAG, "TX: %s(%d bytes)", hex_log, msg_len);
-
-    // Send to UART
-    int written = uart_write_bytes(BUS_UART_NUM, (const char *)msg_buf, msg_len);
-    if (written < 0) {
-        ESP_LOGE(TAG, "bus_send_message: uart_write_bytes failed");
-        return -1;
-    }
-
-    // Wait for TX to complete
-    esp_err_t tx_err = uart_wait_tx_done(BUS_UART_NUM, pdMS_TO_TICKS(UART_TX_TIMEOUT_MS));
-    if (tx_err != ESP_OK) {
-        ESP_LOGE(TAG, "uart_wait_tx_done failed: %s", esp_err_to_name(tx_err));
-        return -1;
-    }
-
-    ESP_LOGI(TAG, "TX complete: %d bytes written and transmitted", written);
-
-    led_flash_tx();
-
-    return written;
+    return bus_send_bytes(msg_buf, msg_len);
 }
