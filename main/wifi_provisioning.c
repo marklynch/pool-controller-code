@@ -304,7 +304,7 @@ static esp_err_t start_softap_provisioning(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "SoftAP started - SSID: %s, Password: %s", ap_ssid, WIFI_PROV_SOFTAP_PASSWORD);
+    ESP_LOGI(TAG, "SoftAP started - SSID: %s", ap_ssid);
 
     esp_err_t dns_err = dns_server_start();
     if (dns_err != ESP_OK) {
@@ -419,8 +419,8 @@ void wifi_wait_for_connection(void)
 
     char ap_ssid[32];
     get_device_service_name(ap_ssid, sizeof(ap_ssid));
-    ESP_LOGI(TAG, "Provisioning mode active - connect to '%s' (password: '%s') and navigate to http://%s",
-             ap_ssid, WIFI_PROV_SOFTAP_PASSWORD, WIFI_PROV_SOFTAP_IP);
+    ESP_LOGI(TAG, "Provisioning mode active - connect to '%s' and navigate to http://%s",
+             ap_ssid, WIFI_PROV_SOFTAP_IP);
 
     // Wait indefinitely until the user provisions credentials (device will restart after save)
     xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT,
