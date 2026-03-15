@@ -40,6 +40,10 @@ static SemaphoreHandle_t s_log_mutex = NULL;
 // Original vprintf function
 static vprintf_like_t s_original_vprintf = NULL;
 
+// Stop coordination
+static volatile bool s_stop_requested = false;
+static SemaphoreHandle_t s_stopped_sem = NULL;
+
 /**
  * Send data to the TCP client under the client mutex.
  * All sends to client_sock must go through this to prevent interleaving
@@ -307,7 +311,7 @@ static void tcp_bridge_task(void *pvParameters)
     }
 
     // Main loop - always reads UART, optionally bridges to TCP client
-    while (1) {
+    while (!s_stop_requested) {
         // Check for new client connection (non-blocking)
         if (client_sock < 0) {
             struct sockaddr_in client_addr = {0};
@@ -461,12 +465,18 @@ static void tcp_bridge_task(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 
-    // Cleanup (never reached in current implementation)
+    // Cleanup on graceful stop
+    tcp_bridge_set_log_client(-1);
     if (client_sock >= 0) {
+        shutdown(client_sock, SHUT_RDWR);
         close(client_sock);
     }
     if (listen_sock >= 0) {
         close(listen_sock);
+    }
+    s_bridge_task_handle = NULL;
+    if (s_stopped_sem) {
+        xSemaphoreGive(s_stopped_sem);
     }
     vTaskDelete(NULL);
 }
@@ -490,6 +500,14 @@ esp_err_t tcp_bridge_start(const tcp_bridge_config_t *config)
 
     // Copy configuration
     memcpy(&s_config, config, sizeof(tcp_bridge_config_t));
+
+    // Create stop semaphore and reset flag
+    s_stop_requested = false;
+    s_stopped_sem = xSemaphoreCreateBinary();
+    if (!s_stopped_sem) {
+        ESP_LOGE(TAG, "Failed to create stopped semaphore");
+        return ESP_ERR_NO_MEM;
+    }
 
     // Initialize log forwarding
     if (!s_log_mutex) {
@@ -534,17 +552,28 @@ esp_err_t tcp_bridge_stop(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Delete task
-    vTaskDelete(s_bridge_task_handle);
-    s_bridge_task_handle = NULL;
+    // Signal the task to exit and wait for it to finish
+    s_stop_requested = true;
+    if (s_stopped_sem) {
+        if (xSemaphoreTake(s_stopped_sem, pdMS_TO_TICKS(3000)) != pdTRUE) {
+            ESP_LOGW(TAG, "TCP bridge task did not exit cleanly, forcing delete");
+            if (s_bridge_task_handle != NULL) {
+                vTaskDelete(s_bridge_task_handle);
+                s_bridge_task_handle = NULL;
+            }
+        }
+        vSemaphoreDelete(s_stopped_sem);
+        s_stopped_sem = NULL;
+    }
+    s_stop_requested = false;
 
-    // Restore original vprintf and clean up log mutex
+    // Restore original vprintf and clean up log mutex — safe now that the task has exited
+    // and can no longer be inside tcp_bridge_vprintf holding s_log_mutex
     if (s_original_vprintf) {
         esp_log_set_vprintf(s_original_vprintf);
         s_original_vprintf = NULL;
     }
     if (s_log_mutex) {
-        tcp_bridge_set_log_client(-1);
         vSemaphoreDelete(s_log_mutex);
         s_log_mutex = NULL;
     }
