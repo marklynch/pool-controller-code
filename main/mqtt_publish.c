@@ -4,6 +4,7 @@
 #include "pool_state.h"
 #include "message_decoder.h"
 #include "esp_log.h"
+#include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -181,12 +182,17 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
     static const char *STATE_NAMES[] = {"Off", "Auto", "On", "Low", "Medium", "High"};
     const char *state_name = (channel->state < 6) ? STATE_NAMES[channel->state] : "Unknown";
 
-    char payload[256];
-    snprintf(payload, sizeof(payload),
-             "{\"state\":\"%s\",\"active\":%s,\"name\":\"%s\"}",
-             state_name, channel->active ? "true" : "false", display_name);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "state",  state_name);
+    cJSON_AddBoolToObject(root,   "active", channel->active);
+    cJSON_AddStringToObject(root, "name",   display_name);
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
 
-    mqtt_publish(topic, payload, 0, true);
+    if (payload) {
+        mqtt_publish(topic, payload, 0, true);
+        free(payload);
+    }
 
     // Update last published state
     s_last_published_state.channels[idx].type = channel->type;
@@ -268,14 +274,23 @@ void mqtt_publish_light(const pool_state_t *current_state, uint8_t zone)
     }
     const char *display_name = zone_name ? zone_name : fallback_name;
 
-    char payload[256];
-    snprintf(payload, sizeof(payload),
-             "{\"state\":\"%s\",\"color\":\"%s\",\"active\":%s,\"name\":\"%s\",\"multicolor\":%s}",
-             state_name, color_name, light->active ? "true" : "false",
-             display_name,
-             light->multicolor_valid ? (light->multicolor ? "true" : "false") : "null");
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "state", state_name);
+    cJSON_AddStringToObject(root, "color", color_name);
+    cJSON_AddBoolToObject(root,   "active", light->active);
+    cJSON_AddStringToObject(root, "name",  display_name);
+    if (light->multicolor_valid) {
+        cJSON_AddBoolToObject(root, "multicolor", light->multicolor);
+    } else {
+        cJSON_AddNullToObject(root, "multicolor");
+    }
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
 
-    mqtt_publish(topic, payload, 0, false);
+    if (payload) {
+        mqtt_publish(topic, payload, 0, false);
+        free(payload);
+    }
 
     // Update last published state
     s_last_published_state.lighting[idx].state = light->state;
@@ -414,12 +429,17 @@ void mqtt_publish_valve(const pool_state_t *current_state, uint8_t valve_num)
         display_name = fallback_name;
     }
 
-    char payload[128];
-    snprintf(payload, sizeof(payload),
-             "{\"state\":\"%s\",\"active\":%s,\"name\":\"%s\"}",
-             state_name, valve->active ? "true" : "false", display_name);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "state",  state_name);
+    cJSON_AddBoolToObject(root,   "active", valve->active);
+    cJSON_AddStringToObject(root, "name",   display_name);
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
 
-    mqtt_publish(topic, payload, 0, true);
+    if (payload) {
+        mqtt_publish(topic, payload, 0, true);
+        free(payload);
+    }
 
     // Update last published state
     s_last_published_state.valves[idx].state = valve->state;
