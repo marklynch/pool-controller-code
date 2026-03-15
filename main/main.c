@@ -179,5 +179,5 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to start TCP bridge: %s", esp_err_to_name(bridge_err));
     }
 
-    register_requester_start();
+    register_requester_start(&s_pool_state, s_pool_state_mutex);
 }

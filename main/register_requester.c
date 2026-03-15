@@ -10,6 +10,8 @@
 
 static const char *TAG = "REG_REQ";
 static TaskHandle_t s_task_handle = NULL;
+static pool_state_t *s_state = NULL;
+static SemaphoreHandle_t s_mutex = NULL;
 
 // Wait this long at startup before checking — gives the gateway time to announce itself
 #define STARTUP_DELAY_MS     55000
@@ -49,33 +51,32 @@ static void register_requester_task(void *arg)
         bool fav_enabled_valid[MAX_FAVOURITES] = {0};
         bool fav_name_valid[MAX_FAVOURITES] = {0};
 
-        if (s_pool_state_mutex &&
-            xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-            gateway_present = s_pool_state.gateway_ip_valid;
+        if (s_mutex && xSemaphoreTake(s_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+            gateway_present = s_state->gateway_ip_valid;
             for (int i = 0; i < MAX_TIMERS; i++) {
-                timers_valid[i] = s_pool_state.timers[i].valid;
+                timers_valid[i] = s_state->timers[i].valid;
             }
             for (int i = 0; i < MAX_LIGHT_ZONES; i++) {
-                light_configured[i]       = s_pool_state.lighting[i].configured;
-                light_multicolor_valid[i] = s_pool_state.lighting[i].multicolor_valid;
-                light_name_valid[i]       = s_pool_state.lighting[i].name_valid;
+                light_configured[i]       = s_state->lighting[i].configured;
+                light_multicolor_valid[i] = s_state->lighting[i].multicolor_valid;
+                light_name_valid[i]       = s_state->lighting[i].name_valid;
             }
             for (int i = 0; i < MAX_VALVE_SLOTS; i++) {
-                valve_configured[i] = s_pool_state.valves[i].configured;
+                valve_configured[i] = s_state->valves[i].configured;
                 uint8_t reg_id = 0xD0 + i;
                 for (int j = 0; j < MAX_REGISTER_LABELS; j++) {
-                    if (s_pool_state.register_labels[j].valid &&
-                        s_pool_state.register_labels[j].reg_id == reg_id) {
+                    if (s_state->register_labels[j].valid &&
+                        s_state->register_labels[j].reg_id == reg_id) {
                         valve_label_valid[i] = true;
                         break;
                     }
                 }
             }
             for (int i = 0; i < MAX_FAVOURITES; i++) {
-                fav_enabled_valid[i] = s_pool_state.favourites[i].enabled_valid;
-                fav_name_valid[i]    = s_pool_state.favourites[i].name_valid;
+                fav_enabled_valid[i] = s_state->favourites[i].enabled_valid;
+                fav_name_valid[i]    = s_state->favourites[i].name_valid;
             }
-            xSemaphoreGive(s_pool_state_mutex);
+            xSemaphoreGive(s_mutex);
         }
 
         if (gateway_present) {
@@ -153,7 +154,9 @@ void register_requester_notify(void)
     }
 }
 
-void register_requester_start(void)
+void register_requester_start(pool_state_t *pool_state, SemaphoreHandle_t state_mutex)
 {
+    s_state = pool_state;
+    s_mutex = state_mutex;
     xTaskCreate(register_requester_task, "reg_req", 4096, NULL, 2, &s_task_handle);
 }

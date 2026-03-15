@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+- Fixed `register_requester` directly accessing global `s_pool_state` and `s_pool_state_mutex` — `register_requester_start` now accepts `pool_state_t *` and `SemaphoreHandle_t` parameters, matching the dependency-injection pattern used by the message decoder; `main.c` passes `&s_pool_state` and `s_pool_state_mutex` at startup
 - Fixed `send_uart_command` in `mqtt_commands.c` bypassing `bus_send_message` — now calls `bus_send_bytes` (extracted from `bus_send_message`) so MQTT commands get TX-wait, TX LED flash, and hex logging consistent with all other bus writes; removed direct `uart_write_bytes` call and `driver/uart.h` include from `mqtt_commands.c`
 - Fixed race condition in `dns_server_stop` — replaced unreliable 100ms `vTaskDelay` + conditional `vTaskDelete` with a binary semaphore; the task signals the semaphore on all exit paths before calling `vTaskDelete(NULL)`, and `dns_server_stop` blocks on it (3s timeout) rather than guessing when the task has finished
 - Fixed `/status` handler holding the pool state mutex for the entire JSON build — now takes a snapshot immediately after acquiring the mutex and releases it before any cJSON allocation, eliminating contention with the message decoder under load
