@@ -25,6 +25,43 @@ static const char *TAG = "WEB_HANDLERS";
 const char* get_gateway_comms_status_text(uint16_t code);
 
 // ======================================================
+// HTML escaping
+// ======================================================
+
+// Returns a heap-allocated copy of `input` with &, <, >, ", ' replaced by
+// their HTML entities. Caller must free(). Returns NULL on alloc failure.
+static char *html_escape(const char *input)
+{
+    if (!input) return NULL;
+    size_t len = 0;
+    for (const char *p = input; *p; p++) {
+        switch (*p) {
+            case '&':  len += 5; break; // &amp;
+            case '<':  len += 4; break; // &lt;
+            case '>':  len += 4; break; // &gt;
+            case '"':  len += 6; break; // &quot;
+            case '\'': len += 5; break; // &#39;
+            default:   len += 1; break;
+        }
+    }
+    char *out = malloc(len + 1);
+    if (!out) return NULL;
+    char *q = out;
+    for (const char *p = input; *p; p++) {
+        switch (*p) {
+            case '&':  memcpy(q, "&amp;",  5); q += 5; break;
+            case '<':  memcpy(q, "&lt;",   4); q += 4; break;
+            case '>':  memcpy(q, "&gt;",   4); q += 4; break;
+            case '"':  memcpy(q, "&quot;", 6); q += 6; break;
+            case '\'': memcpy(q, "&#39;",  5); q += 5; break;
+            default:   *q++ = *p;              break;
+        }
+    }
+    *q = '\0';
+    return out;
+}
+
+// ======================================================
 // Common HTML Page Parts (Header and footer)
 // ======================================================
 
@@ -165,33 +202,37 @@ static esp_err_t home_get_handler(httpd_req_t *req)
     char wifi_ssid[33];
     memcpy(wifi_ssid, ap_info.ssid, sizeof(wifi_ssid) - 1);
     wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';
+    char *wifi_ssid_esc = html_escape(wifi_ssid);
     static const char wifi_row_fmt[] = "<tr><th>WiFi</th><td>%s (%d dBm)</td></tr>";
     static const char wifi_row_none[] = "<tr><th>WiFi</th><td>Not connected</td></tr>";
-    int wifi_row_len = wifi_info_ok ? snprintf(NULL, 0, wifi_row_fmt, wifi_ssid, ap_info.rssi) : (int)sizeof(wifi_row_none) - 1;
+    int wifi_row_len = wifi_info_ok ? snprintf(NULL, 0, wifi_row_fmt, wifi_ssid_esc ? wifi_ssid_esc : "", ap_info.rssi) : (int)sizeof(wifi_row_none) - 1;
     char *wifi_row = (wifi_row_len > 0) ? malloc((size_t)wifi_row_len + 1) : NULL;
     if (wifi_row) {
         if (wifi_info_ok) {
-            snprintf(wifi_row, (size_t)wifi_row_len + 1, wifi_row_fmt, wifi_ssid, ap_info.rssi);
+            snprintf(wifi_row, (size_t)wifi_row_len + 1, wifi_row_fmt, wifi_ssid_esc ? wifi_ssid_esc : "", ap_info.rssi);
         } else {
             memcpy(wifi_row, wifi_row_none, (size_t)wifi_row_len + 1);
         }
     }
+    free(wifi_ssid_esc);
 
     // MQTT row
+    char *mqtt_broker_esc = html_escape(mqtt_config.broker);
     static const char mqtt_row_fmt[] = "<tr><th>MQTT</th><td>%s (%s)</td></tr></tbody></table>";
     static const char mqtt_row_disabled[] = "<tr><th>MQTT</th><td>Disabled</td></tr></tbody></table>";
     const char *mqtt_state_str = mqtt_connected ? "Connected" : "Disconnected";
     int mqtt_row_len = mqtt_enabled
-        ? snprintf(NULL, 0, mqtt_row_fmt, mqtt_state_str, mqtt_config.broker)
+        ? snprintf(NULL, 0, mqtt_row_fmt, mqtt_state_str, mqtt_broker_esc ? mqtt_broker_esc : "")
         : (int)sizeof(mqtt_row_disabled) - 1;
     char *mqtt_row = (mqtt_row_len > 0) ? malloc((size_t)mqtt_row_len + 1) : NULL;
     if (mqtt_row) {
         if (mqtt_enabled) {
-            snprintf(mqtt_row, (size_t)mqtt_row_len + 1, mqtt_row_fmt, mqtt_state_str, mqtt_config.broker);
+            snprintf(mqtt_row, (size_t)mqtt_row_len + 1, mqtt_row_fmt, mqtt_state_str, mqtt_broker_esc ? mqtt_broker_esc : "");
         } else {
             memcpy(mqtt_row, mqtt_row_disabled, (size_t)mqtt_row_len + 1);
         }
     }
+    free(mqtt_broker_esc);
 
     // Pool summary — loaded from /status via JS
     static const char pool_section[] =
@@ -541,6 +582,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to acquire state mutex");
         return ESP_FAIL;
     }
+    pool_state_t state = s_pool_state;
+    xSemaphoreGive(s_pool_state_mutex);
 
     cJSON *root = cJSON_CreateObject();
 
@@ -562,35 +605,35 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     // Temperature
     cJSON *temperature = cJSON_CreateObject();
-    if (s_pool_state.temp_valid) {
-        cJSON_AddNumberToObject(temperature, "current", s_pool_state.current_temp);
+    if (state.temp_valid) {
+        cJSON_AddNumberToObject(temperature, "current", state.current_temp);
     } else {
         cJSON_AddNullToObject(temperature, "current");
     }
-    cJSON_AddNumberToObject(temperature, "pool_setpoint",   s_pool_state.pool_setpoint);
-    cJSON_AddNumberToObject(temperature, "spa_setpoint",    s_pool_state.spa_setpoint);
-    cJSON_AddNumberToObject(temperature, "pool_setpoint_f", s_pool_state.pool_setpoint_f);
-    cJSON_AddNumberToObject(temperature, "spa_setpoint_f",  s_pool_state.spa_setpoint_f);
-    cJSON_AddStringToObject(temperature, "scale", s_pool_state.temp_scale_fahrenheit ? "Fahrenheit" : "Celsius");
+    cJSON_AddNumberToObject(temperature, "pool_setpoint",   state.pool_setpoint);
+    cJSON_AddNumberToObject(temperature, "spa_setpoint",    state.spa_setpoint);
+    cJSON_AddNumberToObject(temperature, "pool_setpoint_f", state.pool_setpoint_f);
+    cJSON_AddNumberToObject(temperature, "spa_setpoint_f",  state.spa_setpoint_f);
+    cJSON_AddStringToObject(temperature, "scale", state.temp_scale_fahrenheit ? "Fahrenheit" : "Celsius");
     cJSON_AddItemToObject(root, "temperature", temperature);
 
     // Heaters (only include discovered/valid heaters)
     cJSON *heaters_arr = cJSON_CreateArray();
     for (int i = 0; i < MAX_HEATERS; i++) {
-        if (!s_pool_state.heaters[i].valid) {
+        if (!state.heaters[i].valid) {
             continue;
         }
         cJSON *heater = cJSON_CreateObject();
         cJSON_AddNumberToObject(heater, "index", i);
-        cJSON_AddStringToObject(heater, "state", s_pool_state.heaters[i].on ? "On" : "Off");
+        cJSON_AddStringToObject(heater, "state", state.heaters[i].on ? "On" : "Off");
         cJSON_AddItemToArray(heaters_arr, heater);
     }
     cJSON_AddItemToObject(root, "heaters", heaters_arr);
 
     // Mode
-    if (s_pool_state.mode_valid) {
-        const char *mode_str = (s_pool_state.mode == 0) ? "Spa" :
-                               (s_pool_state.mode == 1) ? "Pool" : "Unknown";
+    if (state.mode_valid) {
+        const char *mode_str = (state.mode == 0) ? "Spa" :
+                               (state.mode == 1) ? "Pool" : "Unknown";
         cJSON_AddStringToObject(root, "mode", mode_str);
     } else {
         cJSON_AddNullToObject(root, "mode");
@@ -599,17 +642,17 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     // Channels (excludes heater and light-zone channels — those appear in their own sections)
     cJSON *channels = cJSON_CreateArray();
     for (int i = 0; i < MAX_CHANNELS; i++) {
-        if (!s_pool_state.channels[i].configured ||
-            s_pool_state.channels[i].type == CHANNEL_TYPE_HEATER ||
-            s_pool_state.channels[i].type == CHANNEL_TYPE_LIGHT_ZONE) {
+        if (!state.channels[i].configured ||
+            state.channels[i].type == CHANNEL_TYPE_HEATER ||
+            state.channels[i].type == CHANNEL_TYPE_LIGHT_ZONE) {
             continue;
         }
-        const char *type_name  = get_channel_type_name(s_pool_state.channels[i].type);
-        const char *state_name = (s_pool_state.channels[i].state < CHANNEL_STATE_COUNT) ?
-                                 CHANNEL_STATE_NAMES[s_pool_state.channels[i].state] : "Unknown";
+        const char *type_name  = get_channel_type_name(state.channels[i].type);
+        const char *state_name = (state.channels[i].state < CHANNEL_STATE_COUNT) ?
+                                 CHANNEL_STATE_NAMES[state.channels[i].state] : "Unknown";
         cJSON *ch = cJSON_CreateObject();
-        cJSON_AddNumberToObject(ch, "id",    s_pool_state.channels[i].id);
-        cJSON_AddStringToObject(ch, "name",  s_pool_state.channels[i].name[0] ? s_pool_state.channels[i].name : type_name);
+        cJSON_AddNumberToObject(ch, "id",    state.channels[i].id);
+        cJSON_AddStringToObject(ch, "name",  state.channels[i].name[0] ? state.channels[i].name : type_name);
         cJSON_AddStringToObject(ch, "type",  type_name);
         cJSON_AddStringToObject(ch, "state", state_name);
         cJSON_AddItemToArray(channels, ch);
@@ -619,43 +662,43 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     // Lighting
     cJSON *lighting = cJSON_CreateArray();
     for (int i = 0; i < MAX_LIGHT_ZONES; i++) {
-        if (!s_pool_state.lighting[i].configured) continue;
-        const char *state_name = (s_pool_state.lighting[i].state < LIGHTING_STATE_COUNT) ?
-                                 LIGHTING_STATE_NAMES[s_pool_state.lighting[i].state] : "Unknown";
-        const char *color_name = (s_pool_state.lighting[i].color < LIGHTING_COLOR_COUNT) ?
-                                 LIGHTING_COLOR_NAMES[s_pool_state.lighting[i].color] : "Unknown";
+        if (!state.lighting[i].configured) continue;
+        const char *state_name = (state.lighting[i].state < LIGHTING_STATE_COUNT) ?
+                                 LIGHTING_STATE_NAMES[state.lighting[i].state] : "Unknown";
+        const char *color_name = (state.lighting[i].color < LIGHTING_COLOR_COUNT) ?
+                                 LIGHTING_COLOR_NAMES[state.lighting[i].color] : "Unknown";
         cJSON *zone = cJSON_CreateObject();
-        cJSON_AddNumberToObject(zone, "zone", s_pool_state.lighting[i].zone);
-        if (s_pool_state.lighting[i].name_valid &&
-            s_pool_state.lighting[i].name_id < LIGHT_ZONE_NAME_COUNT) {
-            cJSON_AddStringToObject(zone, "name", LIGHT_ZONE_NAME_TABLE[s_pool_state.lighting[i].name_id]);
+        cJSON_AddNumberToObject(zone, "zone", state.lighting[i].zone);
+        if (state.lighting[i].name_valid &&
+            state.lighting[i].name_id < LIGHT_ZONE_NAME_COUNT) {
+            cJSON_AddStringToObject(zone, "name", LIGHT_ZONE_NAME_TABLE[state.lighting[i].name_id]);
         } else {
             cJSON_AddNullToObject(zone, "name");
         }
-        if (s_pool_state.lighting[i].multicolor_valid) {
-            cJSON_AddBoolToObject(zone, "multicolor", s_pool_state.lighting[i].multicolor);
+        if (state.lighting[i].multicolor_valid) {
+            cJSON_AddBoolToObject(zone, "multicolor", state.lighting[i].multicolor);
         } else {
             cJSON_AddNullToObject(zone, "multicolor");
         }
         cJSON_AddStringToObject(zone, "state",  state_name);
         cJSON_AddStringToObject(zone, "color",  color_name);
-        cJSON_AddBoolToObject(zone,   "active", s_pool_state.lighting[i].active);
+        cJSON_AddBoolToObject(zone,   "active", state.lighting[i].active);
         cJSON_AddItemToArray(lighting, zone);
     }
     cJSON_AddItemToObject(root, "lighting", lighting);
 
     // Valves
     cJSON *valves = cJSON_CreateArray();
-    for (int i = 0; i < s_pool_state.num_valve_slots && i < MAX_VALVE_SLOTS; i++) {
-        if (!s_pool_state.valves[i].configured) continue;
+    for (int i = 0; i < state.num_valve_slots && i < MAX_VALVE_SLOTS; i++) {
+        if (!state.valves[i].configured) continue;
 
         // Look up label from register_labels (reg_id 0xD0 = valve 1, 0xD1 = valve 2, ...)
         uint8_t reg_id = 0xD0 + i;
         const char *label = NULL;
         for (int j = 0; j < MAX_REGISTER_LABELS; j++) {
-            if (s_pool_state.register_labels[j].valid &&
-                s_pool_state.register_labels[j].reg_id == reg_id) {
-                label = s_pool_state.register_labels[j].label;
+            if (state.register_labels[j].valid &&
+                state.register_labels[j].reg_id == reg_id) {
+                label = state.register_labels[j].label;
                 break;
             }
         }
@@ -665,13 +708,13 @@ static esp_err_t status_get_handler(httpd_req_t *req)
             label = fallback;
         }
 
-        const char *state_name = (s_pool_state.valves[i].state < CHANNEL_STATE_COUNT) ?
-                                 CHANNEL_STATE_NAMES[s_pool_state.valves[i].state] : "Unknown";
+        const char *state_name = (state.valves[i].state < CHANNEL_STATE_COUNT) ?
+                                 CHANNEL_STATE_NAMES[state.valves[i].state] : "Unknown";
         cJSON *valve = cJSON_CreateObject();
         cJSON_AddNumberToObject(valve, "id",     i + 1);
         cJSON_AddStringToObject(valve, "name",   label);
         cJSON_AddStringToObject(valve, "state",  state_name);
-        cJSON_AddBoolToObject(valve,   "active", s_pool_state.valves[i].active);
+        cJSON_AddBoolToObject(valve,   "active", state.valves[i].active);
         cJSON_AddItemToArray(valves, valve);
     }
     cJSON_AddItemToObject(root, "valves", valves);
@@ -679,7 +722,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     // Favourites
     cJSON *favourites = cJSON_CreateArray();
     for (int i = 0; i < MAX_FAVOURITES; i++) {
-        const favourite_t *fav = &s_pool_state.favourites[i];
+        const favourite_t *fav = &state.favourites[i];
         if (!fav->enabled_valid || !fav->enabled) continue;
         cJSON *f = cJSON_CreateObject();
         cJSON_AddNumberToObject(f, "index", i);
@@ -690,16 +733,16 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     // Chlorinator
     cJSON *chlorinator = cJSON_CreateObject();
-    if (s_pool_state.ph_valid) {
-        cJSON_AddNumberToObject(chlorinator, "ph_setpoint", s_pool_state.ph_setpoint / 10.0);
-        cJSON_AddNumberToObject(chlorinator, "ph_reading",  s_pool_state.ph_reading  / 10.0);
+    if (state.ph_valid) {
+        cJSON_AddNumberToObject(chlorinator, "ph_setpoint", state.ph_setpoint / 10.0);
+        cJSON_AddNumberToObject(chlorinator, "ph_reading",  state.ph_reading  / 10.0);
     } else {
         cJSON_AddNullToObject(chlorinator, "ph_setpoint");
         cJSON_AddNullToObject(chlorinator, "ph_reading");
     }
-    if (s_pool_state.orp_valid) {
-        cJSON_AddNumberToObject(chlorinator, "orp_setpoint", s_pool_state.orp_setpoint);
-        cJSON_AddNumberToObject(chlorinator, "orp_reading",  s_pool_state.orp_reading);
+    if (state.orp_valid) {
+        cJSON_AddNumberToObject(chlorinator, "orp_setpoint", state.orp_setpoint);
+        cJSON_AddNumberToObject(chlorinator, "orp_reading",  state.orp_reading);
     } else {
         cJSON_AddNullToObject(chlorinator, "orp_setpoint");
         cJSON_AddNullToObject(chlorinator, "orp_reading");
@@ -708,34 +751,34 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     // Internet Gateway
     cJSON *gateway = cJSON_CreateObject();
-    if (s_pool_state.serial_number_valid) {
-        cJSON_AddNumberToObject(gateway, "serial_number", (double)s_pool_state.serial_number);
+    if (state.serial_number_valid) {
+        cJSON_AddNumberToObject(gateway, "serial_number", (double)state.serial_number);
     } else {
         cJSON_AddNullToObject(gateway, "serial_number");
     }
-    if (s_pool_state.gateway_version_valid) {
+    if (state.gateway_version_valid) {
         char fw_ver[16];
         snprintf(fw_ver, sizeof(fw_ver), "%d.%d",
-                 s_pool_state.gateway_version_major, s_pool_state.gateway_version_minor);
+                 state.gateway_version_major, state.gateway_version_minor);
         cJSON_AddStringToObject(gateway, "firmware_version", fw_ver);
     } else {
         cJSON_AddNullToObject(gateway, "firmware_version");
     }
-    if (s_pool_state.gateway_ip_valid) {
+    if (state.gateway_ip_valid) {
         char ip_str[16];
         snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d",
-                 s_pool_state.gateway_ip[0], s_pool_state.gateway_ip[1],
-                 s_pool_state.gateway_ip[2], s_pool_state.gateway_ip[3]);
+                 state.gateway_ip[0], state.gateway_ip[1],
+                 state.gateway_ip[2], state.gateway_ip[3]);
         cJSON_AddStringToObject(gateway, "ip",           ip_str);
-        cJSON_AddNumberToObject(gateway, "signal_level", s_pool_state.gateway_signal_level);
+        cJSON_AddNumberToObject(gateway, "signal_level", state.gateway_signal_level);
     } else {
         cJSON_AddNullToObject(gateway, "ip");
         cJSON_AddNullToObject(gateway, "signal_level");
     }
-    if (s_pool_state.gateway_comms_status_valid) {
-        cJSON_AddNumberToObject(gateway, "comms_status", s_pool_state.gateway_comms_status);
+    if (state.gateway_comms_status_valid) {
+        cJSON_AddNumberToObject(gateway, "comms_status", state.gateway_comms_status);
         cJSON_AddStringToObject(gateway, "comms_status_text",
-                                get_gateway_comms_status_text(s_pool_state.gateway_comms_status));
+                                get_gateway_comms_status_text(state.gateway_comms_status));
     } else {
         cJSON_AddNullToObject(gateway, "comms_status");
         cJSON_AddNullToObject(gateway, "comms_status_text");
@@ -744,21 +787,21 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     // Touchscreen
     cJSON *touchscreen = cJSON_CreateObject();
-    if (s_pool_state.touchscreen_version_valid) {
+    if (state.touchscreen_version_valid) {
         char ts_ver[16];
         snprintf(ts_ver, sizeof(ts_ver), "%d.%d",
-                 s_pool_state.touchscreen_version_major, s_pool_state.touchscreen_version_minor);
+                 state.touchscreen_version_major, state.touchscreen_version_minor);
         cJSON_AddStringToObject(touchscreen, "version", ts_ver);
     } else {
         cJSON_AddNullToObject(touchscreen, "version");
     }
-    cJSON_AddNumberToObject(touchscreen, "num_channels", s_pool_state.num_channels);
+    cJSON_AddNumberToObject(touchscreen, "num_channels", state.num_channels);
     cJSON_AddItemToObject(root, "touchscreen", touchscreen);
 
     // Timers (only non-empty entries)
     cJSON *timers = cJSON_CreateArray();
     for (int i = 0; i < MAX_TIMERS; i++) {
-        timer_state_t *t = &s_pool_state.timers[i];
+        timer_state_t *t = &state.timers[i];
         if (!t->valid) continue;
         if (t->days == 0 && t->start_hour == 0 && t->start_minute == 0 &&
             t->stop_hour == 0 && t->stop_minute == 0) continue;
@@ -785,7 +828,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     // Timestamps
     uint64_t current_tick_ms = (uint64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
-    cJSON_AddNumberToObject(root, "last_update_ms", (double)s_pool_state.last_update_ms);
+    cJSON_AddNumberToObject(root, "last_update_ms", (double)state.last_update_ms);
     cJSON_AddNumberToObject(root, "current_ms",     (double)current_tick_ms);
 
     time_t now = time(NULL);
@@ -799,10 +842,10 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     cJSON_AddStringToObject(root, "current_time", time_str);
 
     char age_str[32];
-    if (s_pool_state.last_update_ms == 0) {
+    if (state.last_update_ms == 0) {
         snprintf(age_str, sizeof(age_str), "Never");
     } else {
-        uint32_t elapsed_sec = (uint32_t)((current_tick_ms - s_pool_state.last_update_ms) / 1000);
+        uint32_t elapsed_sec = (uint32_t)((current_tick_ms - state.last_update_ms) / 1000);
         if (elapsed_sec < 60) {
             snprintf(age_str, sizeof(age_str), "%lus ago", (unsigned long)elapsed_sec);
         } else if (elapsed_sec < 3600) {
@@ -814,8 +857,6 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         }
     }
     cJSON_AddStringToObject(root, "time_since_last_update", age_str);
-
-    xSemaphoreGive(s_pool_state_mutex);
 
     char *json_resp = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -924,8 +965,13 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         "<h1>MQTT Configuration</h1>"
         "<form id='mqttForm'>";
 
-    char html_fields[1536];
-    snprintf(html_fields, sizeof(html_fields),
+    char *broker_esc   = html_escape(config.broker);
+    char *username_esc = html_escape(config.username);
+    const char *broker_val   = broker_esc   ? broker_esc   : "";
+    const char *username_val = username_esc ? username_esc : "";
+    const char *pw_placeholder = strlen(config.password) > 0
+        ? "Leave empty to keep current password" : "Leave empty if not required";
+    static const char html_fields_fmt[] =
         "<div data-field>"
             "<label><input type='checkbox' id='enabled' role='switch' name='enabled'%s> Enable MQTT</label>"
         "</div>"
@@ -944,10 +990,18 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         "<div data-field>"
             "<label for='password'>Password <small>(optional)</small></label>"
             "<input type='password' id='password' name='password' placeholder='%s'>"
-        "</div>",
+        "</div>";
+    int html_fields_len = snprintf(NULL, 0, html_fields_fmt,
         config.enabled ? " checked" : "",
-        config.broker, display_port, config.username,
-        strlen(config.password) > 0 ? "Leave empty to keep current password" : "Leave empty if not required");
+        broker_val, display_port, username_val, pw_placeholder);
+    char *html_fields = (html_fields_len > 0) ? malloc((size_t)html_fields_len + 1) : NULL;
+    if (html_fields) {
+        snprintf(html_fields, (size_t)html_fields_len + 1, html_fields_fmt,
+            config.enabled ? " checked" : "",
+            broker_val, display_port, username_val, pw_placeholder);
+    }
+    free(username_esc);
+    free(broker_esc);
 
     const char *html_end =
         "<button type='submit'>Save Configuration</button>"
@@ -984,10 +1038,11 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
     httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, html_fields, HTTPD_RESP_USE_STRLEN);
+    if (html_fields) httpd_resp_send_chunk(req, html_fields, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_end, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
+    free(html_fields);
     free(footer);
     free(nav);
     free(header);

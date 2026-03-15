@@ -1255,7 +1255,7 @@ static bool handle_mode_control_cmd(
     pool_state_t state_snapshot;
     bool should_publish = false;
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
         ctx->pool_state->active_favourite = mode_value;
         ctx->pool_state->active_favourite_valid = true;
         state_snapshot = *ctx->pool_state;

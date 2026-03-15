@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+- Fixed `/status` handler holding the pool state mutex for the entire JSON build — now takes a snapshot immediately after acquiring the mutex and releases it before any cJSON allocation, eliminating contention with the message decoder under load
 ### Security
+- Fixed XSS via unescaped dynamic content in HTML responses — added `html_escape()` helper and applied it to WiFi SSID and MQTT broker in the home page, and broker/username in the MQTT config form; also converted the MQTT config form's `html_fields[1536]` fixed stack buffer to a dynamically-sized heap allocation
 - Fixed silent truncation of home page system info, WiFi, and MQTT rows — replaced fixed-size stack buffers (`sys_table[1024]`, `wifi_row[96]`, `mqtt_row[256]`) with heap-allocated buffers sized via `snprintf(NULL, 0, ...)`, matching the pattern used by `get_page_header`/`get_page_nav`; also explicitly null-terminates `ap_info.ssid` before use
 - Fixed OTA handler accepting zero, negative, or oversized `Content-Length` values — added validation that rejects requests outside the range 1–`OTA_MAX_FIRMWARE_SIZE` (0x1E0000, matching the partition table) before entering the receive loop
 - Fixed race condition in `handle_mode_control_cmd`, `handle_favourite_label`, and `handle_favourite_enable` — `mqtt_publish_favourite` was called with a raw pointer to shared pool state after the mutex was released; all three now capture a snapshot inside the mutex and pass `&state_snapshot`, consistent with every other publish call in the decoder
