@@ -442,12 +442,12 @@ static const register_handler_t REGISTER_HANDLERS[] = {
     {0x7C, 0x83, 0x02, handle_channel_name,       "Channel Name"},
     {0x8C, 0x93, 0x02, handle_channel_state,      "Channel State"},
 
-    // Lighting zones
-    {0xA0, 0xA7, 0x01, handle_light_zone_multicolor, "Light Zone Multicolor"},
-    {0xB0, 0xB7, 0x01, handle_light_zone_name,    "Light Zone Name"},
-    {0xC0, 0xC7, 0x01, handle_light_zone_state,   "Light Zone State"},
-    {0xD0, 0xD7, 0x01, handle_light_zone_color,   "Light Zone Color"},
-    {0xE0, 0xE7, 0x01, handle_light_zone_active,  "Light Zone Active"},
+    // Lighting zones — reg_end capped to base + MAX_LIGHT_ZONES - 1 (= base + 3)
+    {0xA0, 0xA3, 0x01, handle_light_zone_multicolor, "Light Zone Multicolor"},
+    {0xB0, 0xB3, 0x01, handle_light_zone_name,    "Light Zone Name"},
+    {0xC0, 0xC3, 0x01, handle_light_zone_state,   "Light Zone State"},
+    {0xD0, 0xD3, 0x01, handle_light_zone_color,   "Light Zone Color"},
+    {0xE0, 0xE3, 0x01, handle_light_zone_active,  "Light Zone Active"},
 
     // Valve labels (slot 0x02)
     {0xD0, 0xD1, 0x02, handle_valve_label,        "Valve Label"},
@@ -1252,13 +1252,20 @@ static bool handle_mode_control_cmd(
     ESP_LOGI(TAG, "%s Gateway mode control command - %s (0x%02X)",
              addr_info, mode_name, mode_value);
 
+    pool_state_t state_snapshot;
+    bool should_publish = false;
+
     if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         ctx->pool_state->active_favourite = mode_value;
         ctx->pool_state->active_favourite_valid = true;
+        state_snapshot = *ctx->pool_state;
+        should_publish = true;
         xSemaphoreGive(ctx->state_mutex);
     }
 
-    mqtt_publish_favourite(ctx->pool_state);
+    if (should_publish) {
+        mqtt_publish_favourite(&state_snapshot);
+    }
     return true;
 }
 
@@ -1660,6 +1667,11 @@ static bool handle_light_zone_state(
     uint8_t state = payload[2];
     uint8_t zone_idx = reg_id - 0xC0;
 
+    if (zone_idx >= MAX_LIGHT_ZONES) {
+        ESP_LOGW(TAG, "%s Lighting zone state: zone_idx %d out of range (max %d)", addr_info, zone_idx, MAX_LIGHT_ZONES);
+        return false;
+    }
+
     const char *state_name = (state < LIGHTING_STATE_COUNT) ? LIGHTING_STATE_NAMES[state] : "Unknown";
     ESP_LOGI(TAG, "%s Lighting zone %d state - %s", addr_info, zone_idx + 1, state_name);
 
@@ -1704,6 +1716,11 @@ static bool handle_light_zone_color(
     uint8_t color = payload[2];
     uint8_t zone_idx = reg_id - 0xD0;
 
+    if (zone_idx >= MAX_LIGHT_ZONES) {
+        ESP_LOGW(TAG, "%s Lighting zone color: zone_idx %d out of range (max %d)", addr_info, zone_idx, MAX_LIGHT_ZONES);
+        return false;
+    }
+
     const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
     ESP_LOGI(TAG, "%s Lighting zone %d color - %s (%d)", addr_info, zone_idx + 1, color_name, color);
 
@@ -1747,6 +1764,11 @@ static bool handle_light_zone_multicolor(
     uint8_t capable = payload[2];
     uint8_t zone_idx = reg_id - 0xA0;
 
+    if (zone_idx >= MAX_LIGHT_ZONES) {
+        ESP_LOGW(TAG, "%s Lighting zone multicolor: zone_idx %d out of range (max %d)", addr_info, zone_idx, MAX_LIGHT_ZONES);
+        return false;
+    }
+
     ESP_LOGI(TAG, "%s Lighting zone %d multicolor - %s", addr_info, zone_idx + 1, capable ? "Yes" : "No");
 
     pool_state_t state_snapshot;
@@ -1783,6 +1805,11 @@ static bool handle_light_zone_name(
     uint8_t reg_id = payload[0];
     uint8_t name_id = payload[2];
     uint8_t zone_idx = reg_id - 0xB0;
+
+    if (zone_idx >= MAX_LIGHT_ZONES) {
+        ESP_LOGW(TAG, "%s Lighting zone name: zone_idx %d out of range (max %d)", addr_info, zone_idx, MAX_LIGHT_ZONES);
+        return false;
+    }
 
     const char *name = (name_id < LIGHT_ZONE_NAME_COUNT) ? LIGHT_ZONE_NAME_TABLE[name_id] : "Unknown";
     ESP_LOGI(TAG, "%s Lighting zone %d name - %s (%d)", addr_info, zone_idx + 1, name, name_id);
@@ -1821,6 +1848,11 @@ static bool handle_light_zone_active(
     uint8_t reg_id = payload[0];
     uint8_t active = payload[2];
     uint8_t zone_idx = reg_id - 0xE0;
+
+    if (zone_idx >= MAX_LIGHT_ZONES) {
+        ESP_LOGW(TAG, "%s Lighting zone active: zone_idx %d out of range (max %d)", addr_info, zone_idx, MAX_LIGHT_ZONES);
+        return false;
+    }
 
     ESP_LOGI(TAG, "%s Lighting zone %d active - %s", addr_info, zone_idx + 1, active ? "Yes" : "No");
 
@@ -1947,9 +1979,10 @@ static bool handle_favourite_label(
     ctx->pool_state->favourites[index].name[sizeof(ctx->pool_state->favourites[index].name) - 1] = '\0';
     ctx->pool_state->favourites[index].name_valid = true;
     ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    pool_state_t state_snapshot = *ctx->pool_state;
     xSemaphoreGive(ctx->state_mutex);
 
-    mqtt_publish_favourite(ctx->pool_state);
+    mqtt_publish_favourite(&state_snapshot);
     return true;
 }
 
@@ -1983,9 +2016,10 @@ static bool handle_favourite_enable(
     ctx->pool_state->favourites[index].enabled = enabled;
     ctx->pool_state->favourites[index].enabled_valid = true;
     ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    pool_state_t state_snapshot = *ctx->pool_state;
     xSemaphoreGive(ctx->state_mutex);
 
-    mqtt_publish_favourite(ctx->pool_state);
+    mqtt_publish_favourite(&state_snapshot);
     return true;
 }
 

@@ -123,5 +123,6 @@
 // OTA Update
 #define OTA_REBOOT_DELAY_MS            2000    // Delay before reboot after OTA
 #define OTA_UPLOAD_TIMEOUT_MS          120000  // 2 minutes max for OTA upload
+#define OTA_MAX_FIRMWARE_SIZE          0x1E0000 // Must match ota_0/ota_1 partition size in partitions.csv
 
 #endif // CONFIG_H

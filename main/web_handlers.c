@@ -1208,6 +1208,16 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     }
 
     int remaining = req->content_len;
+    if (remaining <= 0 || remaining > OTA_MAX_FIRMWARE_SIZE) {
+        ESP_LOGE(TAG, "Invalid firmware size: %d (must be 1–%d bytes)", remaining, OTA_MAX_FIRMWARE_SIZE);
+        free(buf);
+        esp_ota_abort(ota_handle);
+        const char *resp = "{\"success\":false,\"message\":\"Invalid firmware size\"}";
+        httpd_resp_set_type(req, "application/json; charset=UTF-8");
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
     int received = 0;
     ESP_LOGI(TAG, "Firmware size: %d bytes", remaining);
 
