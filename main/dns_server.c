@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include "lwip/sockets.h"
 
@@ -22,6 +23,7 @@ typedef struct {
 
 static int s_dns_socket = -1;
 static TaskHandle_t s_dns_task_handle = NULL;
+static SemaphoreHandle_t s_dns_stopped_sem = NULL;
 
 // Convert IP string to 32-bit integer (network byte order)
 static uint32_t ip_string_to_uint32(const char *ip_str)
@@ -107,6 +109,7 @@ static void dns_server_task(void *pvParameters)
     if (s_dns_socket < 0) {
         ESP_LOGE(TAG, "Failed to create socket: errno %d", errno);
         s_dns_task_handle = NULL;
+        if (s_dns_stopped_sem) xSemaphoreGive(s_dns_stopped_sem);
         vTaskDelete(NULL);
         return;
     }
@@ -128,6 +131,7 @@ static void dns_server_task(void *pvParameters)
         close(s_dns_socket);
         s_dns_socket = -1;
         s_dns_task_handle = NULL;
+        if (s_dns_stopped_sem) xSemaphoreGive(s_dns_stopped_sem);
         vTaskDelete(NULL);
         return;
     }
@@ -173,6 +177,7 @@ static void dns_server_task(void *pvParameters)
     s_dns_socket = -1;
     s_dns_task_handle = NULL;
     ESP_LOGI(TAG, "DNS server stopped");
+    if (s_dns_stopped_sem) xSemaphoreGive(s_dns_stopped_sem);
     vTaskDelete(NULL);
 }
 
@@ -183,12 +188,20 @@ esp_err_t dns_server_start(void)
         return ESP_OK;
     }
 
+    s_dns_stopped_sem = xSemaphoreCreateBinary();
+    if (s_dns_stopped_sem == NULL) {
+        ESP_LOGE(TAG, "Failed to create DNS stopped semaphore");
+        return ESP_FAIL;
+    }
+
     BaseType_t ret = xTaskCreate(dns_server_task, "dns_server",
                                  DNS_TASK_STACK_SIZE, NULL,
                                  DNS_TASK_PRIORITY, &s_dns_task_handle);
 
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create DNS server task");
+        vSemaphoreDelete(s_dns_stopped_sem);
+        s_dns_stopped_sem = NULL;
         return ESP_FAIL;
     }
 
@@ -197,21 +210,25 @@ esp_err_t dns_server_start(void)
 
 void dns_server_stop(void)
 {
+    if (s_dns_task_handle == NULL) return;
+
+    // Close socket to unblock recvfrom and trigger task exit
+    if (s_dns_socket >= 0) {
+        close(s_dns_socket);
+        s_dns_socket = -1;
+    }
+
+    // Wait for the task to signal it has finished (socket timeout is 1s, allow 3s)
+    if (s_dns_stopped_sem) {
+        xSemaphoreTake(s_dns_stopped_sem, pdMS_TO_TICKS(3000));
+        vSemaphoreDelete(s_dns_stopped_sem);
+        s_dns_stopped_sem = NULL;
+    }
+
+    // s_dns_task_handle cleared by the task itself; guard against timeout
     if (s_dns_task_handle != NULL) {
-        // Close socket to trigger task exit
-        if (s_dns_socket >= 0) {
-            close(s_dns_socket);
-            s_dns_socket = -1;
-        }
-
-        // Wait for task to finish
-        vTaskDelay(pdMS_TO_TICKS(100));
-
-        if (s_dns_task_handle != NULL) {
-            vTaskDelete(s_dns_task_handle);
-            s_dns_task_handle = NULL;
-        }
-
-        ESP_LOGI(TAG, "DNS server stopped");
+        ESP_LOGW(TAG, "DNS task did not exit cleanly, forcing delete");
+        vTaskDelete(s_dns_task_handle);
+        s_dns_task_handle = NULL;
     }
 }
