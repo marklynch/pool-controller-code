@@ -837,18 +837,15 @@ static bool handle_unknown(
     const char *addr_info,
     message_decoder_context_t *ctx)
 {
-    // Format message as hex string
-    int hex_str_size = 3 * len + 1;
-    char *hex_str = malloc(hex_str_size);
-    if (!hex_str) return false;
+    // Format message as hex string — stack buffer sized to the worst case (BUS_MESSAGE_MAX_SIZE bytes)
+    char hex_str[3 * BUS_MESSAGE_MAX_SIZE + 1];
     int pos = 0;
-    for (int i = 0; i < len; i++) {
-        pos += snprintf(&hex_str[pos], hex_str_size - pos, "%02X ", data[i]);
+    for (int i = 0; i < len && pos < (int)sizeof(hex_str) - 3; i++) {
+        pos += snprintf(&hex_str[pos], sizeof(hex_str) - pos, "%02X ", data[i]);
     }
     hex_str[pos] = '\0';
 
     ESP_LOGW(TAG, "Unhandled: %s", hex_str);
-    free(hex_str);
 
     return false;  // Not decoded
 }
