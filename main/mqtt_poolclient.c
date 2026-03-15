@@ -269,13 +269,22 @@ esp_err_t mqtt_client_init(void)
     mqtt_get_device_id(device_id, sizeof(device_id));
     ESP_LOGI(TAG, "Device ID: %s", device_id);
 
-    // Build broker URI — static for the same reason
+    // Build broker URI — static so the pointer remains valid for the lifetime of the MQTT client
     static char broker_uri[192];
     snprintf(broker_uri, sizeof(broker_uri), "mqtt://%s:%d", config.broker, config.port);
 
     // Build LWT topic — static for the same reason
     static char lwt_topic[128];
     snprintf(lwt_topic, sizeof(lwt_topic), "pool/%s/availability", device_id);
+
+    // Copy credentials into static buffers — config is stack-allocated and must not be
+    // pointed to directly, as the MQTT client holds these pointers beyond this function.
+    static char s_username[64];
+    static char s_password[64];
+    strncpy(s_username, config.username, sizeof(s_username) - 1);
+    s_username[sizeof(s_username) - 1] = '\0';
+    strncpy(s_password, config.password, sizeof(s_password) - 1);
+    s_password[sizeof(s_password) - 1] = '\0';
 
     // Configure MQTT client
     esp_mqtt_client_config_t mqtt_cfg = {
@@ -291,15 +300,15 @@ esp_err_t mqtt_client_init(void)
     };
 
     // Add authentication if configured
-    if (config.username[0] != '\0') {
-        mqtt_cfg.credentials.username = config.username;
-        ESP_LOGI(TAG, "MQTT username configured: %s", config.username);
+    if (s_username[0] != '\0') {
+        mqtt_cfg.credentials.username = s_username;
+        ESP_LOGI(TAG, "MQTT username configured: %s", s_username);
     } else {
         ESP_LOGI(TAG, "MQTT username: NONE (anonymous)");
     }
-    if (config.password[0] != '\0') {
-        mqtt_cfg.credentials.authentication.password = config.password;
-        ESP_LOGI(TAG, "MQTT password configured: %d chars", strlen(config.password));
+    if (s_password[0] != '\0') {
+        mqtt_cfg.credentials.authentication.password = s_password;
+        ESP_LOGI(TAG, "MQTT password configured: %zu chars", strlen(s_password));
     } else {
         ESP_LOGI(TAG, "MQTT password: NONE");
     }
