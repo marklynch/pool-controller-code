@@ -6,6 +6,7 @@
 #include "message_decoder.h"
 #include "tcp_bridge.h"
 #include "device_serial.h"
+#include "bus.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -95,6 +96,7 @@ char *get_page_nav(const char page) {
         "<aside data-sidebar>"
         "<nav><ul>"
         "<li><a href='/'" "%s" ">Home</a></li>"
+        "<li><a href='/pool'" "%s" ">Pool Controls</a></li>"
         "<li><a href='/wifi'" "%s" ">WiFi Config</a></li>"
         "<li><a href='/mqtt_config'" "%s" ">MQTT Config</a></li>"
         "<li><a href='/status_view'" "%s" ">Status</a></li>"
@@ -107,6 +109,7 @@ char *get_page_nav(const char page) {
     const char *none = "";
     int n = snprintf(NULL, 0, fmt,
         page == 'h' ? cur : none,
+        page == 'p' ? cur : none,
         page == 'w' ? cur : none,
         page == 'm' ? cur : none,
         page == 's' ? cur : none,
@@ -119,6 +122,7 @@ char *get_page_nav(const char page) {
 
     snprintf(nav, (size_t)n + 1, fmt,
         page == 'h' ? cur : none,
+        page == 'p' ? cur : none,
         page == 'w' ? cur : none,
         page == 'm' ? cur : none,
         page == 's' ? cur : none,
@@ -1468,6 +1472,377 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
 }
 
 // ======================================================
+// Pool Control Page Handler
+// ======================================================
+
+static esp_err_t pool_get_handler(httpd_req_t *req)
+{
+    static const char pool_page[] =
+        "<h1>Pool Controls</h1>"
+        "<p id='pool-age' class='text-lighter'></p>"
+        "<div id='pool-err' role='alert' data-variant='danger' hidden></div>"
+        "<div id='pool-ctrl'><p class='text-lighter'>Loading...</p></div>"
+        "<script>"
+        "let sd=null,pollT=null;"
+        "function showErr(m){"
+          "const e=document.getElementById('pool-err');"
+          "e.textContent=m;e.removeAttribute('hidden');"
+          "clearTimeout(e._t);e._t=setTimeout(()=>e.setAttribute('hidden',''),5000);}"
+        "function postCmd(obj){"
+          "fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)})"
+          ".then(r=>r.json())"
+          ".then(d=>{if(d.success){clearTimeout(pollT);setTimeout(refresh,500);}else showErr(d.message||'Command failed');})"
+          ".catch(e=>showErr(''+e));}"
+        "function refresh(){"
+          "fetch('/status').then(r=>r.json()).then(d=>{"
+            "sd=d;"
+            "const age=document.getElementById('pool-age');"
+            "if(age)age.textContent='Last update: '+d.time_since_last_update;"
+            "render(d);"
+            "pollT=setTimeout(refresh,5000);"
+          "}).catch(e=>{showErr('Status error: '+e);pollT=setTimeout(refresh,5000);});}"
+        "function mkSec(title){"
+          "const d=document.createElement('div');"
+          "d.style.cssText='margin-bottom:1.25rem;border:1px solid #ddd;border-radius:6px;padding:1rem;';"
+          "const h=document.createElement('h3');h.textContent=title;h.style.marginBottom='0.75rem';"
+          "d.appendChild(h);return d;}"
+        "function mkRow(label){"
+          "const d=document.createElement('div');"
+          "d.style.cssText='display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap;';"
+          "const s=document.createElement('span');s.textContent=label;"
+          "s.style.cssText='min-width:9rem;font-weight:500;';"
+          "d.appendChild(s);return d;}"
+        "function mkBtn(label,primary,onclick){"
+          "const b=document.createElement('button');b.textContent=label;"
+          "if(!primary)b.className='outline';"
+          "b.style.cssText='padding:0.3rem 0.75rem;margin:0;font-size:0.9rem;min-width:auto;';"
+          "b.onclick=onclick;return b;}"
+        "function mkBtnGrp(opts,cur,cb){"
+          "const d=document.createElement('div');d.style.cssText='display:flex;gap:0.25rem;';"
+          "opts.forEach(o=>d.appendChild(mkBtn(o,o===cur,()=>cb(o))));return d;}"
+        "function mkBadge(txt){"
+          "const s=document.createElement('span');s.textContent=txt;"
+          "s.style.cssText='font-size:0.85rem;color:#888;';return s;}"
+        "function render(d){"
+          "const c=document.getElementById('pool-ctrl');c.innerHTML='';"
+          "const isFahr=d.temperature&&d.temperature.scale==='Fahrenheit';"
+          // Mode & Favourites section
+          "const mf=mkSec('Mode & Favourites');"
+          "const mg=document.createElement('div');"
+          "mg.style.cssText='display:flex;gap:0.5rem;flex-wrap:wrap;';"
+          "if(d.mode!==null){"
+            "['Pool','Spa'].forEach(m=>mg.appendChild(mkBtn(m,d.mode===m,()=>postCmd({type:'mode',value:m}))));}"
+          "mf.appendChild(mg);"
+          "if(d.favourites&&d.favourites.length>0){"
+            "const fg=document.createElement('div');"
+            "fg.style.cssText='display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;';"
+            "d.favourites.forEach(f=>{"
+              "const name=f.name||(f.index===0?'Pool':f.index===1?'Spa':'Fav '+(f.index-1));"
+              "fg.appendChild(mkBtn(name,false,()=>postCmd({type:'favourite',value:name})));});"
+            "fg.appendChild(mkBtn('All Auto',false,()=>postCmd({type:'favourite',value:'All Auto'})));"
+            "const fl=document.createElement('small');fl.textContent='Quick select:';"
+            "fl.style.cssText='display:block;color:#888;margin-bottom:0.25rem;';"
+            "mf.appendChild(fl);mf.appendChild(fg);}"
+          "c.appendChild(mf);"
+          // Temperature section
+          "const t=d.temperature;"
+          "if(t){"
+            "const ts=mkSec('Temperature');"
+            "if(t.current!==null){"
+              "const cp=document.createElement('p');"
+              "cp.textContent='Current: '+t.current+'\u00b0'+(isFahr?'F':'C');"
+              "cp.style.marginBottom='0.5rem';ts.appendChild(cp);}"
+            "const pVal=isFahr?t.pool_setpoint_f:t.pool_setpoint;"
+            "const pr=mkRow('Pool: '+pVal+'\u00b0'+(isFahr?'F':'C'));"
+            "pr.appendChild(mkBtn('-',false,()=>{"
+              "const v=isFahr?Math.round((t.pool_setpoint_f-1-32)*5/9):t.pool_setpoint-1;"
+              "postCmd({type:'temperature',target:'pool',value:v});}));"
+            "pr.appendChild(mkBtn('+',false,()=>{"
+              "const v=isFahr?Math.round((t.pool_setpoint_f+1-32)*5/9):t.pool_setpoint+1;"
+              "postCmd({type:'temperature',target:'pool',value:v});}));"
+            "ts.appendChild(pr);"
+            "const sVal=isFahr?t.spa_setpoint_f:t.spa_setpoint;"
+            "const sr=mkRow('Spa: '+sVal+'\u00b0'+(isFahr?'F':'C'));"
+            "sr.appendChild(mkBtn('-',false,()=>{"
+              "const v=isFahr?Math.round((t.spa_setpoint_f-1-32)*5/9):t.spa_setpoint-1;"
+              "postCmd({type:'temperature',target:'spa',value:v});}));"
+            "sr.appendChild(mkBtn('+',false,()=>{"
+              "const v=isFahr?Math.round((t.spa_setpoint_f+1-32)*5/9):t.spa_setpoint+1;"
+              "postCmd({type:'temperature',target:'spa',value:v});}));"
+            "ts.appendChild(sr);c.appendChild(ts);}"
+          // Heaters section
+          "if(d.heaters&&d.heaters.length>0){"
+            "const hs=mkSec('Heaters');"
+            "d.heaters.forEach(h=>{"
+              "const r=mkRow('Heater '+(h.index+1));"
+              "r.appendChild(mkBtnGrp(['Off','On'],h.state,s=>postCmd({type:'heater',id:h.index,state:s.toUpperCase()})));"
+              "hs.appendChild(r);});"
+            "c.appendChild(hs);}"
+          // Channels section
+          "if(d.channels&&d.channels.length>0){"
+            "const cs=mkSec('Channels');"
+            "d.channels.forEach(ch=>{"
+              "const r=mkRow(ch.name||ch.type);"
+              "r.appendChild(mkBadge(ch.state));"
+              "r.appendChild(mkBtn('Toggle',false,()=>postCmd({type:'channel',id:ch.id})));"
+              "cs.appendChild(r);});"
+            "c.appendChild(cs);}"
+          // Lighting section
+          "if(d.lighting&&d.lighting.length>0){"
+            "const ls=mkSec('Lighting');"
+            "d.lighting.forEach(lt=>{"
+              "const name=lt.name||('Zone '+lt.zone);"
+              "const r=mkRow(name);"
+              "r.appendChild(mkBtnGrp(['Off','Auto','On'],lt.state,s=>postCmd({type:'light',id:lt.zone,state:s.toUpperCase()})));"
+              "if(lt.active&&lt.color&&lt.color!=='Pool')r.appendChild(mkBadge(lt.color));"
+              "ls.appendChild(r);});"
+            "c.appendChild(ls);}"
+          // Valves section
+          "if(d.valves&&d.valves.length>0){"
+            "const vs=mkSec('Valves');"
+            "d.valves.forEach(v=>{"
+              "const r=mkRow(v.name);"
+              "r.appendChild(mkBtnGrp(['Off','Auto','On'],v.state,s=>postCmd({type:'valve',id:v.id,state:s})));"
+              "vs.appendChild(r);});"
+            "c.appendChild(vs);}"
+          // Chlorinator section (read-only)
+          "const cl=d.chlorinator;"
+          "if(cl&&cl.ph_reading!==null){"
+            "const cls=mkSec('Chlorinator');"
+            "const php=document.createElement('p');"
+            "php.textContent='pH: '+cl.ph_reading+' (setpoint: '+cl.ph_setpoint+')';"
+            "cls.appendChild(php);"
+            "if(cl.orp_reading!==null){"
+              "const orp=document.createElement('p');"
+              "orp.textContent='ORP: '+cl.orp_reading+' mV (setpoint: '+cl.orp_setpoint+' mV)';"
+              "cls.appendChild(orp);}"
+            "c.appendChild(cls);}}"
+        "refresh();"
+        "</script>";
+
+    char page_title[] = "Pool Controls";
+    char *header = get_page_header(page_title);
+    char *nav = get_page_nav('p');
+    char *footer = get_page_footer();
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, pool_page, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+    free(footer);
+    free(nav);
+    free(header);
+    return ESP_OK;
+}
+
+// ======================================================
+// API Command Handler
+// ======================================================
+
+static esp_err_t api_command_post_handler(httpd_req_t *req)
+{
+    char content[HTTP_API_COMMAND_BUFFER_SIZE];
+    int ret = httpd_req_recv(req, content, sizeof(content) - 1);
+    if (ret <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty request");
+        return ESP_FAIL;
+    }
+    content[ret] = '\0';
+
+    bool ok = false;
+    const char *err_msg = "Command failed or invalid parameters";
+
+    cJSON *json = cJSON_Parse(content);
+    if (!json) {
+        err_msg = "Invalid JSON";
+    } else {
+        cJSON *type_item = cJSON_GetObjectItem(json, "type");
+        if (!cJSON_IsString(type_item)) {
+            err_msg = "Missing or invalid 'type' field";
+        } else {
+            const char *type = type_item->valuestring;
+
+            if (strcmp(type, "channel") == 0) {
+                cJSON *id_item = cJSON_GetObjectItem(json, "id");
+                if (cJSON_IsNumber(id_item)) {
+                    int channel_idx = (int)id_item->valuedouble;
+                    if (channel_idx >= 0 && channel_idx < MAX_CHANNELS) {
+                        uint8_t idx = (uint8_t)channel_idx;
+                        uint8_t cmd[] = {
+                            0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00,
+                            0x10, 0x0D, 0x8D,
+                            idx, idx, 0x03
+                        };
+                        ok = (bus_send_bytes(cmd, sizeof(cmd)) >= 0);
+                    }
+                }
+
+            } else if (strcmp(type, "light") == 0) {
+                cJSON *id_item    = cJSON_GetObjectItem(json, "id");
+                cJSON *state_item = cJSON_GetObjectItem(json, "state");
+                if (cJSON_IsNumber(id_item) && cJSON_IsString(state_item)) {
+                    int zone = (int)id_item->valuedouble;
+                    const char *state_str = state_item->valuestring;
+                    uint8_t state;
+                    if      (strcmp(state_str, "ON")   == 0) state = 0x02;
+                    else if (strcmp(state_str, "OFF")  == 0) state = 0x00;
+                    else if (strcmp(state_str, "AUTO") == 0) state = 0x01;
+                    else { err_msg = "Invalid light state (expected ON/OFF/AUTO)"; goto done; }
+                    if (zone >= 1 && zone <= MAX_LIGHT_ZONES) {
+                        uint8_t reg_id = (uint8_t)(0xC0 + (zone - 1));
+                        uint8_t cmd[] = {
+                            0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00,
+                            0x3A, 0x0F, 0xB9,
+                            reg_id, 0x01, state,
+                            (uint8_t)((reg_id + 0x01 + state) & 0xFF),
+                            0x03
+                        };
+                        ok = (bus_send_bytes(cmd, sizeof(cmd)) >= 0);
+                    }
+                }
+
+            } else if (strcmp(type, "heater") == 0) {
+                cJSON *id_item    = cJSON_GetObjectItem(json, "id");
+                cJSON *state_item = cJSON_GetObjectItem(json, "state");
+                if (cJSON_IsNumber(id_item) && cJSON_IsString(state_item)) {
+                    int idx = (int)id_item->valuedouble;
+                    const char *state_str = state_item->valuestring;
+                    if (idx == 0) {
+                        uint8_t state;
+                        if      (strcmp(state_str, "ON")  == 0) state = 0x01;
+                        else if (strcmp(state_str, "OFF") == 0) state = 0x00;
+                        else { err_msg = "Invalid heater state (expected ON/OFF)"; goto done; }
+                        uint8_t cmd[] = {
+                            0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00,
+                            0x3A, 0x0F, 0xB9,
+                            0xE6, 0x00, state,
+                            (uint8_t)((0xE6 + 0x00 + state) & 0xFF),
+                            0x03
+                        };
+                        ok = (bus_send_bytes(cmd, sizeof(cmd)) >= 0);
+                    } else {
+                        err_msg = "Only heater index 0 is supported";
+                    }
+                }
+
+            } else if (strcmp(type, "valve") == 0) {
+                cJSON *id_item    = cJSON_GetObjectItem(json, "id");
+                cJSON *state_item = cJSON_GetObjectItem(json, "state");
+                if (cJSON_IsNumber(id_item) && cJSON_IsString(state_item)) {
+                    int valve_id = (int)id_item->valuedouble;
+                    const char *state_str = state_item->valuestring;
+                    uint8_t state;
+                    if      (strcmp(state_str, "On")   == 0) state = 0x02;
+                    else if (strcmp(state_str, "Auto") == 0) state = 0x01;
+                    else if (strcmp(state_str, "Off")  == 0) state = 0x00;
+                    else { err_msg = "Invalid valve state (expected Off/Auto/On)"; goto done; }
+                    if (valve_id >= 1 && valve_id <= MAX_VALVE_SLOTS) {
+                        uint8_t valve_idx = (uint8_t)(valve_id - 1);
+                        uint8_t cmd[] = {
+                            0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00,
+                            0x28, 0x0E, 0xA6,
+                            valve_idx, state,
+                            (uint8_t)((valve_idx + state) & 0xFF),
+                            0x03
+                        };
+                        ok = (bus_send_bytes(cmd, sizeof(cmd)) >= 0);
+                    }
+                }
+
+            } else if (strcmp(type, "mode") == 0) {
+                cJSON *val_item = cJSON_GetObjectItem(json, "value");
+                if (cJSON_IsString(val_item)) {
+                    const char *v = val_item->valuestring;
+                    uint8_t mode_value;
+                    if      (strcmp(v, "Pool") == 0) mode_value = 0x00;
+                    else if (strcmp(v, "Spa")  == 0) mode_value = 0x01;
+                    else { err_msg = "Invalid mode (expected Pool/Spa)"; goto done; }
+                    uint8_t cmd[] = {
+                        0x02, 0x00, 0xF0, 0x00, 0x50, 0x80, 0x00,
+                        0x2A, 0x0D, 0xF9,
+                        mode_value, mode_value, 0x03
+                    };
+                    ok = (bus_send_bytes(cmd, sizeof(cmd)) >= 0);
+                }
+
+            } else if (strcmp(type, "favourite") == 0) {
+                cJSON *val_item = cJSON_GetObjectItem(json, "value");
+                if (cJSON_IsString(val_item)) {
+                    const char *v = val_item->valuestring;
+                    uint8_t value = 0xFF;
+                    if      (strcmp(v, "Pool")     == 0) value = 0x00;
+                    else if (strcmp(v, "Spa")      == 0) value = 0x01;
+                    else if (strcmp(v, "All Auto") == 0) value = 0x81;
+                    else {
+                        if (s_pool_state_mutex &&
+                            xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+                            for (int i = 2; i < MAX_FAVOURITES; i++) {
+                                const favourite_t *fav = &s_pool_state.favourites[i];
+                                if (fav->enabled_valid && fav->enabled && fav->name_valid &&
+                                    strcmp(fav->name, v) == 0) {
+                                    value = (uint8_t)i;
+                                    break;
+                                }
+                            }
+                            xSemaphoreGive(s_pool_state_mutex);
+                        }
+                    }
+                    if (value != 0xFF) {
+                        uint8_t cmd[] = {
+                            0x02, 0x00, 0xF0, 0x00, 0x50, 0x80, 0x00,
+                            0x2A, 0x0D, 0xF9,
+                            value, value, 0x03
+                        };
+                        ok = (bus_send_bytes(cmd, sizeof(cmd)) >= 0);
+                    } else {
+                        err_msg = "Unknown favourite name";
+                    }
+                }
+
+            } else if (strcmp(type, "temperature") == 0) {
+                cJSON *target_item = cJSON_GetObjectItem(json, "target");
+                cJSON *value_item  = cJSON_GetObjectItem(json, "value");
+                if (cJSON_IsString(target_item) && cJSON_IsNumber(value_item)) {
+                    const char *target = target_item->valuestring;
+                    int temp_c = (int)value_item->valuedouble;
+                    if (temp_c >= TEMP_SETPOINT_MIN_C && temp_c <= TEMP_SETPOINT_MAX_C) {
+                        uint8_t tgt = (strcmp(target, "pool") == 0) ? 0x01 : 0x02;
+                        uint8_t tb  = (uint8_t)temp_c;
+                        uint8_t cmd[] = {
+                            0x02, 0x00, 0xF0, 0xFF, 0xFF, 0x80, 0x00,
+                            0x19, 0x0F, 0x98,
+                            tgt, tb, tb,
+                            (uint8_t)((tgt + tb + tb) & 0xFF),
+                            0x03
+                        };
+                        ok = (bus_send_bytes(cmd, sizeof(cmd)) >= 0);
+                    } else {
+                        err_msg = "Temperature out of range";
+                    }
+                }
+
+            } else {
+                err_msg = "Unknown command type";
+            }
+        }
+done:
+        cJSON_Delete(json);
+    }
+
+    char resp_buf[128];
+    if (ok) {
+        strcpy(resp_buf, "{\"success\":true}");
+    } else {
+        snprintf(resp_buf, sizeof(resp_buf),
+                 "{\"success\":false,\"message\":\"%s\"}", err_msg);
+    }
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
+    httpd_resp_send(req, resp_buf, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+// ======================================================
 // URI Handlers
 // ======================================================
 
@@ -1535,6 +1910,18 @@ static const httpd_uri_t test_decode_uri = {
     .uri = "/api/test_decode",
     .method = HTTP_POST,
     .handler = test_decode_post_handler
+};
+
+static const httpd_uri_t pool_uri = {
+    .uri = "/pool",
+    .method = HTTP_GET,
+    .handler = pool_get_handler
+};
+
+static const httpd_uri_t api_command_uri = {
+    .uri = "/api/command",
+    .method = HTTP_POST,
+    .handler = api_command_post_handler
 };
 
 
@@ -1699,6 +2086,8 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &update_get_uri);
     httpd_register_uri_handler(server, &update_post_uri);
     httpd_register_uri_handler(server, &test_decode_uri);
+    httpd_register_uri_handler(server, &pool_uri);
+    httpd_register_uri_handler(server, &api_command_uri);
     httpd_register_uri_handler(server, &static_files_uri);   // /static/* wildcard
     httpd_register_uri_handler(server, &favicon_redirect_uri); // /favicon.ico -> /static/favicon.ico
     httpd_register_uri_handler(server, &robots_txt_uri);

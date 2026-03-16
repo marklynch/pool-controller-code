@@ -19,7 +19,7 @@
 
 // HTTP Server
 #define HTTP_SERVER_PORT               80
-#define HTTP_MAX_URI_HANDLERS          14      // Number of endpoint handlers
+#define HTTP_MAX_URI_HANDLERS          16      // Number of endpoint handlers
 #define HTTP_RECV_TIMEOUT_SEC          10      // Timeout for receiving requests
 #define HTTP_SEND_TIMEOUT_SEC          10      // Timeout for sending responses
 #define HTTP_STACK_SIZE                8192    // Stack size for HTTP server task
@@ -112,6 +112,7 @@
 #define HTTP_MQTT_CONFIG_BUFFER_SIZE   512     // Buffer for MQTT config requests
 #define HTTP_WIFI_SCAN_BUFFER_SIZE     4096    // Buffer for WiFi scan results JSON
 #define HTTP_OTA_BUFFER_SIZE           4096    // Buffer for OTA firmware chunks
+#define HTTP_API_COMMAND_BUFFER_SIZE   256     // Buffer for /api/command requests
 
 // ======================================================
 // Timeouts & Delays
