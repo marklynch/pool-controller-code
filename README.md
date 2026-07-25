@@ -359,6 +359,8 @@ idf.py build          # Build the project
 idf.py flash monitor  # Flash to device and monitor output
 ```
 
+If you just want a board running the latest release and don't need a toolchain, use the [browser install page](#browser-install-page) instead.
+
 ## Releases
 
 Releases are produced by a GitHub Actions workflow (`.github/workflows/build.yml`) that fires on any tag matching `v*`. To cut a release:
@@ -380,6 +382,24 @@ The workflow will:
 The published release appears at `https://github.com/marklynch/pool-controller-code/releases/tag/v1.0.0`.
 
 To re-test the workflow without cutting a real release, run it manually from the Actions tab (Build & Release → Run workflow). Manual runs build the firmware and upload it as a workflow artifact but do not create a GitHub Release.
+
+## Browser Install Page
+
+**https://marklynch.github.io/pool-controller-code/**
+
+A first-time flash without installing ESP-IDF or esptool: the page uses [ESP Web Tools](https://github.com/esphome/esp-web-tools) to write `pool-controller-full-*.bin` over Web Serial straight from the browser. It needs desktop Chrome or Edge — Safari, Firefox and mobile browsers have no Web Serial support. Once flashed, the device updates itself over the air, so this is normally a one-time step.
+
+The page is built and deployed by `.github/workflows/pages.yml`:
+
+1. Copies `site/` (the page source) and the device UI's favicons into the site root.
+2. Vendors the pinned `esp-web-tools` browser bundle from npm into `vendor/esp-web-tools/`, so the page has no CDN dependency at runtime and the flashing code that ships is reviewable. The step asserts the bundle is self-contained and includes the ESP32-C6 flasher stub.
+3. Downloads `pool-controller-full-*.bin` from the **latest published release** and writes a `manifest.json` pointing at it.
+
+The binary is served from the Pages origin rather than linked to the GitHub release asset, which keeps the browser's fetch same-origin and avoids depending on the release CDN's CORS headers.
+
+The workflow runs when a tag build publishes a release (called as a job from `build.yml`), on pushes to `main` that touch `site/`, and on manual dispatch. It is invoked directly from `build.yml` rather than keyed off the `release: published` event because events raised with `GITHUB_TOKEN` do not start new workflow runs.
+
+**One-time setup:** in the repository's Settings → Pages, set **Source** to **GitHub Actions**. The first deploy needs at least one published release to exist.
 
 ## Documentation
 

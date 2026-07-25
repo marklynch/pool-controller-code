@@ -1,0 +1,124 @@
+name: Install Page
+
+# Publishes the browser-based flashing page (ESP Web Tools) to GitHub Pages.
+#
+# The page, its manifest and the firmware binary are all served from the same
+# origin, which keeps the browser's fetch of the binary free of any CORS
+# concerns and pins the page to a known-good release.
+#
+# Triggered three ways:
+#   - workflow_call  — from build.yml, right after a release is published, so a
+#                      new tag refreshes the page automatically.
+#   - push to main   — for content-only edits to site/ that need no release.
+#   - manually       — to re-publish against the current latest release.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it — a half-applied Pages
+# deploy is worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Assemble site
+        run: |
+          cp -R site _site
+          # Reuse the device web UI's icons rather than keeping a second copy.
+          cp main/static/favicon.svg main/static/favicon.png _site/
+          # Serve the tree verbatim; no Jekyll processing.
+          touch _site/.nojekyll
+
+      # Vendored rather than loaded from a CDN so the page keeps working if the
+      # CDN is down, and so the version it flashes with is pinned and reviewable.
+      - name: Vendor esp-web-tools
+        run: |
+          set -euo pipefail
+          npm pack esp-web-tools@10.4.0
+          tar -xzf esp-web-tools-*.tgz
+          mkdir -p _site/vendor/esp-web-tools
+          # dist/web is the rollup browser build. Note that the package's `main`
+          # (dist/install-button.js) is NOT usable here: it imports with
+          # extensionless specifiers ("./connect") that only a bundler or a
+          # rewriting CDN can resolve, so it 404s on a plain static host.
+          cp -R package/dist/web/. _site/vendor/esp-web-tools/
+          test -s _site/vendor/esp-web-tools/install-button.js
+
+          # Guard the above: every relative import must be browser-resolvable
+          # (ending in .js) and must actually be present in the copied tree.
+          grep -rhoE 'from *"\./[^"]+"' _site/vendor/esp-web-tools/*.js \
+            | sed -E 's/.*"\.\/(.*)"/\1/' | sort -u \
+            | while read -r dep; do
+                case "$dep" in
+                  *.js) ;;
+                  *) echo "::error::non-.js import specifier '$dep' — wrong build vendored"; exit 1 ;;
+                esac
+                if [ ! -f "_site/vendor/esp-web-tools/$dep" ]; then
+                  echo "::error::missing chunk '$dep' in vendored esp-web-tools"; exit 1
+                fi
+              done
+
+          # The ESP32-C6 flasher stub must be part of the bundle.
+          ls _site/vendor/esp-web-tools/ | grep -q 'stub_flasher_32c6' \
+            || { echo "::error::no ESP32-C6 flasher stub in vendored bundle"; exit 1; }
+
+      - name: Fetch firmware from latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VER=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          echo "Latest release: $VER"
+
+          mkdir -p _site/firmware
+          gh release download "$VER" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'pool-controller-full-*.bin' --dir _site/firmware
+
+          BIN=$(cd _site/firmware && ls pool-controller-full-*.bin | head -1)
+          echo "Firmware asset: $BIN ($(stat -c%s "_site/firmware/$BIN") bytes)"
+
+          # The merged image already carries the bootloader, partition table and
+          # otadata, so it flashes as a single part at offset 0.
+          jq -n --arg ver "$VER" --arg path "firmware/$BIN" '{
+            name: "Pool Controller",
+            version: $ver,
+            new_install_prompt_erase: true,
+            builds: [
+              {
+                chipFamily: "ESP32-C6",
+                parts: [ { path: $path, offset: 0 } ]
+              }
+            ]
+          }' > _site/manifest.json
+
+          cat _site/manifest.json
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v5

@@ -74,3 +74,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "${{ steps.ver.outputs.version }}" --draft=false --repo "${{ github.repository }}"
+
+  # Re-publish the browser install page so it serves the release just cut.
+  # This is called directly rather than triggered by the `release: published`
+  # event, because events raised using GITHUB_TOKEN do not start new workflow
+  # runs — the page would silently never update.
+  install-page:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

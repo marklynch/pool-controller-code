@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Added a browser-based install page published to GitHub Pages (`site/index.html`, deployed by `.github/workflows/pages.yml`), letting someone flash a board from desktop Chrome or Edge over Web Serial without installing ESP-IDF or esptool: the page uses ESP Web Tools to write the existing `pool-controller-full-*.bin` merged image at offset 0, and shows the release version, wiring/cable prerequisites and the post-flash WiFi provisioning steps. The page, the pinned `esp-web-tools` bundle (vendored from npm at deploy time rather than loaded from a CDN, so there is no runtime CDN dependency and the flashing code that ships is reviewable) and the firmware binary are all served from the same origin, so the browser's fetch of the binary is same-origin and does not depend on the release CDN's CORS headers. The deploy is invoked as a job from `build.yml` after a release is published — not off the `release: published` event, which never fires for releases published with `GITHUB_TOKEN` — and also runs on pushes touching `site/` and on manual dispatch. Requires Settings → Pages → Source to be set to "GitHub Actions" once
 ### Changed
 ### Removed
 ### Fixed

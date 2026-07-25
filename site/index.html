@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install Pool Controller Firmware</title>
+<meta name="description" content="Flash the Connect 10 pool controller bridge firmware onto an ESP32-C6 straight from your browser — no toolchain, no command line.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" sizes="any">
+<style>
+  :root {
+    --bg: #f6f8fa;
+    --card: #ffffff;
+    --fg: #1c2128;
+    --muted: #57606a;
+    --line: #d8dee4;
+    --accent: #0969da;
+    --warn-bg: #fff8c5;
+    --warn-line: #d4a72c;
+    --warn-fg: #4d3b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --fg: #e6edf3;
+      --muted: #9198a1;
+      --line: #30363d;
+      --accent: #4493f8;
+      --warn-bg: #272115;
+      --warn-line: #9e6a03;
+      --warn-fg: #f2cc60;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  main { max-width: 46rem; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 2rem; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .5rem; }
+  .tagline { color: var(--muted); margin: 0; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .install {
+    text-align: center;
+    padding: 2rem 1.5rem;
+  }
+  .install .version {
+    color: var(--muted);
+    font-size: .9rem;
+    margin: 1rem 0 0;
+  }
+  .install .version code {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: .1rem .4rem;
+  }
+
+  /* Supplying our own [slot=activate] button means esp-web-tools' built-in
+     styling (and --esp-tools-button-color) does not apply — style it here. */
+  esp-web-install-button button[slot="activate"] {
+    font: inherit;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: 0;
+    border-radius: 8px;
+    padding: .8rem 2rem;
+    cursor: pointer;
+    transition: filter .15s ease;
+  }
+  esp-web-install-button button[slot="activate"]:hover { filter: brightness(1.1); }
+  esp-web-install-button button[slot="activate"]:active { filter: brightness(.95); }
+  esp-web-install-button button[slot="activate"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  esp-web-install-button [slot="unsupported"],
+  esp-web-install-button [slot="not-allowed"] {
+    display: block;
+    color: var(--muted);
+    font-size: .95rem;
+  }
+
+  /* Hide the version line when the browser can't install anyway — the
+     unsupported message is the only thing worth reading in that case. */
+  esp-web-install-button[install-unsupported] ~ .version { display: none; }
+
+  .notice {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-line);
+    color: var(--warn-fg);
+    border-radius: 8px;
+    padding: .85rem 1rem;
+    margin: 0 0 1.5rem;
+    font-size: .93rem;
+  }
+  .notice p { margin: 0; }
+  .notice p + p { margin-top: .5rem; }
+
+  h2 { font-size: 1.15rem; margin: 0 0 .75rem; }
+  ol, ul { margin: 0; padding-left: 1.3rem; }
+  li + li { margin-top: .5rem; }
+
+  a { color: var(--accent); }
+
+  code, kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .9em;
+  }
+
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.5rem;
+    list-style: none;
+    padding: 0;
+  }
+  .links li { margin: 0; }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: .85rem;
+    margin-top: 2.5rem;
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <header>
+    <h1>Pool Controller Firmware</h1>
+    <p class="tagline">Bridge a Connect&nbsp;10 pool controller onto your network. Flash it from this page — no toolchain required.</p>
+  </header>
+
+  <div class="notice">
+    <p><strong>Not an official product.</strong> This is a hobby project, not connected to or supported by Fluidra, and it comes with no warranty or support. You are flashing your own hardware at your own risk.</p>
+  </div>
+
+  <section class="card install">
+    <esp-web-install-button manifest="manifest.json">
+      <button slot="activate">Connect &amp; Install</button>
+      <span slot="unsupported">
+        Your browser can't talk to serial devices. Use desktop
+        <strong>Chrome</strong> or <strong>Edge</strong> — Safari, Firefox and
+        mobile browsers don't support Web Serial. You can always
+        <a href="https://github.com/marklynch/pool-controller-code/releases/latest">flash manually with esptool</a> instead.
+      </span>
+      <span slot="not-allowed">
+        This page has to be served over HTTPS to access the serial port.
+      </span>
+    </esp-web-install-button>
+    <p class="version" id="version">Loading latest release…</p>
+  </section>
+
+  <section class="card">
+    <h2>What you need</h2>
+    <ul>
+      <li>A <a href="https://core-electronics.com.au/esp32-c6-mini-development-board-wifi6-bluetooth5.html">Waveshare ESP32-C6 Mini</a> (or another ESP32-C6 board), ideally on the <a href="https://github.com/marklynch/pool-controller-pcb">project PCB</a>.</li>
+      <li>A USB-C data cable — plenty of cables are charge-only and will not enumerate a serial port.</li>
+      <li>Desktop Chrome or Edge.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Installing</h2>
+    <ol>
+      <li>Plug the board into your computer over USB-C.</li>
+      <li>Press <strong>Connect &amp; Install</strong> and pick the board's serial port from the browser prompt.</li>
+      <li>If the port isn't listed, hold <kbd>BOOT</kbd>, tap <kbd>RESET</kbd>, release <kbd>BOOT</kbd> to force the bootloader, then try again.</li>
+      <li>Choose <strong>Install</strong> and wait — the first flash takes a couple of minutes.</li>
+    </ol>
+    <p style="margin-top:1rem;color:var(--muted);font-size:.93rem">
+      Reflashing a device that is already set up? Pick <strong>Install</strong> without erasing to keep its saved WiFi and MQTT settings, or erase to start clean.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>After flashing</h2>
+    <ol>
+      <li>Power the board from the pool bus (an RJ12 cable to either socket) or leave it on USB.</li>
+      <li>Wait for the LED to turn <strong>purple</strong> — provisioning mode.</li>
+      <li>On your phone, join the WiFi network <code>POOL_AABBCC</code> with password <code>poolsetup</code>.</li>
+      <li>Open <a href="http://192.168.4.1">http://192.168.4.1</a> and choose your WiFi network.</li>
+      <li>The device restarts and reappears at <code>http://poolcontrol-AABBCC.local</code>. Green LED means WiFi and MQTT are both up.</li>
+    </ol>
+    <p style="margin-top:1rem;color:var(--muted);font-size:.93rem">
+      This is a one-time trip. Later releases install over the air from the device's own web page or from Home Assistant — you should not need to plug into USB again.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>More</h2>
+    <ul class="links">
+      <li><a href="https://github.com/marklynch/pool-controller-code">Firmware &amp; docs</a></li>
+      <li><a href="https://github.com/marklynch/pool-controller-code/blob/main/PROTOCOL.md">Bus protocol reference</a></li>
+      <li><a href="https://github.com/marklynch/pool-controller-pcb">Circuit &amp; PCB</a></li>
+      <li><a href="https://github.com/marklynch/pool-controller-case">Enclosure</a></li>
+      <li><a href="https://github.com/marklynch/pool-controller-code/releases">All releases</a></li>
+    </ul>
+  </section>
+
+  <footer>
+    MIT licensed. Built by listening to the bus and decoding it by trial and error —
+    <a href="https://github.com/marklynch/pool-controller-code/issues">collaborators welcome</a>.
+  </footer>
+
+</main>
+
+<script type="module" src="vendor/esp-web-tools/install-button.js"></script>
+<script>
+  fetch("manifest.json")
+    .then((r) => r.json())
+    .then((m) => {
+      document.getElementById("version").innerHTML =
+        "Installs the latest release, <code>" + m.version + "</code>.";
+    })
+    .catch(() => {
+      document.getElementById("version").textContent =
+        "Could not load the release manifest — try reloading.";
+    });
+</script>
+</body>
+</html>
