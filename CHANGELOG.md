@@ -16,11 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
-### Removed
 ### Fixed
-- Fixed light zones 5–8 being dropped on installs that have them: the firmware supported only 4 zones, so the upper half of each 8-wide slot-0x01 light zone register family (0x90 enabled, 0xA0 multicolor, 0xB0 name, 0xC0 state, 0xD0 color, 0xE0 active) fell through as unhandled — a real install was seen reporting zone 5–8 state and color registers hundreds of times per capture. Zones 5–8 now decode and reach Home Assistant like the first four, and the zone index in CMD 0x06 light config, CMD 0x07 color broadcast and CMD 0x3C resync accepts 0x00–0x07 (the resync cap also rejected the firmware's own zone 5–8 Resync buttons) — documented in PROTOCOL.md, where the observations confirming 8 zones replace the previous note that only zones 1–4 had been seen
+### Removed
 ### Deprecated
 ### Security
+
+## [1.11.2] - 2026-07-27
+### Fixed
+- Fixed light zones 5–8 being dropped on installs that have them: the firmware supported only 4 zones, so the upper half of each 8-wide slot-0x01 light zone register family (0x90 enabled, 0xA0 multicolor, 0xB0 name, 0xC0 state, 0xD0 color, 0xE0 active) fell through as unhandled — a real install was seen reporting zone 5–8 state and color registers hundreds of times per capture. Zones 5–8 now decode and reach Home Assistant like the first four, and the zone index in CMD 0x06 light config, CMD 0x07 color broadcast and CMD 0x3C resync accepts 0x00–0x07 (the resync cap also rejected the firmware's own zone 5–8 Resync buttons) — documented in PROTOCOL.md, where the observations confirming 8 zones replace the previous note that only zones 1–4 had been seen
 
 ## [1.11.1] - 2026-07-26
 ### Fixed
