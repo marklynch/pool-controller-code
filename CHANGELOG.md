@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Added 'device_class' and 'state_class' to the pump power MQTT topic. Note the entity in Home Assistant must be recreated.
 ### Changed
 ### Fixed
 ### Removed
