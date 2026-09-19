@@ -120,7 +120,12 @@ typedef struct {
     uint8_t spa_setpoint;      // °C
     uint8_t pool_setpoint_f;   // °F
     uint8_t spa_setpoint_f;    // °F
-    bool setpoint_valid;       // true once a setpoint has been received
+    bool setpoint_valid;       // true once either setpoint has been received
+    // Per-circuit receipt. A responder may answer for one circuit and not the
+    // other (the heater setpoint registers are read one at a time), so these
+    // are what tells the register requester which register is still missing.
+    bool pool_setpoint_valid;
+    bool spa_setpoint_valid;
 
     // These fields are only valid for gas heaters. 
     // Some may be valid for other types, this is not yet experimentally verified.
