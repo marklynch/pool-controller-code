@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Direct speed control of the filter pump exposed through MQTT. This works for both single speed and multi speed pumps. When pump state is broadcast for the first time, the system learns what type of pump is installd. This is then stored in NVS so the correct options are presented after a reboot.
 ### Changed
+- Channel speed states are now reported as "Low", "Medium" and "High" instead of "Low Speed", "Medium Speed" and "High Speed", on the MQTT channel state topic and in the web status JSON. Home Assistant automations or templates that compare against the old strings need updating
 ### Fixed
 ### Removed
 ### Deprecated

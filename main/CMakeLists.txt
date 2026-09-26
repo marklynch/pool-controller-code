@@ -16,6 +16,8 @@ idf_component_register(
         "message_decoder.c"
         "register_requester.c"
         "channel_power.c"
+        "filter_pump_type.c"
+        "channel_states.c"
         "channel_energy.c"
         "unknown_buffer.c"
         "dns_server.c"

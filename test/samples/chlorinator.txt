@@ -10,19 +10,27 @@ W (23:22:13.178) MSG_DECODER: Unhandled [VX 11S v3 Salt Chlorinator -> Broadcast
 # zagnuts
 # Off:
 I (23:30:18.981) MSG_DECODER: RX MSG: 02 00 84 00 50 80 00 0F 0E 73 01 00 01 03
-I (23:30:18.983) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump mode - Off (0x00)
+I (23:30:18.983) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump control - channel 1 -> Off (0x00)
 # Auto:
 I (23:29:20.781) MSG_DECODER: RX MSG: 02 00 84 00 50 80 00 0F 0E 73 01 01 02 03
-I (23:29:20.783) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump mode - Auto (0x01)
+I (23:29:20.783) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump control - channel 1 -> Auto (0x01)
 # Manual:
 I (23:29:29.661) MSG_DECODER: RX MSG: 02 00 84 00 50 80 00 0F 0E 73 01 02 03 03
-I (23:29:29.664) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump mode - Manual (0x02)
+I (23:29:29.664) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump control - channel 1 -> On (0x02)
 # Low:
 I (23:29:53.041) MSG_DECODER: RX MSG: 02 00 84 00 50 80 00 0F 0E 73 01 03 04 03
-I (23:29:53.043) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump mode - Low (0x03)
+I (23:29:53.043) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump control - channel 1 -> Low (0x03)
 # Medium
 I (23:29:43.881) MSG_DECODER: RX MSG: 02 00 84 00 50 80 00 0F 0E 73 01 04 05 03
-I (23:29:43.884) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump mode - Medium (0x04)
+I (23:29:43.884) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump control - channel 1 -> Medium (0x04)
 # High
 I (23:30:02.621) MSG_DECODER: RX MSG: 02 00 84 00 50 80 00 0F 0E 73 01 05 06 03
-I (23:30:02.623) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump mode - High (0x05)
+I (23:30:02.623) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump control - channel 1 -> High (0x05)
+
+# lawther
+# Source-agnostic dispatch: the same command from the VX 11S v3 (0x0081),
+I (23:31:10.101) MSG_DECODER: RX MSG: 02 00 81 00 50 80 00 0F 0E 70 01 02 03 03
+I (23:31:10.103) MSG_DECODER: [VX 11S v3 Salt Chlorinator -> Touch Screen] Chlorinator pump control - channel 1 -> On (0x02)
+# Byte 10 is a 1-based channel index: channel 2 (Cleaning).
+I (23:31:14.201) MSG_DECODER: RX MSG: 02 00 84 00 50 80 00 0F 0E 73 02 02 04 03
+I (23:31:14.203) MSG_DECODER: [Viron Chlorinator -> Touch Screen] Chlorinator pump control - channel 2 -> On (0x02)

@@ -11,5 +11,5 @@ I (12:29:10.329) MSG_DECODER: [Touch Screen -> Broadcast] Touchscreen unknown (C
 02 00 50 FF FF 80 00 05 0D E2 00 00 03 
 
 I (12:29:10.327) MSG_DECODER: RX MSG: 02 00 50 00 7F 00 00 1A 0B F6 03
-W (12:29:10.329) MSG_DECODER: Unhandled [Touch Screen -> Unknown 0x007F] CMD=0x1A (Unknown CMD 0x1A) LEN=11 payload=[]
+I (12:29:10.329) MSG_DECODER: [Touch Screen -> Internal Control] Pre-valve-command frame
 02 00 50 00 7F 00 00 1A 0B F6 03

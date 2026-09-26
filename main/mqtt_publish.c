@@ -4,6 +4,7 @@
 #include "pool_state.h"
 #include "message_decoder.h"
 #include "channel_power.h"
+#include "filter_pump_type.h"
 #include "esp_log.h"
 #include "cJSON.h"
 #include <string.h>
@@ -44,6 +45,15 @@ static uint8_t s_light_discovery_type[MAX_LIGHT_ZONES];
 static bool s_power_fields_published[MAX_CHANNELS];
 static uint16_t s_last_configured_watts[MAX_CHANNELS];
 static bool s_last_power_watts_valid[MAX_CHANNELS];
+
+// Pump type the Filter channel's pump-mode select was last published with, so
+// a change can force a re-publish with the right option list.
+static filter_pump_type_t s_last_filter_pump_type = FILTER_PUMP_TYPE_UNKNOWN;
+
+// Whether each channel's discovery was last published with the pump-mode
+// select, so a re-typed channel re-runs discovery and the select is added or
+// retracted even when its display name stays the same.
+static bool s_channel_discovery_pump_select[MAX_CHANNELS];
 static uint16_t s_last_power_watts[MAX_CHANNELS];
 
 // Whether the pump's discovery was last published with its power and energy
@@ -380,16 +390,29 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
     // in place rather than creating a duplicate. Also re-publish when the
     // channel gains or loses a configured wattage, since that decides whether
     // the power and energy sensors exist at all.
+    // The pump-mode select's option list depends on the learned pump type, so
+    // a change there (typically once, the first time the pump runs) has to
+    // reach HA as a fresh discovery payload, and so does the channel gaining or
+    // losing the select altogether when it is re-typed.
+    bool pump_mode_select = (channel->type == CHANNEL_TYPE_FILTER);
+    filter_pump_type_t filter_pump_type = filter_pump_type_get();
+
     if (s_discovery_published.channels[idx] &&
         (strcmp(s_channel_discovery_name[idx], display_name) != 0 ||
-         s_last_power_watts_valid[idx] != power_watts_valid)) {
+         s_last_power_watts_valid[idx] != power_watts_valid ||
+         s_channel_discovery_pump_select[idx] != pump_mode_select ||
+         (pump_mode_select && s_last_filter_pump_type != filter_pump_type))) {
         s_discovery_published.channels[idx] = false;
     }
 
     // Publish discovery if this is the first time seeing this channel (or the name changed)
     if (!s_discovery_published.channels[idx]) {
         mqtt_publish_channel_discovery_single(channel_id, display_name, include_state_entities,
-                                              power_watts_valid);
+                                              power_watts_valid, pump_mode_select);
+        if (pump_mode_select) {
+            s_last_filter_pump_type = filter_pump_type;
+        }
+        s_channel_discovery_pump_select[idx] = pump_mode_select;
         s_discovery_published.channels[idx] = true;
         strncpy(s_channel_discovery_name[idx], display_name, sizeof(s_channel_discovery_name[idx]) - 1);
         s_channel_discovery_name[idx][sizeof(s_channel_discovery_name[idx]) - 1] = '\0';
@@ -420,8 +443,8 @@ void mqtt_publish_channel(const pool_state_t *current_state, uint8_t channel_id)
     snprintf(topic, sizeof(topic), "pool/%s/channel/%d/state", device_id, channel_id);
 
     // State names
-    static const char *STATE_NAMES[] = {"Off", "Auto", "On", "Low", "Medium", "High"};
-    const char *state_name = (channel->state < 6) ? STATE_NAMES[channel->state] : "Unknown";
+    const char *state_name = (channel->state < CHANNEL_STATE_COUNT)
+                             ? CHANNEL_STATE_NAMES[channel->state] : "Unknown";
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "state",  state_name);

@@ -19,6 +19,7 @@ An ESP32-C6 daisy-chains into the Connect 10's RJ12 bus, decodes the traffic, an
 - [What It Does](#what-it-does)
 - [Hardware](#hardware)
 - [Setup](#setup) — connect, provision WiFi, connect Home Assistant
+- [Filter Pump Speed](#filter-pump-speed)
 - [Power and Energy Monitoring](#power-and-energy-monitoring)
 - [Web Interface](#web-interface)
 - [Bus Debugging](#bus-debugging) — TCP port, decoder testing, message counters
@@ -43,6 +44,7 @@ Tested as working:
 **Controls**
 - Lights — state, colour, zone name, multicolor capability ✅
 - Channels — toggle On/Auto/Off ✅
+- Filter pump — set the speed directly, without stepping through the toggle cycle ✅
 - Heater on/off ✅
 - Temperature set points for pool and spa ✅
 - Pool/Spa mode ✅
@@ -123,6 +125,14 @@ Two things are worth doing next:
 | Blue (startup) | Blue (startup) | Blue (startup) |
 | Purple (connect to AP) | White (WiFi connected) | White (WiFi connected) |
 | Configure WiFi → restart | Green (MQTT connected) ✅ | Orange (MQTT failed) |
+
+## Filter Pump Speed
+
+The Filter channel gets a **`<name> Mode`** select in Home Assistant, which sets the state directly instead of stepping around the toggle button's fixed ring (Off → Auto → Low → Med → High → Off).
+
+The bus doesn't say whether your filter pump is multi-speed, so the options start as **Off / Auto / On**. Picking `On`, or one full cycle of the toggle button, settles it; a multi-speed pump then offers Low / Medium / High instead. The answer is remembered across reboots.
+
+Also available over MQTT: publish an option string to `pool/<device_id>/channel/<N>/mode/set`.
 
 ## Power and Energy Monitoring
 

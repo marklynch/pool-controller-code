@@ -6,17 +6,17 @@ I (22:49:23.216) MSG_DECODER: [Viron XT Pump -> Broadcast] Pump speed - 1600 RPM
 02 00 A0 FF FF 80 00 3B 0E 69 06 40 46 03
 
 # Pump Physical Buttons
-# High Speed
+# High
 I (01:59:39.491) MSG_DECODER: RX MSG: 02 00 A0 FF FF 80 00 1B 0D 48 02 02 03
 I (01:59:39.491) MSG_DECODER: [Viron XT Pump -> Broadcast] Speed button on Pump pressed - High (0x02)
 I MSG_DECODER: [Viron XT Pump -> Broadcast] Speed button on Pump pressed - High (0x02)
 02 00 A0 FF FF 80 00 1B 0D 48 02 02 03
-# Medium Speed
+# Medium
 I (01:59:40.381) MSG_DECODER: RX MSG: 02 00 A0 FF FF 80 00 1B 0D 48 01 01 03
 I (01:59:40.381) MSG_DECODER: [Viron XT Pump -> Broadcast] Speed button on Pump pressed - Med (0x01)
 I MSG_DECODER: [Viron XT Pump -> Broadcast] Speed button on Pump pressed - Med (0x01)
 02 00 A0 FF FF 80 00 1B 0D 48 01 01 03
-# Low Speed
+# Low
 I (01:59:40.381) MSG_DECODER: RX MSG: 02 00 A0 FF FF 80 00 1B 0D 48 00 00 03
 I (01:59:40.381) MSG_DECODER: [Viron XT Pump -> Broadcast] Speed button on Pump pressed - Low (0x00)
 I MSG_DECODER: [Viron XT Pump -> Broadcast] Speed button on Pump pressed - Low (0x00)

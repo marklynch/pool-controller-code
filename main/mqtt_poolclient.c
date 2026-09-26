@@ -177,11 +177,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         mqtt_get_device_id(device_id, sizeof(device_id));
 
         char topic[128];
-        // Subscribe to channel commands (channels 1-MAX_CHANNELS): toggle and power config
+        // Subscribe to channel commands (channels 1-MAX_CHANNELS): toggle,
+        // power config, and direct mode set
         for (int i = 1; i <= MAX_CHANNELS; i++) {
             snprintf(topic, sizeof(topic), "pool/%s/channel/%d/set", device_id, i);
             esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
             snprintf(topic, sizeof(topic), "pool/%s/channel/%d/power/set", device_id, i);
+            esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
+            snprintf(topic, sizeof(topic), "pool/%s/channel/%d/mode/set", device_id, i);
             esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
         }
 

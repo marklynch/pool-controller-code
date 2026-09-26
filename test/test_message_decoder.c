@@ -13,6 +13,8 @@
 #include <stdbool.h>
 #include "../main/message_decoder.h"
 #include "../main/pool_state.h"
+#include "../main/filter_pump_type.h"
+#include "nvs.h"
 
 // Mock FreeRTOS function implementations
 uint32_t xTaskGetTickCount(void)
@@ -593,6 +595,61 @@ void test_decode_channel_status_lights_active(void)
  * 02 00 50 FF FF 80 00 0B 25 00 08 01 04 01 04 00 00 FB 00 00 ... 1F 03
  * 02 00 50 FF FF 80 00 0B 25 00 08 01 05 01 04 00 00 FB 00 00 ... 20 03
  */
+
+// The MQTT pump-mode select's option list is driven by what the decoder learns
+// here, so the wiring from a 0x0B broadcast into filter_pump_type_learn needs
+// covering in its own right — the module's unit tests exercise the inference,
+// not the fact that handle_channel_status actually feeds it.
+void test_channel_status_teaches_filter_pump_type(void)
+{
+    init_test_context();
+    nvs_stub_reset();
+    filter_pump_type_init();
+
+    // Ch1 Filter in Auto: common to both pump kinds, so it settles nothing.
+    uint8_t msg_auto[] = {
+        0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00,
+        0x0B, 0x25, 0x00,
+        0x01,              // num_channels = 1
+        0x01, 0x01, 0x00,  // Ch1: Filter, Auto, Inactive
+        0x00, 0x00, 0x00,  0x00, 0x00, 0x00,  0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00,  0x00, 0x00, 0x00,  0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00,  0x00, 0x00, 0x00,
+        0x03, 0x03
+    };
+    TEST_ASSERT(decode_message(msg_auto, sizeof(msg_auto), &test_ctx),
+                "Channel status (Auto) should be decoded");
+    TEST_ASSERT(filter_pump_type_get() == FILTER_PUMP_TYPE_UNKNOWN,
+                "Auto should leave the filter pump type unknown");
+
+    // Ch1 Filter at High: only a multi-speed channel reports 0x03-0x05.
+    uint8_t msg_high[] = {
+        0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00,
+        0x0B, 0x25, 0x00,
+        0x01,              // num_channels = 1
+        0x01, 0x05, 0x01,  // Ch1: Filter, High, Active
+        0x00, 0x00, 0x00,  0x00, 0x00, 0x00,  0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00,  0x00, 0x00, 0x00,  0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00,  0x00, 0x00, 0x00,
+        0x08, 0x03
+    };
+    TEST_ASSERT(decode_message(msg_high, sizeof(msg_high), &test_ctx),
+                "Channel status (High) should be decoded");
+    TEST_ASSERT(filter_pump_type_get() == FILTER_PUMP_TYPE_MULTI_SPEED,
+                "A High Filter state should teach multi-speed");
+}
+
+// The select publishes CHANNEL_STATE_NAMES as its options and reads the state
+// topic back against them, so any state the decoder can record for a channel
+// has to have a name in that table.
+void test_channel_state_names_cover_every_state(void)
+{
+    for (int i = 0; i < CHANNEL_STATE_COUNT; i++) {
+        TEST_ASSERT(CHANNEL_STATE_NAMES[i] != NULL && CHANNEL_STATE_NAMES[i][0] != '\0',
+                    "Every channel state code has a name");
+    }
+}
+
 void test_decode_channel_status_multispeed_pump(void)
 {
     init_test_context();
@@ -1306,6 +1363,8 @@ int main(void)
     test_channel_status_does_not_fabricate_pump_speed_without_telemetry();
     test_decode_channel_status_lights_active();
     test_decode_channel_status_multispeed_pump();
+    test_channel_status_teaches_filter_pump_type();
+    test_channel_state_names_cover_every_state();
     test_decode_channel_toggle_gateway();
     test_decode_channel_toggle_controller();
     test_decode_register_write_gateway();

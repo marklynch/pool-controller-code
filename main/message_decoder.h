@@ -77,7 +77,8 @@ const char* get_device_slug(uint8_t addr_hi, uint8_t addr_lo, char *buf, size_t 
  */
 const char* get_gateway_comms_status_text(uint16_t code);
 
-// External constant arrays (defined in message_decoder.c)
+// External constant arrays. CHANNEL_STATE_NAMES lives in channel_states.c and
+// LIGHTING_COLOR_NAMES in lighting_colors.c; the rest are in message_decoder.c.
 extern const char *CHANNEL_STATE_NAMES[];
 extern const char *LIGHTING_STATE_NAMES[];
 extern const char *LIGHTING_COLOR_NAMES[];

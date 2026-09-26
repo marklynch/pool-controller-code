@@ -60,6 +60,64 @@ static void handle_channel_command(int channel_id, const char *payload, int payl
     send_uart_command(cmd, sizeof(cmd));
 }
 
+// Set a channel directly to a named state via CMD 0x0F, rather than stepping
+// it round the toggle ring. Only pump-driven channels act on this; see
+// PROTOCOL.md command `0x0F`.
+//
+// The payload is one of the option strings published in discovery, which are
+// the CHANNEL_STATE_NAMES entries verbatim, so the state code is that name's
+// index. Nothing is published optimistically: the Touchscreen broadcasts the
+// resulting state via CMD 0x0B and that is what updates HA, so a command it
+// declines to act on simply leaves the entity where it was.
+static void handle_channel_mode_command(int channel_id, const char *payload, int payload_len)
+{
+    ESP_LOGI(TAG, "Channel %d mode command: %.*s", channel_id, payload_len, payload);
+
+    int state = -1;
+    for (int i = 0; i < CHANNEL_STATE_COUNT; i++) {
+        if ((int)strlen(CHANNEL_STATE_NAMES[i]) == payload_len &&
+            strncmp(payload, CHANNEL_STATE_NAMES[i], payload_len) == 0) {
+            state = i;
+            break;
+        }
+    }
+    if (state < 0) {
+        ESP_LOGE(TAG, "Unknown channel mode: %.*s", payload_len, payload);
+        return;
+    }
+
+    // Claim the chlorinator address most recently seen on this bus. The
+    // Touchscreen does not validate it, but a real address keeps captures honest.
+    uint8_t src_hi = CHLOR_SRC_DEFAULT_HI, src_lo = CHLOR_SRC_DEFAULT_LO;
+    if (s_pool_state_mutex &&
+        xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        src_hi = s_pool_state.chlor_src_hi;
+        src_lo = s_pool_state.chlor_src_lo;
+        xSemaphoreGive(s_pool_state_mutex);
+    }
+
+    // Pattern: 02 [SRC_HI] [SRC_LO] 00 50 80 00 0F 0E [HDR_CK] [CHANNEL] [STATE] [DATA_CK] 03
+    // Channel is 1-based here, unlike the toggle command's 0-based index.
+    uint8_t cmd[] = {
+        0x02,             // START
+        src_hi, src_lo,   // SOURCE: chlorinator
+        0x00, 0x50,       // DEST: Touchscreen
+        0x80, 0x00,       // CONTROL
+        0x0F, 0x0E,       // CMD, LEN
+        0x00,             // HDR checksum, filled in below
+        (uint8_t)channel_id,
+        (uint8_t)state,
+        (uint8_t)(channel_id + state),  // Data checksum
+        0x03              // END
+    };
+    uint8_t hdr_ck = 0;
+    for (int i = 0; i < 9; i++) hdr_ck += cmd[i];
+    cmd[9] = hdr_ck;
+
+    ESP_LOGI(TAG, "Setting channel %d to %s (0x%02X)", channel_id, CHANNEL_STATE_NAMES[state], state);
+    send_uart_command(cmd, sizeof(cmd));
+}
+
 // Parse a wattage payload (a plain decimal integer, as HA's number entity
 // sends). Returns false and logs on anything unparseable or out of range.
 static bool parse_watts_payload(const char *payload, int payload_len, uint16_t *out_watts)
@@ -578,7 +636,8 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
 
     // Parse command type
     if (strncmp(cmd_topic, "channel/", 8) == 0 && cmd_topic_len > 12) {
-        // Extract channel number (formats: "channel/N/set", "channel/N/power/set")
+        // Extract channel number (formats: "channel/N/set", "channel/N/power/set",
+        // "channel/N/mode/set")
         char *endptr;
         int channel = (int)strtol(cmd_topic + 8, &endptr, 10);
         if (endptr == cmd_topic + 8 || *endptr != '/') {
@@ -594,6 +653,8 @@ void mqtt_handle_command(const char *topic, int topic_len, const char *data, int
             handle_channel_command(channel, data, data_len);
         } else if (suffix_len == 10 && strncmp(endptr, "/power/set", 10) == 0) {
             handle_channel_power_command(channel, data, data_len);
+        } else if (suffix_len == 9 && strncmp(endptr, "/mode/set", 9) == 0) {
+            handle_channel_mode_command(channel, data, data_len);
         } else {
             ESP_LOGE(TAG, "Invalid channel topic format: %s", cmd_topic);
         }

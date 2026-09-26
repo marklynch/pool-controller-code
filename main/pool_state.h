@@ -14,6 +14,12 @@ extern const char *CHANNEL_STATE_NAMES[];
 
 // Lighting states
 #define LIGHTING_STATE_COUNT 3
+
+// Default source address for a Chlorinator Pump Control (CMD 0x0F) frame we
+// originate, used until a chlorinator has been seen on the bus. 0x0084 is
+// confirmed accepted by the Touchscreen even where no such device exists.
+#define CHLOR_SRC_DEFAULT_HI 0x00
+#define CHLOR_SRC_DEFAULT_LO 0x84
 extern const char *LIGHTING_STATE_NAMES[];
 
 // Lighting colors
@@ -309,6 +315,13 @@ typedef struct {
     // Controller service mode (CMD 0x12 status bitfield, bit 1)
     bool service_mode;
     bool service_mode_valid;
+
+    // Source address for a Chlorinator Pump Control (CMD 0x0F) frame we
+    // originate: CHLOR_SRC_DEFAULT_* until a chlorinator is seen, then the most
+    // recent one. Restricted to the Viron family, since 0x0090 RolaChem has
+    // never been observed sourcing 0x0F.
+    uint8_t chlor_src_hi;
+    uint8_t chlor_src_lo;
 
     // Seen devices (one slot per distinct source address observed)
     seen_device_t seen_devices[MAX_SEEN_DEVICES];

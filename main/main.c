@@ -20,6 +20,7 @@
 #include "message_decoder.h"
 #include "register_requester.h"
 #include "channel_power.h"
+#include "filter_pump_type.h"
 #include "channel_energy.h"
 #include "unknown_buffer.h"
 #include "heap_monitor.h"
@@ -34,7 +35,11 @@ static const char *TAG = "POOL_BUS_BRIDGE";
 // Pool state (structs defined in pool_state.h)
 // ======================================================
 
-pool_state_t s_pool_state = {0};
+pool_state_t s_pool_state = {
+    // Seed the CMD 0x0F source address with a known good device
+    .chlor_src_hi = CHLOR_SRC_DEFAULT_HI,
+    .chlor_src_lo = CHLOR_SRC_DEFAULT_LO,
+};
 SemaphoreHandle_t s_pool_state_mutex = NULL;
 
 // ======================================================
@@ -173,6 +178,7 @@ void app_main(void)
     // Load per-channel configured power (NVS) before the decoder/publisher
     // can run and needs to resolve effective channel power
     channel_power_init();
+    filter_pump_type_init();
 
     // Initialize hardware
     unknown_buffer_init();

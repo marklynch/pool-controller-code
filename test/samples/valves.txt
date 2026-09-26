@@ -1,0 +1,120 @@
+# Valve actuator commands - CMD 0x1A (Pre-Valve-Command Frame) and CMD 0x41
+# (Valve Actuator Command).
+#
+# Excerpted from two live captures on lawther's install (a Connect 10 with
+# a gas heater plumbed to the spa). Each capture was stimulated by selecting a
+# mode in HA via MQTT.
+#
+# The burst, in order:
+#
+#   0x15  Mode Set Command        the mode selection itself
+#   0x14  Mode                    the Touchscreen confirming the new mode
+#   0x27  Valve State Broadcast   valve *zones* - a different subsystem, see below
+#   0x1A  Pre-Valve-Command Frame zero-payload, always precedes the 0x41
+#   0x41  Valve Actuator Command  drives the actuators
+#
+# The install has its combo valve actuators on group 0x01. Which endpoint is
+# which is a property of this plumbing, not of the protocol: the position byte
+# selects one of the actuator's two cam-limited endpoints, and the ON1/OFF/ON2
+# toggle on the actuator body decides which way it travels. See PROTOCOL.md
+# command 0x41.
+#
+# Idle broadcast traffic between the bursts has been dropped. Timestamps are
+# from the original captures, so the gaps are real.
+
+
+# ======================================================================
+# Capture 1 - "Spa" selected on the touchscreen
+#
+# Valves driven to position 1. On this install that is the spa flow path.
+# ======================================================================
+
+I (03:23:33.915) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 15 0D F2 00 00 03
+I (03:23:33.915) MSG_DECODER: [Touch Screen -> Broadcast] Mode set command - Spa
+02 00 50 FF FF 80 00 15 0D F2 00 00 03
+I (03:23:34.035) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 14 0D F1 00 00 03
+I (03:23:34.035) MSG_DECODER: [Touch Screen -> Broadcast] Mode - Spa
+02 00 50 FF FF 80 00 14 0D F1 00 00 03
+
+# 0x27 is the Valve State Broadcast, which reports the user-configurable valve
+# *zones* - the auxiliary "Valve 1" and "Valve 2" actuator sockets.
+#
+# On this system, 0x27 appears exactly once per capture - after 0x14/0x15, and before 
+# 0x1A. The Touchscreen appears to republish valve state as a step of the sequence.
+#
+# This install has no zones configured, so that republish degenerates to the
+# short all-zero form. Do not read it as "the valves are idle" - the combo
+# actuators driven by the 0x41 below are a different subsystem and are never
+# reported here at all. The decoder calls the short form the "startup form"
+# because that is where it usually appears.
+
+I (03:23:34.595) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 27 0D 04 00 00 03
+I (03:23:34.595) MSG_DECODER: [Touch Screen -> Broadcast] Valve state broadcast (startup form)
+02 00 50 FF FF 80 00 27 0D 04 00 00 03
+
+# The valve pair. The Pre-Valve-Command Frame (0x1A) is zero-payload and always
+# lands ~120 ms ahead of the Valve Actuator Command (0x41). Nothing ever replies
+# from 0x007F - no frame from that address appears anywhere in either capture -
+# so what the 0x1A is for remains unknown.
+
+I (03:23:34.705) MSG_DECODER: RX MSG: 02 00 50 00 7F 00 00 1A 0B F6 03
+I (03:23:34.705) MSG_DECODER: [Touch Screen -> Internal Control] Pre-valve-command frame
+02 00 50 00 7F 00 00 1A 0B F6 03
+I (03:23:34.825) MSG_DECODER: RX MSG: 02 00 50 00 7F 80 00 41 0E A0 01 01 02 03
+I (03:23:34.825) MSG_DECODER: [Touch Screen -> Internal Control] Valve actuator command - group 1, position 1
+02 00 50 00 7F 80 00 41 0E A0 01 01 02 03
+
+# The gas heater's own Device Status broadcast (0x12), included because it
+# shows an effect of the valves rather than another command. 0.6 s after the
+# 0x41 the heater has lost flow while the valves travel (status 0x01 - Heater
+# On, but Pressure/Flow clear)...
+
+I (03:23:35.396) MSG_DECODER: RX MSG: 02 00 74 FF FF 80 00 12 10 16 00 01 00 00 01 03
+I (03:23:35.396) MSG_DECODER: [ICI Gas Heater -> Broadcast] Gas heater raw status - [00 01 00 00], decoded status - "No Flow"
+02 00 74 FF FF 80 00 12 10 16 00 01 00 00 01 03
+
+# ...and 4 s later the pump has re-established flow through the new path
+# (status 0x03 - Heater On + Pressure/Flow). 
+
+I (03:23:39.375) MSG_DECODER: RX MSG: 02 00 74 FF FF 80 00 12 10 16 00 03 00 00 03 03
+I (03:23:39.375) MSG_DECODER: [ICI Gas Heater -> Broadcast] Gas heater raw status - [00 03 00 00], decoded status - "Setpoint Reached"
+02 00 74 FF FF 80 00 12 10 16 00 03 00 00 03 03
+
+
+# ======================================================================
+# Capture 2 - "Pool" selected on the touchscreen
+#
+# Same burst, same order, ~3 minutes later. Valves returned to position 0.
+# Only the mode-dependent payloads differ.
+# ======================================================================
+
+I (03:26:20.725) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 15 0D F2 01 01 03
+I (03:26:20.725) MSG_DECODER: [Touch Screen -> Broadcast] Mode set command - Pool
+02 00 50 FF FF 80 00 15 0D F2 01 01 03
+I (03:26:20.835) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 14 0D F1 01 01 03
+I (03:26:20.835) MSG_DECODER: [Touch Screen -> Broadcast] Mode - Pool
+02 00 50 FF FF 80 00 14 0D F1 01 01 03
+
+I (03:26:21.395) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 27 0D 04 00 00 03
+I (03:26:21.395) MSG_DECODER: [Touch Screen -> Broadcast] Valve state broadcast (startup form)
+02 00 50 FF FF 80 00 27 0D 04 00 00 03
+
+# The same pair of valve commands, with the position flipped.
+
+I (03:26:21.515) MSG_DECODER: RX MSG: 02 00 50 00 7F 00 00 1A 0B F6 03
+I (03:26:21.515) MSG_DECODER: [Touch Screen -> Internal Control] Pre-valve-command frame
+02 00 50 00 7F 00 00 1A 0B F6 03
+I (03:26:21.635) MSG_DECODER: RX MSG: 02 00 50 00 7F 80 00 41 0E A0 00 01 01 03
+I (03:26:21.635) MSG_DECODER: [Touch Screen -> Internal Control] Valve actuator command - group 1, position 0
+02 00 50 00 7F 80 00 41 0E A0 00 01 01 03
+
+# Heater is off for the whole Pool capture (bit 0 never set). The
+# flow bit still moves as the valves travel - set at +0.5 s, clear at +2.8 s -
+# but both values decode as "Off" because the heater is Off.
+
+I (03:26:22.165) MSG_DECODER: RX MSG: 02 00 74 FF FF 80 00 12 10 16 00 02 00 00 02 03
+I (03:26:22.165) MSG_DECODER: [ICI Gas Heater -> Broadcast] Gas heater raw status - [00 02 00 00], decoded status - "Off"
+02 00 74 FF FF 80 00 12 10 16 00 02 00 00 02 03
+I (03:26:24.396) MSG_DECODER: RX MSG: 02 00 74 FF FF 80 00 12 10 16 00 00 00 00 00 03
+I (03:26:24.396) MSG_DECODER: [ICI Gas Heater -> Broadcast] Gas heater raw status - [00 00 00 00], decoded status - "Off"
+02 00 74 FF FF 80 00 12 10 16 00 00 00 00 00 03

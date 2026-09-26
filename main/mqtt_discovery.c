@@ -1,4 +1,5 @@
 #include "mqtt_discovery.h"
+#include "filter_pump_type.h"
 #include "config.h"
 #include "mqtt_poolclient.h"
 #include "message_decoder.h"
@@ -753,7 +754,8 @@ static void publish_mode_discovery(const char *device_id, const char *mac_suffix
 
 static void publish_channel_discovery(const char *device_id, const char *mac_suffix,
                                       int channel_num, const char *channel_name,
-                                      bool include_state_entities, bool include_power_sensors)
+                                      bool include_state_entities, bool include_power_sensors,
+                                      bool include_pump_mode_select)
 {
     char avail_topic[128];
     char state_topic[128];
@@ -890,6 +892,74 @@ static void publish_channel_discovery(const char *device_id, const char *mac_suf
         publish_discovery("number", power_uid, json_str);
         cJSON_free(json_str);
         cJSON_Delete(root);
+    }
+
+    // Pump mode select — a direct state set via CMD 0x0F, as opposed to the
+    // toggle button above, which can only advance the channel one step around
+    // a fixed ring. Supplements that button rather than replacing it.
+    //
+    // The option list depends on whether this channel drives a multi-speed
+    // pump, which the bus never states outright (see filter_pump_type.h). Until that
+    // is known we offer Off/Auto/On: "On" is valid either way, and it is also
+    // what resolves the question — a multi-speed channel answers it by
+    // reporting a named speed, a single-speed one by reporting On. This entity is
+    // deliberately not optimistic: the selection only sticks once the
+    // Touchscreen's own 0x0B broadcast confirms it, so a command the
+    // Touchscreen ignores visibly snaps back.
+    char mode_uid[64];
+    snprintf(mode_uid, sizeof(mode_uid), DISCOVERY_ID_PREFIX "_%s_ch%d_mode",
+             mac_suffix, channel_num);
+
+    if (include_pump_mode_select) {
+        char mode_command_topic[128];
+        snprintf(mode_command_topic, sizeof(mode_command_topic),
+                 "pool/%s/channel/%d/mode/set", device_id, channel_num);
+
+        char mode_name[80];
+        snprintf(mode_name, sizeof(mode_name), "%s Mode", display_name);
+
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "name", mode_name);
+        cJSON_AddStringToObject(root, "state_topic", state_topic);
+        cJSON_AddStringToObject(root, "command_topic", mode_command_topic);
+
+        // Option strings are CHANNEL_STATE_NAMES verbatim. The channel's state
+        // topic publishes from the same table (mqtt_publish_channel) and the
+        // command handler parses against it, so an option always matches the
+        // state HA reads back.
+        cJSON *opts = cJSON_CreateArray();
+        cJSON_AddItemToArray(opts, cJSON_CreateString(CHANNEL_STATE_NAMES[0]));  // Off
+        cJSON_AddItemToArray(opts, cJSON_CreateString(CHANNEL_STATE_NAMES[1]));  // Auto
+        if (filter_pump_type_get() == FILTER_PUMP_TYPE_MULTI_SPEED) {
+            // "On" is omitted deliberately: the Touchscreen normalises it to
+            // High Speed on these channels and never reports it back, so it
+            // would be an option that silently means something else.
+            for (int i = 3; i < CHANNEL_STATE_COUNT; i++) {  // Low / Medium / High
+                cJSON_AddItemToArray(opts, cJSON_CreateString(CHANNEL_STATE_NAMES[i]));
+            }
+        } else {
+            cJSON_AddItemToArray(opts, cJSON_CreateString(CHANNEL_STATE_NAMES[2]));  // On
+        }
+        cJSON_AddItemToObject(root, "options", opts);
+
+        cJSON_AddStringToObject(root, "value_template", "{{ value_json.state }}");
+        add_entity_ids(root, "select", mac_suffix, mode_uid, "channel_%d_mode", channel_num);
+        cJSON_AddStringToObject(root, "availability_topic", avail_topic);
+        cJSON_AddItemToObject(root, "device", build_device_cjson(device_id, mac_suffix));
+
+        char *json_str = cJSON_PrintUnformatted(root);
+        if (!json_str) {
+            ESP_LOGE(TAG, "Failed to print channel mode select discovery JSON");
+            cJSON_Delete(root);
+            return;
+        }
+        publish_discovery("select", mode_uid, json_str);
+        cJSON_free(json_str);
+        cJSON_Delete(root);
+    } else {
+        // Retract it if this channel is no longer pump-driven, so a re-typed
+        // channel doesn't leave an orphan select retained on the broker.
+        remove_discovery("select", mode_uid);
     }
 
     // Power and energy sensors, only once the channel actually has a
@@ -1567,7 +1637,8 @@ void mqtt_publish_pump_discovery_single(bool include_power_sensors)
 }
 
 void mqtt_publish_channel_discovery_single(int channel_num, const char *channel_name,
-                                           bool include_state_entities, bool include_power_sensors)
+                                           bool include_state_entities, bool include_power_sensors,
+                                           bool include_pump_mode_select)
 {
     char device_id[32];
     mqtt_get_device_id(device_id, sizeof(device_id));
@@ -1577,7 +1648,8 @@ void mqtt_publish_channel_discovery_single(int channel_num, const char *channel_
 
     ESP_LOGI(TAG, "Publishing discovery for channel %d: %s", channel_num, channel_name);
     publish_channel_discovery(device_id, mac_suffix, channel_num, channel_name,
-                              include_state_entities, include_power_sensors);
+                              include_state_entities, include_power_sensors,
+                              include_pump_mode_select);
 }
 
 void mqtt_publish_system_power_discovery_single(bool include_power_sensors)

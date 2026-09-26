@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SHARED=(log_capture.c unknown_buffer_stub.c)
+SHARED=(log_capture.c unknown_buffer_stub.c nvs_stub.c)
 PASS=0
 FAIL=0
 ERRORS=()
@@ -43,15 +43,16 @@ for test_src in test_*.c; do
     main_src="../main/${module}.c"
     binary="./run_${module}"
 
-    # message_decoder.c now shares its data/discovery packet classification
+    # message_decoder.c shares its data/discovery packet classification
     # with framing.c - link it in for that one module. The lighting color
-    # name table lives in lighting_colors.c, needed by both message_decoder
-    # and mqtt_commands.
+    # name table lives in lighting_colors.c, and the channel state name table
+    # in channel_states.c; both are needed by message_decoder and
+    # mqtt_commands. message_decoder also feeds filter_pump_type.c.
     extra_srcs=()
     if [ "$module" = "message_decoder" ]; then
-        extra_srcs=(../main/framing.c ../main/lighting_colors.c)
+        extra_srcs=(../main/framing.c ../main/lighting_colors.c ../main/channel_states.c ../main/filter_pump_type.c)
     elif [ "$module" = "mqtt_commands" ]; then
-        extra_srcs=(../main/lighting_colors.c)
+        extra_srcs=(../main/lighting_colors.c ../main/channel_states.c)
     fi
 
     echo "========================================"
@@ -98,7 +99,7 @@ if [ -f test_replay.c ]; then
     echo "  Compiling: test_replay.c"
     echo "========================================"
 
-    if gcc -fno-common -I. -I.. -o ./run_replay test_replay.c ../main/message_decoder.c ../main/framing.c ../main/lighting_colors.c "${SHARED[@]}" 2>&1; then
+    if gcc -fno-common -I. -I.. -o ./run_replay test_replay.c ../main/message_decoder.c ../main/framing.c ../main/lighting_colors.c ../main/channel_states.c ../main/filter_pump_type.c "${SHARED[@]}" 2>&1; then
         if ./run_replay; then
             PASS=$((PASS + 1))
         else
