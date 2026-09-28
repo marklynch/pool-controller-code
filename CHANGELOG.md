@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
+- PROTOCOL.md no longer describes CMD `0x38` Register Data as a Touchscreen-only broadcast. An install with an ICI Gas Heater (`0x0074`) shows that heater answering the `0x39` read requests for its own setpoint registers with the Touchscreen silent, so the source address varies while the payload does not. The header-checksum shortcut `LENGTH + 8` is now documented as specific to the Touchscreen's base pattern rather than a property of register messages. No decoder change was needed — CMD `0x38` is already dispatched on `(register, slot)` regardless of source
 ### Fixed
+- Heater setpoints now reach Home Assistant on installs where nothing volunteers them. The register requester never asked for the setpoint registers (`0xE7`/`0xE8` for Heater 1, `0xEA`/`0xEB` for Heater 2), so on a system with no Internet Gateway to poll them and a touchscreen that does not broadcast CMD `0x17`, the setpoints stayed absent until the user happened to change one from Home Assistant — the read-back after a write was the only code that ever requested them. They are now part of the missing-data sweep, per circuit, and are dropped after five unanswered attempts so an unconfigured heater slot does not poll the bus forever
 ### Removed
 ### Deprecated
 ### Security

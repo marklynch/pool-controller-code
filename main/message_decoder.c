@@ -886,9 +886,11 @@ static bool handle_temp_setpoint(
     if (is_pool) {
         heater->pool_setpoint   = temp_c;
         heater->pool_setpoint_f = temp_c * 9 / 5 + 32;
+        heater->pool_setpoint_valid = true;
     } else {
         heater->spa_setpoint    = temp_c;
         heater->spa_setpoint_f  = temp_c * 9 / 5 + 32;
+        heater->spa_setpoint_valid = true;
     }
     heater->setpoint_valid = true;
     ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -1419,6 +1421,8 @@ static bool handle_temp_setting(
     heater1->spa_setpoint_f  = spa_set_temp_f;
     heater1->pool_setpoint_f = pool_set_temp_f;
     heater1->setpoint_valid  = true;
+    heater1->pool_setpoint_valid = true;
+    heater1->spa_setpoint_valid  = true;
     ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     snapshot = *ctx->pool_state;
     xSemaphoreGive(ctx->state_mutex);

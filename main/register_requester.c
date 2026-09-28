@@ -24,6 +24,11 @@ static SemaphoreHandle_t s_mutex = NULL;
 #define READBACK_DELAY_MS    1000
 // Pending read-backs / wake-ups waiting to be serviced by the task
 #define REQUEST_QUEUE_LEN    8
+// How many sweeps to ask for a heater setpoint before giving up on it. Unlike
+// a light zone or valve, nothing in pool_state says whether a heater slot
+// exists, so an unconfigured slot is indistinguishable from a configured one
+// that has not answered yet — bound the retries instead.
+#define HEATER_SETPOINT_MAX_ATTEMPTS 5
 
 // A unit of work posted to the task. `rescan` requests a fresh check for
 // missing data; otherwise the entry names a register to read back.
@@ -49,6 +54,30 @@ static void send_request(uint8_t reg_id, uint8_t slot, const char *description)
     vTaskDelay(pdMS_TO_TICKS(REQUEST_INTERVAL_MS));
 }
 
+// The setpoint registers to sweep for, one entry per heater circuit (all slot
+// 0x00): Heater 1 is 0xE7/0xE8, Heater 2 is 0xEA/0xEB — not a contiguous
+// stride, so spell them out.
+static const struct {
+    uint8_t reg_id;
+    uint8_t heater_idx;
+    bool    is_pool;
+    const char *desc;
+} HEATER_SETPOINT_REGS[] = {
+    {REG_ID_HEATER1_POOL_SETPOINT, 0, true,  "heater 1 pool setpoint"},
+    {REG_ID_HEATER1_SPA_SETPOINT,  0, false, "heater 1 spa setpoint"},
+    {REG_ID_HEATER2_POOL_SETPOINT, 1, true,  "heater 2 pool setpoint"},
+    {REG_ID_HEATER2_SPA_SETPOINT,  1, false, "heater 2 spa setpoint"},
+};
+#define HEATER_SETPOINT_REG_COUNT \
+    (sizeof(HEATER_SETPOINT_REGS) / sizeof(HEATER_SETPOINT_REGS[0]))
+_Static_assert(MAX_HEATERS == 2,
+               "HEATER_SETPOINT_REGS needs an entry per heater circuit");
+
+// Sweeps spent asking for each setpoint register, indexed as
+// HEATER_SETPOINT_REGS. Task-local state: only ever touched from
+// register_requester_task().
+static uint8_t s_heater_setpoint_attempts[HEATER_SETPOINT_REG_COUNT];
+
 static void register_requester_task(void *arg)
 {
     ESP_LOGI(TAG, "Task started, waiting %d ms for Internet Gateway...", STARTUP_DELAY_MS);
@@ -65,6 +94,8 @@ static void register_requester_task(void *arg)
         bool valve_label_valid[MAX_VALVE_SLOTS] = {0};
         bool fav_enabled_valid[MAX_FAVOURITES] = {0};
         bool fav_name_valid[MAX_FAVOURITES] = {0};
+        bool heater_pool_setpoint_valid[MAX_HEATERS] = {0};
+        bool heater_spa_setpoint_valid[MAX_HEATERS] = {0};
 
         if (s_mutex && xSemaphoreTake(s_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
             gateway_present = s_state->gateway_ip_valid;
@@ -90,6 +121,10 @@ static void register_requester_task(void *arg)
             for (int i = 0; i < MAX_FAVOURITES; i++) {
                 fav_enabled_valid[i] = s_state->favourites[i].enabled_valid;
                 fav_name_valid[i]    = s_state->favourites[i].name_valid;
+            }
+            for (int i = 0; i < MAX_HEATERS; i++) {
+                heater_pool_setpoint_valid[i] = s_state->heaters[i].pool_setpoint_valid;
+                heater_spa_setpoint_valid[i]  = s_state->heaters[i].spa_setpoint_valid;
             }
             xSemaphoreGive(s_mutex);
         }
@@ -154,6 +189,29 @@ static void register_requester_task(void *arg)
                     snprintf(desc, sizeof(desc), "favourite %d label", i);
                     send_request(REG_ID_FAVOURITE_LABEL_0 + i, 0x03, desc);
                 }
+            }
+
+            // Request missing heater setpoints. On an install with no Gateway
+            // whose touchscreen does not broadcast CMD 0x17, nothing else ever
+            // populates them — the only other request is the read-back after an
+            // MQTT setpoint write, so the value stays absent until the user
+            // changes it from Home Assistant. The CMD 0x38 response carries the
+            // heater slot in its register ID, so whichever device answers
+            // (touchscreen or the heater itself) lands in the right slot.
+            for (size_t i = 0; i < HEATER_SETPOINT_REG_COUNT; i++) {
+                int idx = HEATER_SETPOINT_REGS[i].heater_idx;
+                bool have = HEATER_SETPOINT_REGS[i].is_pool
+                                ? heater_pool_setpoint_valid[idx]
+                                : heater_spa_setpoint_valid[idx];
+                if (have) continue;
+                if (s_heater_setpoint_attempts[i] >= HEATER_SETPOINT_MAX_ATTEMPTS) continue;
+                s_heater_setpoint_attempts[i]++;
+
+                ESP_LOGI(TAG, "Requesting missing %s (attempt %d/%d)",
+                         HEATER_SETPOINT_REGS[i].desc,
+                         s_heater_setpoint_attempts[i], HEATER_SETPOINT_MAX_ATTEMPTS);
+                send_request(HEATER_SETPOINT_REGS[i].reg_id, 0x00,
+                             HEATER_SETPOINT_REGS[i].desc);
             }
         }
 

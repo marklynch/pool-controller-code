@@ -225,7 +225,7 @@ Click any CMD in the first column to jump to the full section in [Commands](#com
 | [`0x2D`](#0x2d--solar-setpoint-broadcast-)                     | Solar Setpoint Broadcast            | `0x0050` Touchscreen → Broadcast                                       | Fired when the solar setpoint is changed; 1-byte °C value; dispatched on CMD byte alone     | Yes (log-only)          |
 | [`0x31`](#0x31--water-temperature-reading-alt-)                | Water Temperature Reading (alt)     | `0x0062` → Broadcast                                                   | Same `{temp1, temp2}` field layout as `0x16`; different disconnected encoding (`>= 0xA0` vs `0x00`); shared handler, log-only | Yes (unified handler)   |
 | [`0x37`](#0x37--internet-gateway-info-️)                       | Internet Gateway Info               | `0x00F0` → Broadcast                                                   | LEN distinguishes serial (`0x11`), network config (`0x15`), comms status (`0x0F`) variants  | Yes (3 handlers)        |
-| [`0x38`](#0x38--register-data-️)                               | Register Data (Response)            | `0x0050` Touchscreen → Broadcast                                       | Universal register system — sub-dispatched by register + slot (see [Appendix A](#appendix-a-register-dispatch-table)); dispatched on CMD byte alone | Yes (unified handler)   |
+| [`0x38`](#0x38--register-data-️)                               | Register Data (Response)            | `0x0050` Touchscreen, `0x0074` ICI Gas Heater → Broadcast              | Universal register system — sub-dispatched by register + slot (see [Appendix A](#appendix-a-register-dispatch-table)); dispatched on CMD byte alone | Yes (unified handler)   |
 | [`0x39`](#0x39--register-read-request-)                        | Register Read Request               | `0x00F0` Gateway, `0x0070` Genus Heater → Broadcast                    | Dispatched on CMD byte alone (source-agnostic)                                              | Yes (unified handler)   |
 | [`0x3A`](#0x3a--register-write--control-)                      | Register Write / Control            | `0x00F0`, `0x0084` → Broadcast                                         | Same `{register, slot, value}` payload from either source; dispatched on CMD byte alone. Used for Light Zone state (`0xC0`–`0xC7`/slot `0x01`) and color (`0xD0`–`0xD7`/slot `0x01`), Heater Control (`0xE6`/slot `0x00`), and Heater 2 pool setpoint (`0xEA`/slot `0x00`) | Yes (both)              |
 | [`0x3B`](#0x3b--pump-speed-)                                   | Pump Speed Telemetry                | `0x00A0` Viron XT Pump → Broadcast                                      | 2-byte big-endian RPM value; broadcast every ~60 seconds                                    | Yes                     |
@@ -1065,6 +1065,8 @@ Examples:
                                     ^^ Temperature in °C
 ```
 
+The Touchscreen is not always the source: on some installs the heater device answers for these registers instead — see [Non-Touchscreen Responders](#non-touchscreen-responders). The register ID identifies the heater slot either way (`0xE7`/`0xE8` = Heater 1, `0xEA`/`0xEB` = Heater 2), so these frames are the authoritative per-heater setpoint source regardless of who sends them — unlike the heater's own CMD `0x17` broadcast above, which carries both circuits in one frame with an unused-circuit default (see the `0xEB` default note in [Appendix A](#appendix-a-register-dispatch-table)) and no indication of which heater slot it belongs to.
+
 ---
 
 ### 0x18 — Pump Speed Command ✅
@@ -1765,7 +1767,7 @@ Status of the gateway's internet connection.
 
 ### 0x38 — Register Data ⚠️
 
-The controller uses a unified register-based system for configuration and state. Broadcast by the Touchscreen (`0x0050`). All register messages share the same base pattern `02 00 50 FF FF 80 00 38` — only the register ID, slot, and data payload vary.
+The controller uses a unified register-based system for configuration and state. Usually broadcast by the Touchscreen (`0x0050`), whose register messages share the base pattern `02 00 50 FF FF 80 00 38` — only the register ID, slot, and data payload vary. **The Touchscreen is not the only responder**: an ICI Gas Heater (`0x0074`) has been observed answering the heater setpoint registers itself (see [Non-Touchscreen Responders](#non-touchscreen-responders) below), so the source address varies while the payload layout does not.
 
 > See [Appendix A](#appendix-a-register-dispatch-table) for the full register dispatch table, examples by register type, register ID mappings, and the firmware dispatch implementation.
 
@@ -1802,7 +1804,26 @@ The controller uses a unified register-based system for configuration and state.
 
 **Notes:**
 
-- The header checksum formula `HEADER_CHECKSUM = LENGTH + 8` holds specifically for register messages because bytes 0–7 (`02 00 50 FF FF 80 00 38`) always sum to 776 ≡ 8 (mod 256). This is a consequence of the fixed base pattern, not a separate rule.
+- The header checksum formula `HEADER_CHECKSUM = LENGTH + 8` holds for register messages **from the Touchscreen**, because bytes 0–7 (`02 00 50 FF FF 80 00 38`) always sum to 776 ≡ 8 (mod 256). This is a consequence of that base pattern, not a separate rule — the general rule is `HEADER_CHECKSUM = LENGTH + (sum(bytes 0–7) & 0xFF)`, and the offset changes with the source address (for the ICI Gas Heater's `02 00 74 FF FF 80 00 38`, bytes 0–7 sum to 812 ≡ `0x2C`, giving `HEADER_CHECKSUM = LENGTH + 0x2C`).
+
+#### Non-Touchscreen Responders
+
+This document previously described `0x38` as a Touchscreen-only broadcast. An install with an ICI Gas Heater (`0x0074`) shows that a heater device answers the [0x39](#0x39--register-read-request-) read requests for its own setpoint registers, with the Touchscreen silent:
+
+```
+02 00 F0 FF FF 80 00 39 0E B7 E7 00 E7 03      Gateway asks for 0xE7 (Heater 1 Pool setpoint)
+02 00 74 FF FF 80 00 38 0F 3B E7 00 11 F8 03   ICI Gas Heater answers: 17°C
+02 00 F0 FF FF 80 00 39 0E B7 E8 00 E8 03      Gateway asks for 0xE8 (Heater 1 Spa setpoint)
+02 00 74 FF FF 80 00 38 0F 3B E8 00 1D 05 03   ICI Gas Heater answers: 29°C
+```
+
+Both responses are well-formed `0x38` frames for the `0x0074` source: header checksum `0x3B` = `0x0F` + `0x2C`, and data checksums `0xF8` = `0xE7 + 0x00 + 0x11` and `0x05` = (`0xE8 + 0x00 + 0x1D`) & `0xFF`.
+
+Notes:
+
+- **The register ID still identifies the data.** `(register, slot)` means the same thing whoever sends it, so a response needs no source-specific handling — `0xE7`/`0xE8` are Heater 1's setpoints and `0xEA`/`0xEB` are Heater 2's regardless of which device answers. The firmware already dispatches CMD `0x38` source-agnostically on `(reg_id, slot)`, so these frames decode correctly as-is.
+- **Which device answers is install-dependent and not yet understood.** The mechanism by which a heater knows to respond has not been identified. In the capture above nothing answered the Heater 2 requests (`0xEA`/`0xEB`) at all, which is indistinguishable from Heater 2 not being configured.
+- Whether the Touchscreen responds for heater setpoints on other installs is unconfirmed — more captures wanted (see [issue #101](https://github.com/marklynch/pool-controller-code/issues/101)).
 
 #### Timer Registers (Slot 0x04)
 
@@ -1910,7 +1931,7 @@ Assigns human-readable names to channels, lighting zones, and valves as null-ter
 
 ### 0x39 — Register Read Request ✅
 
-Sent to poll a single controller register; the Touchscreen (`0x0050`) replies with the matching [0x38 Register Data](#0x38--register-data-️) response. Primarily emitted by the Internet Gateway (`0x00F0`), but the Genus Heater (`0x0070`) has also been observed sending the same `{reg_id, slot_id}` request — the decoder handles CMD `0x39` source-agnostically.
+Sent to poll a single controller register; the Touchscreen (`0x0050`) usually replies with the matching [0x38 Register Data](#0x38--register-data-️) response — though it is not always the responder, and an ICI Gas Heater (`0x0074`) has been observed answering for its own setpoint registers (see [Non-Touchscreen Responders](#non-touchscreen-responders)). Primarily emitted by the Internet Gateway (`0x00F0`), but the Genus Heater (`0x0070`) has also been observed sending the same `{reg_id, slot_id}` request — the decoder handles CMD `0x39` source-agnostically.
 
 **Pattern:** `02 00 F0 FF FF 80 00 39 0E B7`
 
