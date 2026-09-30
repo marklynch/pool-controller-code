@@ -886,11 +886,12 @@ static bool handle_temp_setpoint(
     if (is_pool) {
         heater->pool_setpoint   = temp_c;
         heater->pool_setpoint_f = temp_c * 9 / 5 + 32;
+        heater->pool_setpoint_valid = true;
     } else {
         heater->spa_setpoint    = temp_c;
         heater->spa_setpoint_f  = temp_c * 9 / 5 + 32;
+        heater->spa_setpoint_valid = true;
     }
-    heater->setpoint_valid = true;
     ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     state_snapshot = *ctx->pool_state;
     xSemaphoreGive(ctx->state_mutex);
@@ -1291,11 +1292,22 @@ static bool handle_genus_heater_status(
  *
  * Two-byte payload: byte 10 = Spa setpoint (°C), byte 11 = Pool setpoint (°C).
  *
- * Log-only: per-heater setpoint state is driven authoritatively by the
- * controller's register broadcasts (0xE7/0xE8 Heater 1, 0xEA/0xEB Heater 2)
- * via handle_temp_setpoint. A physical heater that isn't plumbed to both
- * circuits broadcasts the 0x0A (10°C) "uninstalled" default in the unused slot,
- * so writing state from here would clobber the real setpoint.
+ * On an install with no Internet Gateway and a touchscreen that never sends
+ * CMD 0x17, this is the only message carrying a setpoint changed at the
+ * touchscreen or on the heater's own panel: the register requester fetches
+ * 0xE7/0xE8/0xEA/0xEB once and then stops, so the heater's broadcast (~every
+ * 60 s) is what keeps the value current afterwards.
+ *
+ * The frame does not identify which controller heater slot the device occupies,
+ * and it is not always Heater 1 — on the two-heater install in PROTOCOL.md
+ * Appendix A the Genus heat pump's values match 0xEA/0xEB. So the values are
+ * applied only while nothing has been seen about Heater 2. Once a second heater
+ * is known the attribution is ambiguous and this stays log-only, leaving 
+ * handle_temp_setpoint authoritative.
+ *
+ * A heater that isn't plumbed to both circuits broadcasts the 0x0A (10°C)
+ * "uninstalled" default in the unused circuit, so each circuit is applied only
+ * if it isn't exactly that value.
  */
 static bool handle_heater_temp_setting(
     const uint8_t *data, int len,
@@ -1314,6 +1326,47 @@ static bool handle_heater_temp_setting(
 
     ESP_LOGI(TAG, "%s %s setpoints - Spa=%d°C, Pool=%d°C",
              addr_info, heater_name, spa_setpoint, pool_setpoint);
+
+    pool_state_t snapshot;
+    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to acquire mutex for %s setpoints", heater_name);
+        return true;
+    }
+
+    const pool_heater_t *heater2 = &ctx->pool_state->heaters[1];
+    if (heater2->valid || heater_setpoint_valid(heater2)) {
+        xSemaphoreGive(ctx->state_mutex);
+        ESP_LOGD(TAG, "%s setpoints not applied - Heater 2 present, heater slot unknown",
+                 heater_name);
+        return true;
+    }
+
+    pool_heater_t *heater = &ctx->pool_state->heaters[0];
+    bool updated = false;
+    if (spa_setpoint != TEMP_SETPOINT_MIN_C) {
+        heater->spa_setpoint       = spa_setpoint;
+        heater->spa_setpoint_f     = spa_setpoint * 9 / 5 + 32;
+        heater->spa_setpoint_valid = true;
+        updated = true;
+    }
+    if (pool_setpoint != TEMP_SETPOINT_MIN_C) {
+        heater->pool_setpoint       = pool_setpoint;
+        heater->pool_setpoint_f     = pool_setpoint * 9 / 5 + 32;
+        heater->pool_setpoint_valid = true;
+        updated = true;
+    }
+    if (!updated) {
+        xSemaphoreGive(ctx->state_mutex);
+        return true;
+    }
+
+    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    snapshot = *ctx->pool_state;
+    xSemaphoreGive(ctx->state_mutex);
+
+    if (ctx->enable_mqtt) {
+        mqtt_publish_heater_setpoints(&snapshot, 0);
+    }
 
     return true;
 }
@@ -1418,7 +1471,8 @@ static bool handle_temp_setting(
     heater1->pool_setpoint   = pool_set_temp_c;
     heater1->spa_setpoint_f  = spa_set_temp_f;
     heater1->pool_setpoint_f = pool_set_temp_f;
-    heater1->setpoint_valid  = true;
+    heater1->pool_setpoint_valid = true;
+    heater1->spa_setpoint_valid  = true;
     ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     snapshot = *ctx->pool_state;
     xSemaphoreGive(ctx->state_mutex);

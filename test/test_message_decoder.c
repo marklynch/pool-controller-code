@@ -220,7 +220,7 @@ void test_decode_temperature_setting(void)
     TEST_ASSERT(decoded, "Temperature setting message should be decoded");
     TEST_ASSERT(test_pool_state.heaters[0].spa_setpoint == 37, "Heater 1 spa setpoint should be 37°C");
     TEST_ASSERT(test_pool_state.heaters[0].pool_setpoint == 29, "Heater 1 pool setpoint should be 29°C");
-    TEST_ASSERT(test_pool_state.heaters[0].setpoint_valid, "Heater 1 setpoint should be valid");
+    TEST_ASSERT(heater_setpoint_valid(&test_pool_state.heaters[0]), "Heater 1 setpoint should be valid");
 }
 
 /**
@@ -242,7 +242,7 @@ void test_heater2_setpoint_registers(void)
     bool pool_decoded = decode_message(pool_msg, sizeof(pool_msg), &test_ctx);
     TEST_ASSERT(pool_decoded, "Heater 2 pool setpoint register should be decoded");
     TEST_ASSERT(test_pool_state.heaters[1].pool_setpoint == 27, "Heater 2 pool setpoint should be 27°C");
-    TEST_ASSERT(test_pool_state.heaters[1].setpoint_valid, "Heater 2 setpoint should be valid");
+    TEST_ASSERT(heater_setpoint_valid(&test_pool_state.heaters[1]), "Heater 2 setpoint should be valid");
 
     // Register 0xEB (Heater 2 spa setpoint) = 0x18 (24°C)
     // checksum = (0xEB+0x00+0x18) & 0xFF = 0x03
@@ -256,6 +256,105 @@ void test_heater2_setpoint_registers(void)
     bool spa_decoded = decode_message(spa_msg, sizeof(spa_msg), &test_ctx);
     TEST_ASSERT(spa_decoded, "Heater 2 spa setpoint register should be decoded");
     TEST_ASSERT(test_pool_state.heaters[1].spa_setpoint == 24, "Heater 2 spa setpoint should be 24°C");
+}
+
+/**
+ * Test: heater device setpoint broadcast (CMD 0x17 from 0x0074 ICI Gas Heater).
+ * Real message: 02 00 74 FF FF 80 00 17 0E 19 1D 11 2E 03
+ * Payload: spa_c=0x1D(29), pool_c=0x11(17)
+ * On a single-heater install the values land in Heater 1.
+ */
+void test_heater_device_setpoint_broadcast(void)
+{
+    init_test_context();
+
+    uint8_t msg[] = {
+        0x02,                   // Byte 0: Start
+        0x00, 0x74,             // Bytes 1-2: Source: ICI Gas Heater
+        0xFF, 0xFF,             // Bytes 3-4: Dest: Broadcast
+        0x80, 0x00,             // Bytes 5-6: Control
+        0x17, 0x0E,             // Bytes 7-8: Command / length (14)
+        0x19,                   // Byte 9: Header checksum
+        0x1D,                   // Byte 10: Spa setpoint 29°C
+        0x11,                   // Byte 11: Pool setpoint 17°C
+        0x2E,                   // Byte 12: Data checksum
+        0x03                    // Byte 13: End
+    };
+
+    bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
+
+    TEST_ASSERT(decoded, "Heater device setpoint broadcast should be decoded");
+    TEST_ASSERT(test_pool_state.heaters[0].spa_setpoint == 29, "Heater 1 spa setpoint should be 29°C");
+    TEST_ASSERT(test_pool_state.heaters[0].pool_setpoint == 17, "Heater 1 pool setpoint should be 17°C");
+    TEST_ASSERT(test_pool_state.heaters[0].spa_setpoint_f == 84, "Heater 1 spa setpoint should be 84°F");
+    TEST_ASSERT(test_pool_state.heaters[0].pool_setpoint_f == 62, "Heater 1 pool setpoint should be 62°F");
+    TEST_ASSERT(heater_setpoint_valid(&test_pool_state.heaters[0]), "Heater 1 setpoint should be valid");
+    TEST_ASSERT(test_pool_state.heaters[0].spa_setpoint_valid, "Heater 1 spa setpoint should be valid");
+    TEST_ASSERT(test_pool_state.heaters[0].pool_setpoint_valid, "Heater 1 pool setpoint should be valid");
+}
+
+/**
+ * Test: heater device setpoint broadcast carrying the 0x0A (10°C) "not plumbed
+ * to this circuit" default. That circuit must be left alone; the other is applied.
+ */
+void test_heater_device_setpoint_unplumbed_circuit(void)
+{
+    init_test_context();
+
+    // A spa setpoint already known from register 0xE8 must survive the broadcast
+    test_pool_state.heaters[0].spa_setpoint       = 29;
+    test_pool_state.heaters[0].spa_setpoint_valid = true;
+
+    uint8_t msg[] = {
+        0x02, 0x00, 0x74, 0xFF, 0xFF, 0x80, 0x00,
+        0x17, 0x0E, 0x19,
+        0x0A,                   // Byte 10: Spa setpoint 10°C — unplumbed default
+        0x11,                   // Byte 11: Pool setpoint 17°C
+        0x1B,                   // Byte 12: Data checksum
+        0x03
+    };
+
+    bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
+
+    TEST_ASSERT(decoded, "Heater device setpoint broadcast should be decoded");
+    TEST_ASSERT(test_pool_state.heaters[0].spa_setpoint == 29, "Known spa setpoint should survive the 10°C default");
+    TEST_ASSERT(test_pool_state.heaters[0].pool_setpoint == 17, "Heater 1 pool setpoint should be 17°C");
+}
+
+/**
+ * Test: heater device setpoint broadcast on a two-heater install. Once anything
+ * has reported Heater 2, the broadcast cannot be attributed to a slot and must
+ * not write Heater 1 — the register broadcasts stay authoritative.
+ */
+void test_heater_device_setpoint_two_heaters(void)
+{
+    init_test_context();
+
+    // Register 0xEA (Heater 2 pool setpoint) = 0x1B (27°C) — marks a second heater
+    uint8_t reg_msg[] = {
+        0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00,
+        0x38, 0x0F, 0x17,
+        0xEA, 0x00, 0x1B,
+        0x05,
+        0x03
+    };
+    decode_message(reg_msg, sizeof(reg_msg), &test_ctx);
+
+    uint8_t msg[] = {
+        0x02, 0x00, 0x74, 0xFF, 0xFF, 0x80, 0x00,
+        0x17, 0x0E, 0x19,
+        0x1D,                   // Byte 10: Spa setpoint 29°C
+        0x11,                   // Byte 11: Pool setpoint 17°C
+        0x2E,                   // Byte 12: Data checksum
+        0x03
+    };
+
+    bool decoded = decode_message(msg, sizeof(msg), &test_ctx);
+
+    TEST_ASSERT(decoded, "Heater device setpoint broadcast should be decoded");
+    TEST_ASSERT(!heater_setpoint_valid(&test_pool_state.heaters[0]), "Heater 1 setpoint should stay unset with two heaters");
+    TEST_ASSERT(test_pool_state.heaters[0].pool_setpoint == 0, "Heater 1 pool setpoint should not be written");
+    TEST_ASSERT(test_pool_state.heaters[0].spa_setpoint == 0, "Heater 1 spa setpoint should not be written");
 }
 
 /**
@@ -1360,6 +1459,9 @@ int main(void)
     test_decode_mode_pool();
     test_decode_temperature_setting();
     test_heater2_setpoint_registers();
+    test_heater_device_setpoint_broadcast();
+    test_heater_device_setpoint_unplumbed_circuit();
+    test_heater_device_setpoint_two_heaters();
     test_decode_temp_reading();
     test_decode_heater_on();
     test_decode_heater_off();

@@ -707,7 +707,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     // Heaters (include heaters that have on/off state and/or setpoints)
     cJSON *heaters_arr = cJSON_CreateArray();
     for (int i = 0; i < MAX_HEATERS; i++) {
-        if (!state.heaters[i].valid && !state.heaters[i].setpoint_valid) {
+        if (!state.heaters[i].valid && !heater_setpoint_valid(&state.heaters[i])) {
             continue;
         }
         cJSON *heater = cJSON_CreateObject();
@@ -729,7 +729,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
             cJSON_AddBoolToObject(gs, "cooling_available", h->cooling_available);
             cJSON_AddItemToObject(heater, "gas_status", gs);
         }
-        if (state.heaters[i].setpoint_valid) {
+        if (heater_setpoint_valid(&state.heaters[i])) {
             cJSON_AddNumberToObject(heater, "pool_setpoint",   state.heaters[i].pool_setpoint);
             cJSON_AddNumberToObject(heater, "spa_setpoint",    state.heaters[i].spa_setpoint);
             cJSON_AddNumberToObject(heater, "pool_setpoint_f", state.heaters[i].pool_setpoint_f);
