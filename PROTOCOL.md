@@ -2269,27 +2269,42 @@ The register ID and slot together determine the message meaning. The slot distin
 | `0x08`–`0x17`  | `0x04` | Timers 1–16            | start/stop time + days bitmask — read-only; writes ignored by controller (see [0x38 Timer Registers](#timer-registers-slot-0x04))   |
 | `0x20`         | `0x03` | Active Favourite       | CMD `0x2A` value of the active favourite (`0x00`=Pool … `0x07`=Favourite 6); `0xFF` = none active — see note below |
 | `0x21`–`0x28`  | `0x03` | Favourite Enable       | 1-byte flag (`0x01`=enabled, `0x00`=disabled). Maps to CMD `0x2A` values `0x00`–`0x07` in order. Pool (`0x21`) and Spa (`0x22`) are always `0x01`. |
+| `0x26` ⚠️      | `0x02` | Unknown                | 1-byte, only `0x00` observed. Polled by the Internet Gateway (it also polls `0x28`/slot `0x02`). |
+| `0x2A` ⚠️      | `0x03` | Unknown                | Polled by the Internet Gateway; response not yet captured. Sits just past the Favourite Enable block — see note below. |
+| `0x2C`, `0x2E` ⚠️| `0x01` | Unknown             | Polled by the Internet Gateway; responses not yet captured. Shares slot `0x01` and a neighbourhood with the water-temperature (`0x30`) and solar-setpoint (`0x3A`) registers |
 | `0x30`         | `0x01` | Current Water Temperature | 2-byte `{temp °C, 0x00}` mirror of the controller's [0x16](#0x16--water-temperature-reading-) reading — see note below |
 | `0x30` ⚠️      | `0x03` | Unknown                | 1-byte, only `0x00` observed. Polled by the Internet Gateway. Sits immediately before the Favourite Labels block, as `0x20` does the Enable block. |
 | `0x31`–`0x38`  | `0x03` | Favourite Labels       | Null-terminated ASCII string. Maps to CMD `0x2A` values `0x00`–`0x07` in order. `0x31`=Pool, `0x32`=Spa, `0x33`–`0x38`=user Favourites 1–6. |
+| `0x38`–`0x39` ⚠️| `0x01` | Unknown             | Polled by the Internet Gateway every cycle; responses not yet captured. Sit right before Solar Setpoint (`0x3A`) |
 | `0x3A`         | `0x01` | Solar Setpoint         | 1-byte °C value — see note below                 |
+| `0x3B`–`0x3F` ⚠️| `0x03` | Unknown               | 1-byte, only `0x00` observed (`0x3B`, `0x3D` answered; `0x3E`, `0x3F` polled). Continues the Favourite Labels block — see note below. |
 | `0x64`-`0x65` ⚠️| `0x00`| Unknown                | Only `0x01` observed. Repeats ~every 8 minutes   |
 | `0x6C`–`0x73`  | `0x02` | Channel Types          | 1-byte type code (see [0x0B](#0x0b--channel-status-) channel types)    |
 | `0x7C`–`0x83`  | `0x02` | Channel Names          | Null-terminated ASCII string                     |
+| `0x84`–`0x8B` ⚠️| `0x02` | Unknown               | 1-byte, only `0x00` observed (`0x86` answered; `0x88`, `0x8B` polled). Fills the gap between Channel Names and Channel State — see note below. |
 | `0x8C`–`0x93`  | `0x02` | Channel State          | 1-byte value (0=Off, 1=Auto, 2=On, 3=Low, 4=Med, 5=High) — same code space as [0x0B](#0x0b--channel-status-) Channel States; read-only, writes ignored by controller |
 | `0x90`–`0x97`  | `0x01` | Light Zone Enabled     | 1-byte flag (`0x01`=zone configured, `0x00`=not configured) — see note below |
 | `0xA0`–`0xA7`  | `0x01` | Light Zone Multicolor  | 1-byte flag (`0x00`=No, `0x01`=Yes)              |
-| `0xAC`-`0xAF` ⚠️| `0x0D`| Unknown                | Only `0xFF` observed. Repeats ~every 8 minutes   |
+| `0xAC`–`0xAF` ⚠️| `0x0D`| Unknown                | `0xFF` on one install; `FF FF 00 01` (`0xAC`…`0xAF`) on another. Repeats ~every 8 minutes — see note below |
 | `0xB0`–`0xB7`  | `0x01` | Light Zone Name        | 1-byte preset name code (see [name codes table](#examples-by-register-type)) |
 | `0xB0`–`0xB3` ⚠️| `0x0D` | Unknown               | Only `0xFF` observed. Repeats ~every 8 minutes   |
-| `0xB8`–`0xB9` ⚠️| `0x0B` | Unknown               | Only `0x00` observed. Repeats ~every 8 minutes   |
+| `0xB8`–`0xB9` ⚠️| `0x0B` | Unknown               | `0x00` on one install, `0x01` on another. Repeats ~every 8 minutes   |
 | `0xBC`–`0xBF` ⚠️| `0x0D` | Unknown               | Only `0x00` observed. Repeats ~every 8 minutes   |
 | `0xC0`–`0xC7`  | `0x01` | Light Zone State       | 1-byte value (0=Off, 1=Auto, 2=On)               |
-| `0xC0`–`0xC3` ⚠️| `0x0D` | Unknown               | Only `0xFF` observed. Repeats ~every 8 minutes   |
-| `0xC8` ⚠️      | `0x00` | Unknown                | Only `0x01` observed. Repeats ~every 8 minutes   |
+| `0xC0`–`0xC3` ⚠️| `0x0D` | Unknown               | `0xFF` on one install, `0x00` on another. Repeats ~every 8 minutes   |
+| `0xC8` ⚠️      | `0x00` | Unknown                | `0x01` usually; `0x03` seen once — the value can change. Repeats ~every 8 minutes   |
+| `0xC9` ⚠️      | `0x00` | Unknown                | 1-byte, only `0x00` observed                     |
+| `0xCA` ⚠️      | `0x00` | Unknown                | **2-byte** payload (LENGTH `0x10`), only `00 06` observed. Polled by the Internet Gateway |
+| `0xCC` ⚠️      | `0x00` | Unknown                | 1-byte, only `0x00` observed                     |
+| `0xCD` ⚠️      | `0x00` | Unknown                | Polled by the Internet Gateway; response not yet captured |
 | `0xD0`–`0xD1`  | `0x02` | Valve Labels           | Null-terminated ASCII string                     |
+| `0xD3` ⚠️      | `0x02` | Unknown                | Polled by the Internet Gateway; response not yet captured. Two past the Valve Labels — possibly further valve slots |
+| `0xD6`–`0xEB` ⚠️| `0x0B` | Unknown               | Whole range polled by the Internet Gateway; only `0xDC` answered so far (`0x00`) |
+| `0xDC`–`0xDF` ⚠️| `0x00` | Unknown                | Polled by the Internet Gateway; responses not yet captured |
 | `0xD0`–`0xD7`  | `0x01` | Light Zone Color       | 1-byte color code — writable via CMD `0x3A`; one shared code space across light models, each model exposing a subset selected by register `0xF0` — full table in [Light Zone Color Control](#light-zone-color-control-register-0xd00xd7-slot-0x01-️) |
 | `0xE0`–`0xE7`  | `0x01` | Light Zone Active      | 1-byte binary (`0x00`=Inactive, `0x01`=Active)   |
+| `0xE8`–`0xEF` ⚠️| `0x01` | Unknown               | 1-byte, only `0x00` observed on all 8 registers. Polled by the Internet Gateway — see note below |
+| `0xE0`–`0xE7` ⚠️| `0x02` | Unknown               | `0xE6` answered `0x00`; `0xE0`, `0xE1`, `0xE4`, `0xE7` polled by the Internet Gateway (it also polls `0xEE`/slot `0x02`) |
 | `0xF4`         | `0x01` | Channel Count          | 1-byte total number of channels in the system    |
 | `0xE6`         | `0x00` | Heater State (Heater 1)   | 1-byte (`0x00`=Off, `0x01`=On)                |
 | `0xE7`         | `0x00` | Pool Temperature Setpoint (Heater 1) | 1-byte °C value                    |
@@ -2299,8 +2314,10 @@ The register ID and slot together determine the message meaning. The slot distin
 | `0xEA`         | `0x00` | Heater 2 Pool Setpoint | 1-byte °C value — writable via gateway CMD `0x3A`. See note below. |
 | `0xEB`         | `0x00` | Heater 2 Spa Setpoint  | 1-byte °C value — writable via gateway CMD `0x3A`. See note below.   |
 | `0xEC` ⚠️       | `0x00` | Unknown                | Only `0x01` observed. Repeats ~every 8 minutes |
+| `0xEC` ⚠️       | `0x03` | Unknown                | Polled by the Internet Gateway; response not yet captured |
 | `0xF0`         | `0x01` | Multicolor Light Type  | 1-byte system-wide light model index: `0x00`=SLX, `0x01`=Delta, `0xFF`=none selected — see note below |
 | `0xF5`–`0xFC`  | `0x01` | Channel Category       | 1-byte category code (`0x01`=Pool equipment, `0x02`=Light, `0x03`=Controlled Heater Power) — see note below |
+| `0xFE`–`0xFF` ⚠️| `0x03` | Unknown               | 1-byte, only `0x00` observed. Polled by the Internet Gateway |
 
 **Notes:**
 
@@ -2316,6 +2333,10 @@ The register ID and slot together determine the message meaning. The slot distin
 - **`0xF0` (Multicolor Light Type) — confirmed ✅**: system-wide multicolor light model selection from the touchscreen's light setup. Confirmed by UI experiment: setting the light type to SLX multicolor rebroadcasts `0x00`, Delta rebroadcasts `0x01`, and with no multicolor light configured the register reads `0xFF` (none selected — same sentinel convention as Active Favourite `0x20`). A single global register, not per-zone (no `0xF1`–`0xF3` siblings exist, and the Gateway's periodic polling requests `0xF0` only), sitting at the front of the slot-`0x01` system-config block (`0xF4` channel count, `0xF5`–`0xFC` channel categories). Only the SLX and Delta indexes have been mapped; other models in the setup list presumably take further values. The selected model determines which subset of the shared color code table applies to the Light Zone Color registers and [CMD 0x07](#0x07--lighting-zone-color-broadcast-️) — full table in [Light Zone Color Control](#light-zone-color-control-register-0xd00xd7-slot-0x01-️).
 - **Light zone families — 8 zones confirmed ✅**: the six slot-`0x01` per-zone blocks (`0x90` enabled, `0xA0` multicolor, `0xB0` name, `0xC0` state, `0xD0` color, `0xE0` active) each span 8 zones. An install with more than four light zones exercises the upper half: its Touchscreen reports `0xC4`–`0xC7` (state, all `0x00`) and `0xD4`–`0xD7` (color, all `0x05`) for zones 5–8, and its Internet Gateway polls the upper-half siblings `0x96`, `0xA5` and `0xB5`–`0xB7` via [0x39](#0x39--register-read-request-) in the same cycle as the lower four. Responses to those enabled/multicolor/name polls have not themselves been captured yet, so only the state and color blocks are directly confirmed across zones 5–8.
 - **`0x90`–`0x97` (Light Zone Enabled)**: 1-byte flag reporting whether the light zone is configured in the controller: `0x01` = configured/present, `0x00` = not configured. Sits in the same slot-`0x01` per-zone register family as the other light-zone blocks (`0xA0` multicolor, `0xB0` name, `0xC0` state, `0xD0` color, `0xE0` active). Enabled zones are rebroadcast regularly; disabled zones are only broadcast at startup or after a configuration change. `0x90`–`0x93` overlaps the slot-`0x02` Channel State range — distinguished by slot as usual.
+- **Unknown-register patterns (unconfirmed)**: these are guesses from where the unknown registers sit, not from experiments.
+  - *8-wide blocks.* The documented per-channel and per-zone families are each 8 registers wide. Several unknowns fill 8-wide gaps next to them: `0x84`–`0x8B`/slot `0x02` sits between Channel Names (`0x7C`–`0x83`) and Channel State (`0x8C`–`0x93`), so it is probably another per-channel field. `0xE8`–`0xEF`/slot `0x01` is the upper half of the Light Zone Active block. Slot `0x0D` has two 8-wide blocks, `0xAC`–`0xB3` and `0xBC`–`0xC3`, `0x10` apart, always sent together in the ~8-minute dump.
+  - *Favourite blocks may be 16 wide.* A 1-byte `0x00` payload is also what an empty null-terminated string looks like. That fits `0x30` and `0x3B`–`0x3F`/slot `0x03` being unused label slots either side of the Favourite Labels (`0x31`–`0x38`). In the same way, the Gateway's poll of `0x2A`/slot `0x03` falls just past Favourite Enable (`0x21`–`0x28`).
+  - *Slot `0x00` holds heater settings.* Slot `0x00` holds the heater trios (`0xE6`–`0xEB`), so the other slot-`0x00` unknowns (`0x64`–`0x65`, `0xC8`–`0xCD`, `0xDC`–`0xDF`, `0xEC`) may be heater or system settings too. `0xC8` is the only one whose value has been seen to change (`0x01` → `0x03`). `0xCA` is the only 2-byte one (`00 06`), so it may be a 16-bit value.
 - **`0xF5`–`0xFC` (Channel Category) — confirmed ✅**: per-channel category code following the Channel Count register (`0xF4`): `0xF5` = Channel 1, `0xF6` = Channel 2, … `0xFC` = Channel 8. Values: `0x01` = Pool equipment, `0x02` = Light, `0x03` = Controlled Heater Power. Registers for unused channels are not broadcast (only `0xF5`–`0xFB` observed on a 7-channel system, so `0xFC` = Channel 8 is inferred from the range width of the other per-channel register blocks). This is a coarser classification than the per-channel [Channel Type](#0x0b--channel-status-) codes at `0x6C`–`0x73`.
 
 ### Examples by Register Type
