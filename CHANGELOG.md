@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
+- Message decoder: the pool state mutex take/stamp/snapshot/release boilerplate repeated across ~45 handlers is now two helpers, `state_lock()` and `state_unlock()`. A failure to take the mutex now always logs a warning naming the state being updated (about half the handlers previously failed silently)
 ### Fixed
 ### Removed
 ### Deprecated
