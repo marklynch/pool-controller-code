@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Fixed
 ### Removed
+- update_state_only and update_state_and_publish had no callers, which triggered -Wunused-function. Drop them along with the state_update_fn typedef.
 ### Deprecated
 ### Security
 
