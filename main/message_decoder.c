@@ -665,6 +665,42 @@ static inline bool temp_is_invalid(uint8_t t) {
 static int find_or_insert_seen_device_locked(pool_state_t *st, uint8_t hi, uint8_t lo);
 
 /**
+ * Take the pool state mutex.
+ *
+ * @param ctx Message decoder context
+ * @param what Short description of the state being touched, for the warning
+ *             logged when the mutex can't be taken (missing or timed out)
+ * @return true if the mutex is held; release it with state_unlock()
+ */
+static bool state_lock(message_decoder_context_t *ctx, const char *what)
+{
+    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        return true;
+    }
+    ESP_LOGW(TAG, "Failed to acquire mutex for %s", what);
+    return false;
+}
+
+/**
+ * Release the pool state mutex taken by state_lock().
+ *
+ * @param ctx Message decoder context
+ * @param touched Stamp last_update_ms before releasing
+ * @param snapshot_out If non-NULL, receives a copy of the state (taken after
+ *                     the stamp) for publishing once the mutex is released
+ */
+static void state_unlock(message_decoder_context_t *ctx, bool touched, pool_state_t *snapshot_out)
+{
+    if (touched) {
+        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    }
+    if (snapshot_out) {
+        *snapshot_out = *ctx->pool_state;
+    }
+    xSemaphoreGive(ctx->state_mutex);
+}
+
+/**
  * Handler: Water temperature reading (CMD 0x16 and CMD 0x31)
  *
  * Source-agnostic and dispatched on the CMD byte. The two CMDs carry the same
@@ -730,10 +766,7 @@ static bool handle_temp_reading(
 
     // Canonical path (CMD 0x16): write to the source device's temp slots and publish.
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for temp reading");
-        return true;
-    }
+    if (!state_lock(ctx, "temp reading")) return true;
 
     int dev_idx = find_or_insert_seen_device_locked(ctx->pool_state, data[1], data[2]);
     if (dev_idx >= 0) {
@@ -758,12 +791,10 @@ static bool handle_temp_reading(
         }
     }
 
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
     bool publish_temp2 = (dev_idx >= 0)
                       && !ctx->pool_state->seen_devices[dev_idx].single_sensor_source
                       && ctx->pool_state->seen_devices[dev_idx].temp2_valid;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (t1_invalid || dev_idx < 0) {
         return true;  // Invalid temp1 or registry full: skip publish.
@@ -811,10 +842,7 @@ static bool handle_temp_setpoint(
              heater_idx + 1, is_pool ? "Pool" : "Spa", temp_c);
 
     pool_state_t state_snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for temp setpoint");
-        return true;
-    }
+    if (!state_lock(ctx, "temp setpoint")) return true;
     pool_heater_t *heater = &ctx->pool_state->heaters[heater_idx];
     if (is_pool) {
         heater->pool_setpoint   = temp_c;
@@ -824,9 +852,7 @@ static bool handle_temp_setpoint(
         heater->spa_setpoint_f  = temp_c * 9 / 5 + 32;
     }
     heater->setpoint_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    state_snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &state_snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_heater_setpoints(&state_snapshot, heater_idx);
@@ -931,15 +957,10 @@ static bool handle_heater2_state(
     }
 
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for heater 2 state");
-        return true;
-    }
+    if (!state_lock(ctx, "heater 2 state")) return true;
     ctx->pool_state->heaters[1].on = (state != 0);
     ctx->pool_state->heaters[1].valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_heater(&snapshot, 1);
@@ -978,14 +999,12 @@ static bool handle_multicolor_light_type(
     bool type_changed = false;
     pool_state_t state_snapshot;
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "multicolor light type")) {
         type_changed = !ctx->pool_state->multicolor_light_type_valid ||
                        ctx->pool_state->multicolor_light_type != type;
         ctx->pool_state->multicolor_light_type = type;
         ctx->pool_state->multicolor_light_type_valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        state_snapshot = *ctx->pool_state;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, &state_snapshot);
     }
 
     // The type selects the color effect list on the HA light entities, so
@@ -1019,10 +1038,9 @@ static bool handle_channel_count(
 
     ESP_LOGI(TAG, "%s Channel count - %d", addr_info, count);
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "channel count")) {
         ctx->pool_state->num_channels = count;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, NULL);
     }
 
     return true;
@@ -1117,10 +1135,7 @@ static bool handle_gas_heater_status(
 
     // Update state and publish
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for heater");
-        return true;
-    }
+    if (!state_lock(ctx, "gas heater status")) return true;
     pool_heater_t* const heater_state = &(ctx->pool_state->heaters[0]);
     heater_state->valid = true;
     heater_state->on = heater_on;
@@ -1135,9 +1150,7 @@ static bool handle_gas_heater_status(
     heater_state->cooling_available = cooling_available;
     heater_state->status = heater_status;
 
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_heater(&snapshot, 0);
@@ -1198,16 +1211,11 @@ static bool handle_genus_heater_status(
     // Update state and publish. The Genus is Heater 1 on systems that carry
     // it (the Gateway drives it via register 0xE6, Heater 1 On/Off).
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for heater");
-        return true;
-    }
+    if (!state_lock(ctx, "Genus heater status")) return true;
     ctx->pool_state->heaters[0].on = heater_on;
     ctx->pool_state->heaters[0].valid = true;
     ctx->pool_state->heaters[0].device_reported = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_heater(&snapshot, 0);
@@ -1291,10 +1299,7 @@ static bool handle_heater(
 
     // Update state and publish
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for heater");
-        return true;
-    }
+    if (!state_lock(ctx, "heater state")) return true;
     bool heater_is_ours = !ctx->pool_state->heaters[0].device_reported;
     if (heater_is_ours) {
         ctx->pool_state->heaters[0].on = heater_on;
@@ -1302,9 +1307,7 @@ static bool handle_heater(
     }
     ctx->pool_state->service_mode = service_mode;
     ctx->pool_state->service_mode_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         if (heater_is_ours) {
@@ -1342,19 +1345,14 @@ static bool handle_temp_setting(
 
     // Update state and publish
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for temp setting");
-        return true;
-    }
+    if (!state_lock(ctx, "temp setting")) return true;
     pool_heater_t *heater1 = &ctx->pool_state->heaters[0];
     heater1->spa_setpoint    = spa_set_temp_c;
     heater1->pool_setpoint   = pool_set_temp_c;
     heater1->spa_setpoint_f  = spa_set_temp_f;
     heater1->pool_setpoint_f = pool_set_temp_f;
     heater1->setpoint_valid  = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_heater_setpoints(&snapshot, 0);
@@ -1386,15 +1384,10 @@ static bool handle_mode(
 
     // Update state and publish
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for mode");
-        return true;
-    }
+    if (!state_lock(ctx, "mode")) return true;
     ctx->pool_state->mode = mode;
     ctx->pool_state->mode_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_mode(&snapshot);
@@ -1428,15 +1421,10 @@ static bool handle_mode_set_cmd(
     }
 
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for mode set command");
-        return true;
-    }
+    if (!state_lock(ctx, "mode set command")) return true;
     ctx->pool_state->mode = mode;
     ctx->pool_state->mode_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_mode(&snapshot);
@@ -1466,10 +1454,9 @@ static bool handle_config(
              addr_info, scale_str, step_str, heater_active_str, mode_str);
 
     // Update state only (no MQTT publishing)
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "config")) {
         ctx->pool_state->temp_scale_fahrenheit = (config_byte & 0x10) != 0;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, NULL);
     }
 
     // Flag anomalous config bytes for protocol research (e.g. a service-mode
@@ -1514,13 +1501,12 @@ static bool handle_controller_time(
     ESP_LOGI(TAG, "%s Controller time - %02d:%02d %s", addr_info, hours, minutes, day_name);
 
     // Update state only (no MQTT publishing)
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "controller time")) {
         ctx->pool_state->controller_minutes = minutes;
         ctx->pool_state->controller_hours = hours;
         ctx->pool_state->controller_day_of_week = day_of_week;
         ctx->pool_state->controller_time_valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, NULL);
     }
 
     return true;
@@ -1575,8 +1561,7 @@ static bool handle_firmware_version(
 
     ESP_LOGI(TAG, "%s Firmware version - %d.%d", addr_info, major, minor);
 
-    if (!ctx->state_mutex) return true;
-    if (xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) return true;
+    if (!state_lock(ctx, "firmware version")) return true;
 
     switch (src) {
         case 0x0050:
@@ -1609,8 +1594,7 @@ static bool handle_firmware_version(
         ctx->pool_state->seen_devices[dev_idx].fw_version_minor = minor;
     }
 
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, NULL);
 
     return true;
 }
@@ -1773,7 +1757,7 @@ static bool handle_valve_state(
     bool changed = false;
     bool new_valve_configured = false;
     pool_state_t state_snapshot;
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "valve state")) {
         ctx->pool_state->num_valve_slots = slot_count;
         for (int i = 0; i < slot_count; i++) {
             bool configured = (payload[1 + i * 3] == 0x01);
@@ -1790,11 +1774,7 @@ static bool handle_valve_state(
                 changed = true;
             }
         }
-        if (changed) {
-            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        }
-        state_snapshot = *ctx->pool_state;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, changed, &state_snapshot);
     }
 
     // Wake the register requester to fetch the label for any newly seen valve
@@ -1828,11 +1808,10 @@ static bool handle_serial_number(
     ESP_LOGI(TAG, "%s Serial number - %" PRIu32 " (0x%08" PRIX32 ")", addr_info, serial, serial);
 
     // Update state only (no MQTT publishing)
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "serial number")) {
         ctx->pool_state->serial_number = serial;
         ctx->pool_state->serial_number_valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, NULL);
     }
 
     return true;
@@ -1862,12 +1841,11 @@ static bool handle_gateway_ip(
              addr_info, ip[0], ip[1], ip[2], ip[3], signal_level);
 
     // Update state only (no MQTT publishing)
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "gateway IP")) {
         memcpy(ctx->pool_state->gateway_ip, ip, 4);
         ctx->pool_state->gateway_signal_level = signal_level;
         ctx->pool_state->gateway_ip_valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, NULL);
     }
 
     return true;
@@ -1900,11 +1878,10 @@ static bool handle_gateway_comms(
     }
 
     // Update state only (no MQTT publishing)
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "gateway comms status")) {
         ctx->pool_state->gateway_comms_status = comms_status;
         ctx->pool_state->gateway_comms_status_valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, NULL);
     }
 
     return true;
@@ -2006,11 +1983,11 @@ static bool handle_channel_toggle_cmd(
 
     // Look up channel name from pool state
     char channel_name[32] = {0};
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "channel name lookup")) {
         if (channel_idx < MAX_CHANNELS && ctx->pool_state->channels[channel_idx].configured) {
             strncpy(channel_name, ctx->pool_state->channels[channel_idx].name, sizeof(channel_name) - 1);
         }
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, false, NULL);
     }
 
     if (channel_name[0] != '\0') {
@@ -2190,12 +2167,11 @@ static bool handle_favourite_control_cmd(
     pool_state_t state_snapshot;
     bool should_publish = false;
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "favourite control command")) {
         ctx->pool_state->active_favourite = favourite_value;
         ctx->pool_state->active_favourite_valid = true;
-        state_snapshot = *ctx->pool_state;
         should_publish = true;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, false, &state_snapshot);
     }
 
     if (should_publish) {
@@ -2238,15 +2214,10 @@ static bool handle_chlor_output_level(
     }
 
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for chlorine output level");
-        return true;
-    }
+    if (!state_lock(ctx, "chlorine output level")) return true;
     ctx->pool_state->chlor_output_level = level;
     ctx->pool_state->chlor_output_level_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_chlorinator(&snapshot);
@@ -2273,15 +2244,10 @@ static bool handle_chlor_ph_setpoint(
 
     // Update state and publish
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for pH setpoint");
-        return true;
-    }
+    if (!state_lock(ctx, "pH setpoint")) return true;
     ctx->pool_state->ph_setpoint = value;
     ctx->pool_state->ph_setpoint_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_chlorinator(&snapshot);
@@ -2308,15 +2274,10 @@ static bool handle_chlor_orp_setpoint(
 
     // Update state and publish
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for ORP setpoint");
-        return true;
-    }
+    if (!state_lock(ctx, "ORP setpoint")) return true;
     ctx->pool_state->orp_setpoint = value;
     ctx->pool_state->orp_setpoint_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_chlorinator(&snapshot);
@@ -2343,15 +2304,10 @@ static bool handle_chlor_ph_reading(
 
     // Update state and publish
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for pH reading");
-        return true;
-    }
+    if (!state_lock(ctx, "pH reading")) return true;
     ctx->pool_state->ph_reading = value;
     ctx->pool_state->ph_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_chlorinator(&snapshot);
@@ -2378,15 +2334,10 @@ static bool handle_chlor_orp_reading(
 
     // Update state and publish
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for ORP reading");
-        return true;
-    }
+    if (!state_lock(ctx, "ORP reading")) return true;
     ctx->pool_state->orp_reading = value;
     ctx->pool_state->orp_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_chlorinator(&snapshot);
@@ -2426,11 +2377,10 @@ static bool handle_chlor_status(
         record_undocumented(data, len);
     }
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "chlorinator mode")) {
         ctx->pool_state->chlor_mode = mode;
         ctx->pool_state->chlor_mode_valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, NULL);
     }
 
     return true;
@@ -2533,17 +2483,12 @@ static bool handle_light_config(
     pool_state_t state_snapshot;
     bool newly_configured = false;
 
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for light config");
-        return true;
-    }
+    if (!state_lock(ctx, "light config")) return true;
     newly_configured = !ctx->pool_state->lighting[zone_idx].configured;
     ctx->pool_state->lighting[zone_idx].zone       = zone_idx + 1;
     ctx->pool_state->lighting[zone_idx].configured = true;
     ctx->pool_state->lighting[zone_idx].active     = (light_on != 0);
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    state_snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &state_snapshot);
 
     if (newly_configured) {
         register_requester_notify();
@@ -2806,7 +2751,7 @@ static bool handle_timer(
 
     // Update state
     if (timer_num >= 1 && timer_num <= MAX_TIMERS) {
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        if (state_lock(ctx, "timer")) {
             int idx = timer_num - 1;
             ctx->pool_state->timers[idx].timer_num    = timer_num;
             ctx->pool_state->timers[idx].start_hour   = start_hour;
@@ -2815,8 +2760,7 @@ static bool handle_timer(
             ctx->pool_state->timers[idx].stop_minute  = stop_minute;
             ctx->pool_state->timers[idx].days         = days;
             ctx->pool_state->timers[idx].valid        = true;
-            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-            xSemaphoreGive(ctx->state_mutex);
+            state_unlock(ctx, true, NULL);
         }
     }
 
@@ -2848,11 +2792,10 @@ static bool handle_channel_type(
 
     if (ch_type != CHANNEL_TYPE_UNUSED) {
         // Update pool state
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        if (state_lock(ctx, "channel type")) {
             ctx->pool_state->channels[ch_num - 1].type = ch_type;
             ctx->pool_state->channels[ch_num - 1].configured = true;
-            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-            xSemaphoreGive(ctx->state_mutex);
+            state_unlock(ctx, true, NULL);
         }
     }
 
@@ -2888,13 +2831,12 @@ static bool handle_channel_name(
         ESP_LOGI(TAG, "%s Channel %d name - \"%s\"", addr_info, ch_num, name);
 
         // Update pool state
-        if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        if (state_lock(ctx, "channel name")) {
             if (ch_num <= MAX_CHANNELS) {
                 strncpy(ctx->pool_state->channels[ch_num - 1].name, name, sizeof(ctx->pool_state->channels[ch_num - 1].name) - 1);
                 ctx->pool_state->channels[ch_num - 1].id = ch_num;
-                ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             }
-            xSemaphoreGive(ctx->state_mutex);
+            state_unlock(ctx, ch_num <= MAX_CHANNELS, NULL);
         }
     }
 
@@ -2931,18 +2873,16 @@ static bool handle_channel_state(
 
     pool_state_t state_snapshot;
     bool changed = false;
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "channel state")) {
         channel_state_t *ch = &ctx->pool_state->channels[ch_num - 1];
         // State registers are broadcast for unused channels too (e.g. in the
         // periodic register dump) — only a known channel type marks it in use
         if (ch->type != CHANNEL_TYPE_UNUSED && (!ch->configured || ch->state != state)) {
             ch->state = state;
             ch->configured = true;
-            ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             changed = true;
         }
-        state_snapshot = *ctx->pool_state;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, changed, &state_snapshot);
     }
 
     if (changed && ctx->enable_mqtt) {
@@ -2994,11 +2934,10 @@ static bool handle_channel_category(
         record_undocumented(data, len);
     }
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "channel category")) {
         ctx->pool_state->channels[ch_num - 1].category = category;
         ctx->pool_state->channels[ch_num - 1].configured = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, NULL);
     }
 
     return true;
@@ -3041,15 +2980,13 @@ static bool handle_light_zone_enabled(
     bool should_publish = false;
     pool_state_t state_snapshot;
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "light zone enabled")) {
         newly_configured = enabled && !ctx->pool_state->lighting[zone_idx].configured;
         ctx->pool_state->lighting[zone_idx].zone       = zone_idx + 1;
         ctx->pool_state->lighting[zone_idx].configured = (enabled != 0);
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
         should_publish = (enabled != 0);
-        state_snapshot = *ctx->pool_state;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, &state_snapshot);
     }
 
     if (newly_configured) {
@@ -3096,18 +3033,16 @@ static bool handle_light_zone_state(
     uint8_t zone_num = 0;
     pool_state_t state_snapshot;
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "light zone state")) {
         ctx->pool_state->lighting[zone_idx].zone = zone_idx + 1;
         ctx->pool_state->lighting[zone_idx].state = state;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
         if (ctx->pool_state->lighting[zone_idx].configured) {
             should_publish = true;
             zone_num = ctx->pool_state->lighting[zone_idx].zone;
         }
 
-        state_snapshot = *ctx->pool_state;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, &state_snapshot);
     }
 
     if (should_publish && ctx->enable_mqtt) {
@@ -3150,17 +3085,15 @@ static bool handle_light_zone_color(
     uint8_t zone_num = 0;
     pool_state_t state_snapshot;
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "light zone color")) {
         ctx->pool_state->lighting[zone_idx].color = color;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
         if (ctx->pool_state->lighting[zone_idx].configured) {
             should_publish = true;
             zone_num = ctx->pool_state->lighting[zone_idx].zone;
         }
 
-        state_snapshot = *ctx->pool_state;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, &state_snapshot);
     }
 
     if (should_publish && ctx->enable_mqtt) {
@@ -3197,13 +3130,11 @@ static bool handle_light_zone_multicolor(
     pool_state_t state_snapshot;
     bool should_publish = false;
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "light zone multicolor")) {
         ctx->pool_state->lighting[zone_idx].multicolor = (capable != 0);
         ctx->pool_state->lighting[zone_idx].multicolor_valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        state_snapshot = *ctx->pool_state;
         should_publish = ctx->pool_state->lighting[zone_idx].configured;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, &state_snapshot);
     }
 
     if (ctx->enable_mqtt && should_publish) {
@@ -3245,13 +3176,11 @@ static bool handle_light_zone_name(
     pool_state_t state_snapshot;
     bool should_publish = false;
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "light zone name")) {
         ctx->pool_state->lighting[zone_idx].name_id = name_id;
         ctx->pool_state->lighting[zone_idx].name_valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        state_snapshot = *ctx->pool_state;
         should_publish = ctx->pool_state->lighting[zone_idx].configured;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, &state_snapshot);
     }
 
     if (ctx->enable_mqtt && should_publish) {
@@ -3294,17 +3223,15 @@ static bool handle_light_zone_active(
     uint8_t zone_num = 0;
     pool_state_t state_snapshot;
 
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "light zone active")) {
         ctx->pool_state->lighting[zone_idx].active = (active != 0);
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
         if (ctx->pool_state->lighting[zone_idx].configured) {
             should_publish = true;
             zone_num = ctx->pool_state->lighting[zone_idx].zone;
         }
 
-        state_snapshot = *ctx->pool_state;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, &state_snapshot);
     }
 
     if (should_publish && ctx->enable_mqtt) {
@@ -3339,10 +3266,7 @@ static bool handle_valve_label(
 
     // Update pool state
     pool_state_t state_snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for valve label");
-        return true;
-    }
+    if (!state_lock(ctx, "valve label")) return true;
     int slot = -1;
     for (int i = 0; i < MAX_REGISTER_LABELS; i++) {
         if (ctx->pool_state->register_labels[i].valid && ctx->pool_state->register_labels[i].reg_id == reg_id) {
@@ -3358,7 +3282,6 @@ static bool handle_valve_label(
         strncpy(ctx->pool_state->register_labels[slot].label, label, sizeof(ctx->pool_state->register_labels[slot].label) - 1);
         ctx->pool_state->register_labels[slot].label[sizeof(ctx->pool_state->register_labels[slot].label) - 1] = '\0';
         ctx->pool_state->register_labels[slot].valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     }
 
     // Also store directly in valve state for MQTT name-change detection
@@ -3369,8 +3292,7 @@ static bool handle_valve_label(
         ctx->pool_state->valves[valve_idx].name[sizeof(ctx->pool_state->valves[valve_idx].name) - 1] = '\0';
     }
 
-    state_snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, slot >= 0, &state_snapshot);
 
     // Re-publish valve discovery and state now that the name is known
     if (ctx->enable_mqtt && zone_num >= 1 && zone_num <= MAX_VALVE_SLOTS) {
@@ -3404,17 +3326,13 @@ static bool handle_favourite_label(
 
     ESP_LOGI(TAG, "%s Favourite %d label (0x%02X) - \"%s\"", addr_info, index, reg_id, label);
 
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for favourite label");
-        return true;
-    }
+    pool_state_t state_snapshot;
+    if (!state_lock(ctx, "favourite label")) return true;
     strncpy(ctx->pool_state->favourites[index].name, label,
             sizeof(ctx->pool_state->favourites[index].name) - 1);
     ctx->pool_state->favourites[index].name[sizeof(ctx->pool_state->favourites[index].name) - 1] = '\0';
     ctx->pool_state->favourites[index].name_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    pool_state_t state_snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &state_snapshot);
 
     mqtt_publish_favourite(&state_snapshot);
     return true;
@@ -3460,13 +3378,11 @@ static bool handle_active_favourite(
 
     pool_state_t state_snapshot;
     bool should_publish = false;
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "active favourite")) {
         ctx->pool_state->active_favourite = value;
         ctx->pool_state->active_favourite_valid = true;
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        state_snapshot = *ctx->pool_state;
         should_publish = true;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, &state_snapshot);
     }
 
     if (should_publish) {
@@ -3497,15 +3413,11 @@ static bool handle_favourite_enable(
         record_undocumented(data, len);
     }
 
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for favourite enable");
-        return true;
-    }
+    pool_state_t state_snapshot;
+    if (!state_lock(ctx, "favourite enable")) return true;
     ctx->pool_state->favourites[index].enabled = enabled;
     ctx->pool_state->favourites[index].enabled_valid = true;
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    pool_state_t state_snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &state_snapshot);
 
     mqtt_publish_favourite(&state_snapshot);
     return true;
@@ -3572,7 +3484,7 @@ static bool handle_channel_status(
 
     // Update pool state
     pool_state_t state_snapshot;
-    if (ctx->state_mutex && xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+    if (state_lock(ctx, "channel status")) {
         ctx->pool_state->num_channels = num_channels;
 
         while (ch_num <= num_channels) {
@@ -3630,7 +3542,6 @@ static bool handle_channel_status(
                         ctx->pool_state->pump_speed_valid = true;
                         ctx->pool_state->pump_power_watts = 0;
                         ctx->pool_state->pump_power_watts_valid = true;
-                        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
                         publish_pump = true;
                     }
                 }
@@ -3643,9 +3554,7 @@ static bool handle_channel_status(
             ch_num++;
         }
 
-        ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        state_snapshot = *ctx->pool_state;
-        xSemaphoreGive(ctx->state_mutex);
+        state_unlock(ctx, true, &state_snapshot);
     }
 
     // Learn whether the Filter channel drives a multi-speed pump. Done outside
@@ -3703,10 +3612,7 @@ static bool handle_pump_speed(
     }
 
     pool_state_t snapshot;
-    if (!ctx->state_mutex || xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire mutex for pump speed");
-        return true;
-    }
+    if (!state_lock(ctx, "pump speed")) return true;
     ctx->pool_state->pump_speed = speed_rpm;
     ctx->pool_state->pump_speed_valid = true;
     ctx->pool_state->pump_telemetry_seen = true;
@@ -3716,9 +3622,7 @@ static bool handle_pump_speed(
         ctx->pool_state->pump_power_watts_valid = true;
     }
 
-    ctx->pool_state->last_update_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    snapshot = *ctx->pool_state;
-    xSemaphoreGive(ctx->state_mutex);
+    state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_pump(&snapshot);
@@ -3881,35 +3785,31 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     snprintf(addr_info, sizeof(addr_info), "[%s -> %s]", src_name, dst_name);
 
     // Register source address in the seen-devices registry (skip broadcast)
-    if (ctx->state_mutex && !(src_hi == 0xFF && src_lo == 0xFF)) {
-        if (xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-            find_or_insert_seen_device_locked(ctx->pool_state, src_hi, src_lo);
-            xSemaphoreGive(ctx->state_mutex);
-        }
+    if (!(src_hi == 0xFF && src_lo == 0xFF) && state_lock(ctx, "seen device registry")) {
+        find_or_insert_seen_device_locked(ctx->pool_state, src_hi, src_lo);
+        state_unlock(ctx, false, NULL);
     }
 
     bool decoded = dispatch_message(data, len, payload, payload_len, addr_info, ctx);
 
     // Increment global and per-device counters.
     bool record_frame = false;
-    if (ctx->state_mutex) {
-        if (xSemaphoreTake(ctx->state_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
-            if (decoded) ctx->pool_state->messages_decoded_total++;
-            else {
-                ctx->pool_state->messages_unknown_total++;
-                record_frame = true;
-            }
-
-            // Per-device counters (skip broadcast)
-            if (!(src_hi == 0xFF && src_lo == 0xFF)) {
-                int idx = find_or_insert_seen_device_locked(ctx->pool_state, src_hi, src_lo);
-                if (idx >= 0) {
-                    if (decoded) ctx->pool_state->seen_devices[idx].decoded_count++;
-                    else         ctx->pool_state->seen_devices[idx].unknown_count++;
-                }
-            }
-            xSemaphoreGive(ctx->state_mutex);
+    if (state_lock(ctx, "message counters")) {
+        if (decoded) ctx->pool_state->messages_decoded_total++;
+        else {
+            ctx->pool_state->messages_unknown_total++;
+            record_frame = true;
         }
+
+        // Per-device counters (skip broadcast)
+        if (!(src_hi == 0xFF && src_lo == 0xFF)) {
+            int idx = find_or_insert_seen_device_locked(ctx->pool_state, src_hi, src_lo);
+            if (idx >= 0) {
+                if (decoded) ctx->pool_state->seen_devices[idx].decoded_count++;
+                else         ctx->pool_state->seen_devices[idx].unknown_count++;
+            }
+        }
+        state_unlock(ctx, false, NULL);
     }
     if (record_frame) unknown_buffer_record(data, len, UNKNOWN_REASON_UNHANDLED);
 
