@@ -227,7 +227,7 @@ Click any CMD in the first column to jump to the full section in [Commands](#com
 | [`0x37`](#0x37--internet-gateway-info-️)                       | Internet Gateway Info               | `0x00F0` → Broadcast                                                   | LEN distinguishes serial (`0x11`), network config (`0x15`), comms status (`0x0F`) variants  | Yes (3 handlers)        |
 | [`0x38`](#0x38--register-data-️)                               | Register Data (Response)            | `0x0050` Touchscreen → Broadcast                                       | Universal register system — sub-dispatched by register + slot (see [Appendix A](#appendix-a-register-dispatch-table)); dispatched on CMD byte alone | Yes (unified handler)   |
 | [`0x39`](#0x39--register-read-request-)                        | Register Read Request               | `0x00F0` Gateway, `0x0070` Genus Heater → Broadcast                    | Dispatched on CMD byte alone (source-agnostic)                                              | Yes (unified handler)   |
-| [`0x3A`](#0x3a--register-write--control-)                      | Register Write / Control            | `0x00F0`, `0x0084` → Broadcast                                         | Same `{register, slot, value}` payload from either source; dispatched on CMD byte alone. Used for Light Zone state (`0xC0`–`0xC7`/slot `0x01`) and color (`0xD0`–`0xD7`/slot `0x01`), Heater Control (`0xE6`/slot `0x00`), and Heater 2 pool setpoint (`0xEA`/slot `0x00`) | Yes (both)              |
+| [`0x3A`](#0x3a--register-write--control-)                      | Register Write / Control            | `0x00F0`, `0x0084` → Broadcast; `0x0050` → `0x00F0`                    | Same `{register, slot, value}` payload from every source; dispatched on CMD byte alone. Used for Light Zone state (`0xC0`–`0xC7`/slot `0x01`) and color (`0xD0`–`0xD7`/slot `0x01`), Heater Control (`0xE6`/slot `0x00`), Heater 2 pool setpoint (`0xEA`/slot `0x00`), and, from the Touchscreen, the Gateway's WiFi SSID/password (`0xD0`/`0xD1`, slot `0x07`) | Yes (both)              |
 | [`0x3B`](#0x3b--pump-speed-)                                   | Pump Speed Telemetry                | `0x00A0` Viron XT Pump → Broadcast                                      | 2-byte big-endian RPM value; broadcast every ~60 seconds                                    | Yes                     |
 | [`0x3C`](#0x3c--light-resync-command-️)                       | Light Resync Command               | `0x0050` → Broadcast                                                   | 1-byte zone index; resyncs the zone's light; observed during light config and color operations; dispatched on CMD byte alone | Yes (log-only)          |
 | [`0x41`](#0x41--valve-actuator-command-️)                  | Valve Actuator Command              | `0x0050` → `0x007F` Internal Control                                   | `{position, group}`; drives a motorised actuator group to one of its two endpoints on a mode change | Yes (log-only)          |
@@ -1943,12 +1943,13 @@ Sent to poll a single controller register; the Touchscreen (`0x0050`) replies wi
 
 ### 0x3A — Register Write / Control ✅
 
-Writes a single controller register. This is the write counterpart to the [0x39 Register Read Request](#0x39--register-read-request-) and is used to actuate equipment that exposes its state via a register (light zones, heater, heater setpoints). Sent by the Internet Gateway (`0x00F0`) for remote control, and by the Viron Chlorinator (`0x0084`), whose own app issues the same writes (light zone state and color observed). The payload is identical from either source; the target equipment is identified by `(register, slot)` exactly as in the `0x38` data broadcasts.
+Writes a single controller register. This is the write counterpart to the [0x39 Register Read Request](#0x39--register-read-request-) and is used to actuate equipment that exposes its state via a register (light zones, heater, heater setpoints). Sent by the Internet Gateway (`0x00F0`) for remote control, and by the Viron Chlorinator (`0x0084`), whose own app issues the same writes (light zone state and color observed). The payload is identical from either source; the target equipment is identified by `(register, slot)` exactly as in the `0x38` data broadcasts. The Touchscreen (`0x0050`) also uses `0x3A`, addressed directly to the Internet Gateway, to push the Gateway's WiFi credentials (slot `0x07`, see below).
 
 **Patterns:**
 
 - Gateway: `02 00 F0 FF FF 80 00 3A 0F B9`
 - Viron Chlorinator: `02 00 84 FF FF 80 00 3A 0F 4D`
+- Touchscreen → Gateway (WiFi config): `02 00 50 00 F0 80 00 3A` — length and header checksum vary with the string length
 
 | Register   | Slot   | Purpose                | Sub-section                                                 |
 |------------|--------|------------------------|-------------------------------------------------------------|
@@ -1958,13 +1959,15 @@ Writes a single controller register. This is the write counterpart to the [0x39 
 | `0xE9`     | `0x00` | Heater 2 on/off        | [Appendix A](#appendix-a-register-dispatch-table) Heater 2 trio note |
 | `0xEA`     | `0x00` | Heater 2 pool setpoint | [Appendix A](#appendix-a-register-dispatch-table) Heater 2 trio note |
 | `0xEB`     | `0x00` | Heater 2 spa setpoint  | [Appendix A](#appendix-a-register-dispatch-table) Heater 2 trio note |
+| `0xD0`     | `0x07` | Internet Gateway WiFi SSID     | [Internet Gateway WiFi Credentials](#internet-gateway-wifi-credentials-register-0xd00xd1-slot-0x07-) |
+| `0xD1`     | `0x07` | Internet Gateway WiFi password | [Internet Gateway WiFi Credentials](#internet-gateway-wifi-credentials-register-0xd00xd1-slot-0x07-) |
 
 **Data Fields:**
 
 - Byte 10: Register ID
 - Byte 11: Slot
-- Byte 12: Value to write
-- Byte 13: Data checksum (sum of bytes 10–12)
+- Byte 12: Value to write (1 byte for equipment registers; a variable-length string for the slot `0x07` WiFi credentials)
+- Last data byte: Data checksum (sum of bytes 10 through the end of the value)
 
 **Notes:**
 
@@ -2095,6 +2098,46 @@ Turns Heater 1 on or off (register `0xE6`). Heater 2 uses the analogous register
 
 - Unlike light zones (slot `0x01`), the heater uses slot `0x00`.
 - The controller will respond with an updated heater state via the Connect 8/10 Controller variant of [0x12 — Device Status](#0x12--device-status-️).
+
+#### Internet Gateway WiFi Credentials (Register `0xD0`–`0xD1`, Slot `0x07`) ✅
+
+When the Gateway's WiFi network is changed from the Touchscreen, the Touchscreen (`0x0050`) sends two `0x3A` writes addressed directly to the Internet Gateway (`0x00F0`) rather than broadcast: first the SSID (`0xD0`), then the password (`0xD1`).
+
+| Register | Slot   | Value                 |
+|----------|--------|-----------------------|
+| `0xD0`   | `0x07` | WiFi SSID (ASCII)     |
+| `0xD1`   | `0x07` | WiFi password (ASCII) |
+
+**Example — Set SSID to `ssidname`:**
+
+```
+02 00 50 00 F0 80 00 3A 16 12 D0 07 73 73 69 64 6E 61 6D 65 2B 03
+                     ^^ CMD (0x3A)
+                        ^^ Length (0x16 = 14 + 8 string bytes)
+                              ^^ Register ID (0xD0 = SSID)
+                                 ^^ Slot (0x07)
+                                    ^^^^^^^^^^^^^^^^^^^^^^^ "ssidname"
+                                                            ^^ Checksum (sum of bytes 10–19)
+```
+
+**Example — Set password to `ssidpwd`:**
+
+```
+02 00 50 00 F0 80 00 3A 15 11 D1 07 73 73 69 64 70 77 64 D6 03
+                     ^^ CMD (0x3A)
+                        ^^ Length (0x15 = 14 + 7 string bytes)
+                              ^^ Register ID (0xD1 = password)
+                                 ^^ Slot (0x07)
+                                    ^^^^^^^^^^^^^^^^^^^^ "ssidpwd"
+                                                         ^^ Checksum (sum of bytes 10–18)
+```
+
+**Notes:**
+
+- The string fills the whole value field. It has no length prefix and no null terminator, so its length comes from the message length byte (length − 14). Every byte up to the data checksum belongs to the string, including any trailing digits.
+- The password is sent in plaintext on the bus.
+- No `0x38` rebroadcast of either register was seen.
+- Not yet decoded in code: `handle_register_write_request` logs these as an unknown register, with the first string byte shown as the value.
 
 ---
 
@@ -2288,6 +2331,7 @@ The register ID and slot together determine the message meaning. The slot distin
 | `0xC0`–`0xC3` ⚠️| `0x0D` | Unknown               | Only `0xFF` observed. Repeats ~every 8 minutes   |
 | `0xC8` ⚠️      | `0x00` | Unknown                | Only `0x01` observed. Repeats ~every 8 minutes   |
 | `0xD0`–`0xD1`  | `0x02` | Valve Labels           | Null-terminated ASCII string                     |
+| `0xD0`–`0xD1`  | `0x07` | Internet Gateway WiFi SSID / password | Unterminated ASCII string, written by the Touchscreen to the Gateway via CMD `0x3A` — see [Internet Gateway WiFi Credentials](#internet-gateway-wifi-credentials-register-0xd00xd1-slot-0x07-) |
 | `0xD0`–`0xD7`  | `0x01` | Light Zone Color       | 1-byte color code — writable via CMD `0x3A`; one shared code space across light models, each model exposing a subset selected by register `0xF0` — full table in [Light Zone Color Control](#light-zone-color-control-register-0xd00xd7-slot-0x01-️) |
 | `0xE0`–`0xE7`  | `0x01` | Light Zone Active      | 1-byte binary (`0x00`=Inactive, `0x01`=Active)   |
 | `0xF4`         | `0x01` | Channel Count          | 1-byte total number of channels in the system    |
