@@ -93,7 +93,6 @@ static bool match_pattern(const uint8_t *data, int data_len, const char *pattern
 static const char *MSG_TYPE_TEMP_SETTING =          "02 00 50 FF FF 80 00 17 10 F7";
 static const char *MSG_TYPE_CONFIG =                "02 00 50 FF FF 80 00 26 0E 04";
 static const char *MSG_TYPE_MODE =                  "02 00 50 FF FF 80 00 14 0D F1";
-static const char *MSG_TYPE_MODE_SET_CMD =          "02 00 50 FF FF 80 00 15 0D F2";
 static const char *MSG_TYPE_CHANNELS =              "02 00 50 00 6F 80 00 0D 0D 5B";
 static const char *MSG_TYPE_CHANNEL_STATUS =        "02 00 50 FF FF 80 00 0B 25 00";
 static const char *MSG_TYPE_LIGHT_CONFIG =          "02 00 50 FF FF 80 00 06 0E E4";
@@ -141,10 +140,11 @@ static const char *MSG_TYPE_ICI_HEATER_TEMP_SETTING = "02 00 74 FF FF 80 00 17 0
 static const char *MSG_TYPE_CHLOR_STATUS_A = "02 00 90 FF FF 80 00 12 0D 2F";
 static const char *MSG_TYPE_CHLOR_STATUS_B = "02 00 84 FF FF 80 00 12 0D 23";
 
-// Chlorinator pump control (CMD 0x0F) is dispatched source-agnostically in
+// Set channel state (CMD 0x0F) is dispatched source-agnostically in
 // dispatch_message() — see PROTOCOL.md command `0x0F`. The Touchscreen does
 // not validate the source address at all: 0x0084 (Viron) and 0x0081 (VX 11S
-// v3) are confirmed sources on the bus, and this firmware originates it
+// v3) are confirmed chlorinator sources on the bus, the Connect 8/10 (0x0062)
+// sends it for its Cleaning button, and this firmware originates it
 // unconditionally as its own 0xAC1D.
 
 // VX 11S v3 Chlorinator CMD 0x12 status broadcast (meaning unknown; payload always 0x00 in captures)
@@ -261,7 +261,7 @@ static const cmd_name_entry_t CMD_NAME_TABLE[] = {
     {0x0A, "Firmware Version"},
     {0x0B, "Channel Status"},
     {0x0D, "Active Channels Bitmask"},
-    {0x0F, "Chlorinator Set Pump Mode"},
+    {0x0F, "Set Channel State"},
     {0x10, "Channel Toggle Cmd"},
     {0x12, "Status/Other"},
     {0x14, "Mode"},
@@ -275,6 +275,7 @@ static const cmd_name_entry_t CMD_NAME_TABLE[] = {
     {0x25, "Valve Sync"},
     {0x26, "Configuration"},
     {0x27, "Valve State"},
+    {0x29, "Valve Button"},
     {0x2A, "Favourite Cmd"},
     {0x2B, "Controller Heartbeat"},
     {0x2C, "Solar Status"},
@@ -1397,11 +1398,15 @@ static bool handle_mode(
 }
 
 /**
- * Handler: Mode set command (CMD 0x15)
- * Pattern: "02 00 50 FF FF 80 00 15 0D F2"
- * Switches the operating mode; same encoding as the 0x14 status (0x00 = Spa,
- * 0x01 = Pool). Mode is updated optimistically — the touchscreen broadcasts
- * a 0x14 status to confirm.
+ * Handler: Mode set command (CMD 0x15) — source-agnostic.
+ * Two forms, told apart by payload length:
+ *  - 1 byte (Touchscreen 0x0050): sets the mode; same encoding as the 0x14
+ *    status (0x00 = Spa, 0x01 = Pool). Mode is updated optimistically — the
+ *    touchscreen broadcasts a 0x14 status to confirm.
+ *  - No payload (discovery packet, from the Connect 8/10 0x0062 Pool/Spa
+ *    button and the ICI Gas Heater 0x0074): toggles the mode. Log-only, as
+ *    the frame names no target — the new mode comes from the 0x14 that
+ *    follows.
  */
 static bool handle_mode_set_cmd(
     const uint8_t *data, int len,
@@ -1409,7 +1414,10 @@ static bool handle_mode_set_cmd(
     const char *addr_info,
     message_decoder_context_t *ctx)
 {
-    if (payload_len < 1) return false;
+    if (payload_len == 0) {
+        ESP_LOGI(TAG, "%s Mode toggle command", addr_info);
+        return true;
+    }
 
     uint8_t mode = payload[0];
     const char *mode_str = (mode == MODE_SPA) ? "Spa" : (mode == MODE_POOL) ? "Pool" : "Unknown";
@@ -2004,6 +2012,47 @@ static bool handle_channel_toggle_cmd(
 }
 
 /**
+ * Handler: Valve button (CMD 0x29) — source-agnostic.
+ * Broadcast by the Connect 8/10 controller (0x0062) when a Valve button is
+ * pressed on the controller itself; 1-byte 0-based valve index. Log-only —
+ * the Touchscreen answers with a Valve State broadcast (CMD 0x27), which is
+ * what updates state.
+ */
+static bool handle_valve_button(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 1) return false;
+
+    uint8_t valve_idx = payload[0];
+    uint8_t valve_num = valve_idx + 1;  // Convert to 1-based
+
+    // Look up valve label from pool state
+    char valve_name[32] = {0};
+    if (state_lock(ctx, "valve name lookup")) {
+        if (valve_idx < MAX_VALVE_SLOTS && ctx->pool_state->valves[valve_idx].configured) {
+            strncpy(valve_name, ctx->pool_state->valves[valve_idx].name, sizeof(valve_name) - 1);
+        }
+        state_unlock(ctx, false, NULL);
+    }
+
+    if (valve_name[0] != '\0') {
+        ESP_LOGI(TAG, "%s Valve button - Valve %d (%s)", addr_info, valve_num, valve_name);
+    } else {
+        ESP_LOGI(TAG, "%s Valve button - Valve %d", addr_info, valve_num);
+    }
+
+    // Only Valve 1 and Valve 2 (the two 0x27 slots) have been seen.
+    if (valve_idx >= MAX_VALVE_SLOTS) {
+        record_undocumented(data, len);
+    }
+
+    return true;
+}
+
+/**
  * Handler: Temperature setpoint command — Pool/Spa target (CMD 0x19, slot 0x01/0x02) — source-agnostic.
  * Used by the Internet Gateway (0x00F0) to set the Pool or Spa setpoint; the
  * temperature is repeated at payload[1] and payload[2]. The controller
@@ -2424,7 +2473,7 @@ static bool handle_vx11s_status(
 }
 
 /**
- * Handler: Chlorinator pump control unicast (CMD 0x0F) — source-agnostic.
+ * Handler: Set channel state unicast (CMD 0x0F) — source-agnostic.
  * Log-only — no pool_state update since the Touchscreen applies the state and
  * broadcasts it back via CMD 0x0B, which is what we record.
  *
@@ -2434,10 +2483,11 @@ static bool handle_vx11s_status(
  * command `0x0F`.
  *
  * The Touchscreen does not validate the source address at all: 0x0084
- * (Viron) and 0x0081 (VX 11S v3) are confirmed sources on the bus, and this
+ * (Viron) and 0x0081 (VX 11S v3) are confirmed chlorinator sources on the
+ * bus, the Connect 8/10 (0x0062) sends it for its Cleaning button, and this
  * firmware originates it as its own 0xAC1D.
  */
-static bool handle_chlor_set_pump_mode(
+static bool handle_set_channel_state(
     const uint8_t *data, int len,
     const uint8_t *payload, int payload_len,
     const char *addr_info,
@@ -2449,13 +2499,13 @@ static bool handle_chlor_set_pump_mode(
     uint8_t state = payload[1];
 
     if (channel_num < 1 || channel_num > MAX_CHANNELS || state >= CHANNEL_STATE_COUNT) {
-        ESP_LOGW(TAG, "%s Chlorinator pump control - UNEXPECTED VALUE: channel=0x%02X state=0x%02X (expected channel 0x01-0x%02X, state 0x00-0x%02X)",
+        ESP_LOGW(TAG, "%s Set channel state - UNEXPECTED VALUE: channel=0x%02X state=0x%02X (expected channel 0x01-0x%02X, state 0x00-0x%02X)",
                  addr_info, channel_num, state, MAX_CHANNELS, CHANNEL_STATE_COUNT - 1);
         record_undocumented(data, len);
         return true;
     }
 
-    ESP_LOGI(TAG, "%s Chlorinator pump control - channel %u -> %s (0x%02X)",
+    ESP_LOGI(TAG, "%s Set channel state - channel %u -> %s (0x%02X)",
              addr_info, channel_num, CHANNEL_STATE_NAMES[state], state);
 
     return true;
@@ -3852,12 +3902,26 @@ static bool dispatch_message(
         return handle_channel_toggle_cmd(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    // Chlorinator pump control (CMD 0x0F) — source-agnostic. The Touchscreen
-    // does not validate the source address at all; 0x0084 (Viron) and 0x0081
-    // (VX 11S v3) are confirmed sources on the bus, and this firmware
+    // Set channel state (CMD 0x0F) — source-agnostic. The Touchscreen does
+    // not validate the source address at all; 0x0084 (Viron) and 0x0081
+    // (VX 11S v3) are confirmed chlorinator sources on the bus, the Connect
+    // 8/10 (0x0062) sends it for its Cleaning button, and this firmware
     // originates it as its own 0xAC1D.
     if (cmd == 0x0F) {
-        return handle_chlor_set_pump_mode(data, len, payload, payload_len, addr_info, ctx);
+        return handle_set_channel_state(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    // Mode set command (CMD 0x15) — source-agnostic. 1-byte payload from the
+    // Touchscreen (0x0050) sets the mode; the no-payload discovery packet from
+    // the Connect 8/10 (0x0062) and the ICI Gas Heater (0x0074) toggles it.
+    if (cmd == 0x15) {
+        return handle_mode_set_cmd(data, len, payload, payload_len, addr_info, ctx);
+    }
+
+    // Valve button (CMD 0x29) — source-agnostic; only the Connect 8/10
+    // (0x0062) observed sending it so far
+    if (cmd == 0x29) {
+        return handle_valve_button(data, len, payload, payload_len, addr_info, ctx);
     }
 
     // Water temperature reading — CMD 0x16 (canonical) and CMD 0x31 (alt/
@@ -4018,10 +4082,6 @@ static bool dispatch_message(
     // Operational messages
     if (match_pattern(data, len, MSG_TYPE_MODE)) {
         return handle_mode(data, len, payload, payload_len, addr_info, ctx);
-    }
-
-    if (match_pattern(data, len, MSG_TYPE_MODE_SET_CMD)) {
-        return handle_mode_set_cmd(data, len, payload, payload_len, addr_info, ctx);
     }
 
     if (match_pattern(data, len, MSG_TYPE_CHANNELS)) {

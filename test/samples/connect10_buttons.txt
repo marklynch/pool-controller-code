@@ -1,0 +1,44 @@
+# Connect 8/10 (0x0062) front-panel buttons.
+#
+# Excerpted from round14 captures (manual_switching.txt and
+# toggle_pool_spa_then_service_mode_then_cleaning.txt), pressing each button
+# on the controller and noting the time.
+#
+#   0x10  Channel Toggle   channel button (1-byte 0-based channel index)
+#   0x29  Valve Button     Valve 1 button (1-byte 0-based valve index)
+#   0x0F  Set Channel State  Cleaning button: on = ch2 On; off = ch2 Auto + ch1 Auto
+#   0x15  Mode toggle      Pool/Spa button (no payload, CTRL 00 00)
+#   0x2A  Favourite Cmd    Auto button sends All Auto (0x81)
+# ======================================================================
+
+I (03:00:56.755) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 10 0D FF 00 00 03
+I (03:00:56.755) MSG_DECODER: [Connect 8/10 -> Broadcast] Channel toggle command - Channel 1 (index 0x00, name unknown)
+02 00 62 FF FF 80 00 10 0D FF 00 00 03
+
+I (03:30:47.843) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 29 0D 18 00 00 03
+I (03:30:47.843) MSG_DECODER: [Connect 8/10 -> Broadcast] Valve button - Valve 1
+02 00 62 FF FF 80 00 29 0D 18 00 00 03
+
+I (03:02:57.635) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 29 0D 18 01 01 03
+I (03:02:57.635) MSG_DECODER: [Connect 8/10 -> Broadcast] Valve button - Valve 2
+02 00 62 FF FF 80 00 29 0D 18 01 01 03
+
+I (03:30:50.273) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 0F 0E 51 02 02 04 03
+I (03:30:50.273) MSG_DECODER: [Connect 8/10 -> Touch Screen] Set channel state - channel 2 -> On (0x02)
+02 00 62 00 50 80 00 0F 0E 51 02 02 04 03
+
+I (03:31:11.825) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 0F 0E 51 02 01 03 03
+I (03:31:11.825) MSG_DECODER: [Connect 8/10 -> Touch Screen] Set channel state - channel 2 -> Auto (0x01)
+02 00 62 00 50 80 00 0F 0E 51 02 01 03 03
+
+I (03:31:11.893) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 0F 0E 51 01 01 02 03
+I (03:31:11.893) MSG_DECODER: [Connect 8/10 -> Touch Screen] Set channel state - channel 1 -> Auto (0x01)
+02 00 62 00 50 80 00 0F 0E 51 01 01 02 03
+
+I (03:28:15.703) MSG_DECODER: RX MSG: 02 00 62 FF FF 00 00 15 0B 82 03
+I (03:28:15.703) MSG_DECODER: [Connect 8/10 -> Broadcast] Mode toggle command
+02 00 62 FF FF 00 00 15 0B 82 03
+
+I (03:33:31.783) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2A 0D 6B 81 81 03
+I (03:33:31.783) MSG_DECODER: [Connect 8/10 -> Touch Screen] Favourite control command - All Auto (0x81)
+02 00 62 00 50 80 00 2A 0D 6B 81 81 03

@@ -16,7 +16,7 @@ This document describes the proprietary serial protocol used by the Connect 10 p
   - [0x0A — Firmware Version ✅](#0x0a--firmware-version-)
   - [0x0B — Channel Status ✅](#0x0b--channel-status-)
   - [0x0D — Active Channels Bitmask ✅](#0x0d--active-channels-bitmask-)
-  - [0x0F — Chlorinator Pump Control ✅](#0x0f--chlorinator-pump-control-)
+  - [0x0F — Set Channel State ✅](#0x0f--set-channel-state-)
   - [0x10 — Channel Toggle Command ✅](#0x10--channel-toggle-command-)
   - [0x12 — Device Status ⚠️](#0x12--device-status-️)
   - [0x14 — Mode (Spa/Pool) ✅](#0x14--mode-spapool-)
@@ -33,6 +33,7 @@ This document describes the proprietary serial protocol used by the Connect 10 p
   - [0x26 — Configuration ⚠️](#0x26--configuration-️)
   - [0x27 — Valve State Broadcast ✅](#0x27--valve-state-broadcast-)
   - [0x28 — Valve Control Command ✅](#0x28--valve-control-command-)
+  - [0x29 — Valve Button ⚠️](#0x29--valve-button-️)
   - [0x2A — Favourite Control Command ✅](#0x2a--favourite-control-command-)
   - [0x2B — Unknown ⚠️](#0x2b--unknown-️)
   - [0x2C — Solar Status Broadcast ⚠️](#0x2c--solar-status-broadcast-️)
@@ -202,11 +203,11 @@ Click any CMD in the first column to jump to the full section in [Commands](#com
 | [`0x0A`](#0x0a--firmware-version-)                             | Firmware Version                    | `0x0050`, `0x0062`, `0x0070`, `0x0081`, `0x0084`, `0x00A0`, `0x00F0` → Broadcast | Same `{major, minor}` payload across all sources; dispatched on CMD byte alone              | Yes (unified handler)   |
 | [`0x0B`](#0x0b--channel-status-)                               | Channel Status                      | `0x0050` → Broadcast                                                   |                                                                                             | Yes                     |
 | [`0x0D`](#0x0d--active-channels-bitmask-)                      | Active Channels Bitmask             | `0x0050` → `0x006F` Internal Channels                                  | Unicast                                                                                     | Yes                     |
-| [`0x0F`](#0x0f--chlorinator-pump-control-)                | Chlorinator Pump Control   | `0x0081`, `0x0084`, `0xAC1D` → `0x0050`                                                            | `{channel, state}` — sets a **pump-driven** channel to a named state directly (Off/Auto/On/Low/Med/High)     | Yes                     |
+| [`0x0F`](#0x0f--set-channel-state-)                | Set Channel State          | `0x0081`, `0x0084`, `0x0062`, `0xAC1D` → `0x0050`                                                  | `{channel, state}` — sets a **pump-driven** channel to a named state directly (Off/Auto/On/Low/Med/High). The Connect 8/10 sends it for its Cleaning button | Yes                     |
 | [`0x10`](#0x10--channel-toggle-command-)                      | Channel Toggle Command              | `0x00F0`, `0x0062` → Broadcast                                         | Same 1-byte channel-index payload from either source; dispatched on CMD byte alone         | Yes (unified handler)   |
 | [`0x12`](#0x12--device-status-️)                               | Device Status                       | `0x0050`, `0x0062`, `0x0070`, `0x0074`, `0x0081`, `0x0084`, `0x0090`, `0x00F0` → Broadcast | Payload layout differs per source                                                           | Yes (per-source)        |
 | [`0x14`](#0x14--mode-spapool-)                                 | Mode (Spa/Pool)                     | `0x0050` → Broadcast                                                   |                                                                                             | Yes                     |
-| [`0x15`](#0x15--mode-set-command-spapool-)                     | Mode Set Command (Spa/Pool)         | `0x0050` → Broadcast                                                   | Sets the mode; same encoding as the `0x14` status (Spa=`0x00`, Pool=`0x01`)                 | Yes                     |
+| [`0x15`](#0x15--mode-set-command-spapool-)                     | Mode Set Command (Spa/Pool)         | `0x0050`, `0x0062`, `0x0074` → Broadcast                               | Two forms by LEN: `0x0D` sets the mode, same encoding as the `0x14` status (Spa=`0x00`, Pool=`0x01`); `0x0B` (no payload, CTRL `00 00`, from the Connect 8/10 Pool/Spa button and the ICI Gas Heater) toggles it; dispatched on CMD byte alone | Yes (both forms)        |
 | [`0x16`](#0x16--water-temperature-reading-)                    | Water Temperature Reading           | `0x0062` (LEN `0x0E`), `0x0070`/`0x0072`/`0x0074` (LEN `0x0D`) → Broadcast | Payload length differs by source: LEN `0x0E` = `{temp1, temp2}`, LEN `0x0D` = `{temp1}`; dispatched on CMD byte alone | Yes (unified handler)   |
 | [`0x17`](#0x17--temperature-settings-)                         | Temperature Settings                | `0x0050` (LEN `0x10`), `0x0070`/`0x0074` (LEN `0x0E`) → Broadcast | Source-dependent payload layout                                                             | Yes (per-source)        |
 | [`0x18`](#0x18--pump-speed-command-)                           | Pump Speed Command                  | `0x0050`, `0x0084` → `0x00A0` Viron XT Pump                            | Set pump speed (low/med/high)                                                       | Yes                     |
@@ -219,7 +220,8 @@ Click any CMD in the first column to jump to the full section in [Commands](#com
 | [`0x26`](#0x26--configuration-️)                               | Configuration                       | `0x0050` → Broadcast                                                   |                                                                                             | Yes                     |
 | [`0x27`](#0x27--valve-state-broadcast-)                        | Valve State Broadcast               | `0x0050` → Broadcast                                                   | Two LEN variants: `0x0D` (short) and `0x13` (full)                                          | Yes (both variants)     |
 | [`0x28`](#0x28--valve-control-command-)                        | Valve Control Command               | `0x00F0` Gateway → Broadcast                                           |                                                                                             | **No (doc only)**       |
-| [`0x2A`](#0x2a--favourite-control-command-)                    | Favourite Control Command           | `0x00F0` Gateway, `0x0062` Connect 8/10 → `0x0050` Touchscreen         | Unicast; dispatched on CMD byte alone (source-agnostic)                                     | Yes (unified handler)   |
+| [`0x29`](#0x29--valve-button-️)                                | Valve Button                        | `0x0062` Connect 8/10 → Broadcast                                      | 1-byte 0-based valve index; sent when a Valve button is pressed on the controller; the Touchscreen answers with `0x27`; dispatched on CMD byte alone | Yes (log-only)          |
+| [`0x2A`](#0x2a--favourite-control-command-)                    | Favourite Control Command           | `0x00F0` Gateway, `0x0062` Connect 8/10 → `0x0050` Touchscreen         | Unicast; dispatched on CMD byte alone (source-agnostic). The Connect 8/10 sends All Auto (`0x81`) for its Auto button | Yes (unified handler)   |
 | [`0x2B`](#0x2b--unknown-️)                                     | Unknown (heartbeat)                 | `0x0062` Connect 8/10 → `0x0050` Touchscreen                          | Unicast ~60 s; payload `[02 00]` observed; meaning unknown. Handler flags any deviation      | Yes (log-only + flag)   |
 | [`0x2C`](#0x2c--solar-status-broadcast-️)                      | Solar Status Broadcast              | `0x0050` Touchscreen → Broadcast                                       | Byte 11 = solar mode (Off/Auto/On); byte 10 bit 5 = Winter/Summer; byte 15 = temperature differential °C; dispatched on CMD byte alone | Yes (log-only)          |
 | [`0x2D`](#0x2d--solar-setpoint-broadcast-)                     | Solar Setpoint Broadcast            | `0x0050` Touchscreen → Broadcast                                       | Fired when the solar setpoint is changed; 1-byte °C value; dispatched on CMD byte alone     | Yes (log-only)          |
@@ -457,9 +459,9 @@ Reports which channels are currently active. Unicast from the Touchscreen (`0x00
 
 ---
 
-### 0x0F — Chlorinator Pump Control ✅
+### 0x0F — Set Channel State ✅
 
-Unicast to the Touchscreen (`0x0050`) setting a channel directly to a named state. In the wild, this is a Chlorinator device (`0x0084` or `0x0081`) asking for pump flow. Our firmware uses its own device address (`0xAC1D` Pool Controller ESP32), regardless of what chlorinator (if any) has been seen on the bus.
+Unicast to the Touchscreen (`0x0050`) setting a channel directly to a named state. In the wild, this is a Chlorinator device (`0x0084` or `0x0081`) asking for pump flow, or the Connect 8/10 (`0x0062`) when its Cleaning button is pressed (see [Connect 8/10 Cleaning button](#connect-810-cleaning-button-)). Our firmware uses its own device address (`0xAC1D` Pool Controller ESP32), regardless of what chlorinator (if any) has been seen on the bus.
 
 Byte 10 selects the channel and byte 11 the state. It is not limited to the filter channel — it can drive the simple on/off Cleaning channel too. 
 
@@ -484,7 +486,7 @@ The Touchscreen does not check that the source address belongs to a chlorinator 
 
 **Notes:**
 
-- Decoding is handled in `message_decoder.c` (`handle_chlor_set_pump_mode`), dispatched on the CMD byte alone since any address may source it. Log-only: the Touchscreen applies the state and broadcasts it back via [0x0B](#0x0b--channel-status-), which is what updates state.
+- Decoding is handled in `message_decoder.c` (`handle_set_channel_state`), dispatched on the CMD byte alone since any address may source it. Log-only: the Touchscreen applies the state and broadcasts it back via [0x0B](#0x0b--channel-status-), which is what updates state.
 - Our firmware uses its own ID `0xAC1D` when sending this `0x0F` command - it does not track or impersonate a chlorinator address seen on the bus.
 - **Byte 11 uses the same code space as the [0x0B](#0x0b--channel-status-) Channel States**, extended speeds included. The only message that sets a channel's state *persistently* — [0x10](#0x10--channel-toggle-command-) only cycles it, and [0x18](#0x18--pump-speed-command-) sets the pump's RPM directly but gets overwritten by the Touchscreen's next broadcast.
 
@@ -543,6 +545,21 @@ But the same frame shape aimed at other channels is **silently ignored** — acc
 
 The two that are tested to work are the install's two **pump-driven** circuits; the two that don't are a light and a blower. So byte 10 is a 1-based index into channels, but the Touchscreen only honours the command for channels whose type drives a pump. 
 
+#### Connect 8/10 Cleaning button ✅
+
+The Connect 8/10 has a dedicated Cleaning button, and pressing it sends `0x0F` to the Touchscreen rather than the [0x10](#0x10--channel-toggle-command-) toggle its channel buttons use. Each press alternates between two fixed requests:
+
+```
+02 00 62 00 50 80 00 0F 0E 51 02 02 04 03    1st press: channel 2 (Cleaning) → On
+
+02 00 62 00 50 80 00 0F 0E 51 02 01 03 03    2nd press: channel 2 (Cleaning) → Auto
+02 00 62 00 50 80 00 0F 0E 51 01 01 02 03      ~70 ms later: channel 1 (Filter) → Auto
+```
+
+- **Switching cleaning on names only the Cleaning channel.** With Filter already On, and again with Filter Off, the controller sent just `02 02`. When Filter was Off, the Touchscreen turned it on by itself in the same `0x0B` update that turned Cleaning on. Cleaning then reported Inactive for ~9 s before going Active.
+- **Switching cleaning off always resets both channels to Auto**, whatever state Filter was in before cleaning started. A Filter set to On by hand before the button was pressed came back as Auto.
+- Seen in two captures on the same install, where Cleaning is channel 2. Whether the controller sends a fixed channel 2, or looks up the install's Cleaning channel, is unknown.
+
 
 ---
 
@@ -568,6 +585,8 @@ Cycles a channel through its available states (Auto → On → Off, or On → Of
 | Blower                     | 0x05  | `02 00 F0 FF FF 80 00 10 0D 8D 05 05 03`  | On, Off       |
 
 **Examples (controller-sourced, channel buttons pressed on the Connect 10):**
+
+Captured for indices `0x00`–`0x05` by pressing each channel button on the Connect 10 in turn, in both Pool and Spa mode. Every press was followed within ~150 ms by the Touchscreen's [0x0D](#0x0d--active-channels-bitmask-) and [0x0B](#0x0b--channel-status-) updates, the same as for a Gateway toggle.
 
 | Channel   | Index | Command                                   |
 | --------- | ----- | ----------------------------------------- |
@@ -621,7 +640,7 @@ Index `N` is channel `N+1` (`0x00`–`0x07` = Channels 1–8). Channel functions
   | 5      | `0x05`    | High Speed (Active)                     | `0x02` High              |
   | 6      | `0x00`    | Off (Inactive)                          | none sent                |
 
-- To reach a state **without** cycling use [0x0F](#0x0f--chlorinator-pump-control-), which names the target state directly.
+- To reach a state **without** cycling use [0x0F](#0x0f--set-channel-state-), which names the target state directly.
 
 ---
 
@@ -682,6 +701,12 @@ Data fields:
   - Bit 1: Service mode (`0` = Off, `1` = On)
   - Bits 2–7: Unknown (always `0` observed)
 - Byte 12: Unknown (maybe bitmask or interlock?) — always `0x08` observed
+
+Timing and the controller's mode buttons:
+
+- **Sent on change, otherwise about every 60 s.** Pressing Service on the Connect 8/10 produced a frame with bit 1 set in the same second.
+- **Auto clears service mode.** Pressing Auto sent a frame with bit 1 cleared, then ~70 ms later the [0x2A](#0x2a--favourite-control-command-) All Auto (`0x81`) command to the Touchscreen.
+- **Timeout mode reports as service mode.** Timeout is service mode with a time limit: the controller stays in service mode for 1 hour, then returns to Auto by itself. Pressing Timeout while already in service mode produced no frame from `0x0062`, and the next periodic frame still carried just bit 1 (`00 02 08`). Nothing in this frame tells Timeout apart from Service.
 
 `handle_heater` monitors this frame for deviations from the observed constants: byte 10 ≠ `0x00`, byte 11 with any bit above bit 1 set, or byte 12 ≠ `0x08` is recorded as an "undocumented" entry on the Unknown Messages page.
 
@@ -890,7 +915,16 @@ Reports the current operating mode — pool or spa. Broadcast by the Touchscreen
 
 ### 0x15 — Mode Set Command (Spa/Pool) ✅
 
-Command that switches the current operating mode between Pool and Spa. Sent from the Touchscreen address (`0x0050`) as a broadcast — an external sender must impersonate the Touchscreen. Discovered and confirmed by injection testing: sending these frames switches the mode.
+Command that switches the current operating mode between Pool and Spa. Comes in two forms, told apart by LEN:
+
+| Form | Source | LEN | CTRL | Payload | Effect |
+|------|--------|-----|------|---------|--------|
+| Set    | `0x0050` Touchscreen  | `0x0D` | `80 00` | 1 byte: target mode | Sets the named mode |
+| Toggle | `0x0062` Connect 8/10, `0x0074` ICI Gas Heater | `0x0B` | `00 00` | none | Switches to the other mode |
+
+#### Set form ✅
+
+Sent from the Touchscreen address (`0x0050`) as a broadcast — an external sender must impersonate the Touchscreen. Discovered and confirmed by injection testing: sending these frames switches the mode.
 
 **Pattern:** `02 00 50 FF FF 80 00 15 0D F2`
 
@@ -912,8 +946,37 @@ Command that switches the current operating mode between Pool and Spa. Sent from
 
 - Uses the **same** mode encoding as the [0x14 Mode status](#0x14--mode-spapool-) (Spa=`0x00`, Pool=`0x01`) — unlike [0x2A Favourite Control](#0x2a--favourite-control-command-), whose Pool/Spa values are inverted relative to `0x14`
 - Alternative to switching mode via the Pool/Spa built-in favourites of [0x2A](#0x2a--favourite-control-command-): `0x2A` impersonates the Gateway and unicasts to the Touchscreen, whereas this command impersonates the Touchscreen and broadcasts
-- Not yet observed in normal bus traffic — whether any device emits it on its own is unknown
+- The set form is not seen in normal bus traffic; only the [toggle form](#toggle-form-) is
 - The Touchscreen reacts to the injected frame with a fixed ~1 s burst that confirms the mode, republishes channel and valve state, drives the valve actuators via [0x41](#0x41--valve-actuator-command-️), and re-sends the pump speed — see [Mode-change sequence](#mode-change-sequence)
+
+#### Toggle form ✅
+
+Broadcast by the Connect 8/10 (`0x0062`) when its Pool/Spa button is pressed, and by the ICI Gas Heater (`0x0074`) to put the system in the mode it needs. It carries no payload, so it cannot name a mode: the same bytes switched Pool → Spa and Spa → Pool.
+
+**Patterns:**
+
+- Connect 8/10: `02 00 62 FF FF 00 00 15 0B 82`
+- ICI Gas Heater: `02 00 74 FF FF 00 00 15 0B 94`
+
+**Example:**
+
+```
+02 00 62 FF FF 00 00 15 0B 82 03
+               ^^^^^ CTRL 00 00, not the usual 80 00
+                     ^^ CMD 0x15
+                        ^^ LEN 0x0B — no data bytes
+```
+
+**Data Fields:**
+
+- None. As with [0x1A](#0x1a--pre-valve-command-frame-️), LEN `0x0B` leaves no room for payload or data checksum: the frame is header (bytes 0–8), header checksum (byte 9), END (byte 10).
+
+**Notes:**
+
+- The Touchscreen confirms the switch with a [0x14 Mode](#0x14--mode-spapool-) broadcast 120–190 ms later, followed by [0x27](#0x27--valve-state-broadcast-) about 600 ms after the toggle.
+- One toggle that arrived just after a bus collision (a corrupted Gateway frame) was ignored; the mode only changed on the next press, 4 s later. Nothing acknowledges the toggle except the `0x14` that follows.
+- On the capturing install, the pool/spa valves took 25–35 s to move after each toggle, with no [0x1A](#0x1a--pre-valve-command-frame-️)/[0x41](#0x41--valve-actuator-command-️) frames on the bus. The Connect 8/10 drives those actuators directly.
+- Handled by `handle_mode_set_cmd`, dispatched on the CMD byte alone. It logs the toggle without updating `pool_state`: the new mode comes from the `0x14` that follows.
 
 ---
 
@@ -1100,7 +1163,7 @@ It is only sent to control the pump when its channel is active/on - this command
 - The Touchscreen sends this command to implement its timers
 - The speed value mirrors the driving channel's extended state in the [Channel Status (0x0B)](#0x0b--channel-status-) broadcast: channel states `0x03`/`0x04`/`0x05` (On at Low/Med/High) map to speed `0x00`/`0x01`/`0x02`, with the `0x18` unicast following the channel broadcast within ~130 ms.
 - The `0x0090` RolaChem chlorinator variant has not been observed using this command; the `0x18` traffic appears specific to the `0x0084` Viron / `0x00A0` Viron XT Pump two-module chlorinator topology.
-- **Sets the pump's speed directly, but not the Touchscreen's state.** Injecting `0x18` works immediately on the pump, but then the Touchscreen overwrites it on its next cycle. Use [0x0F](#0x0f--chlorinator-pump-control-) to set the channel state the Touchscreen uses to send `0x18` *from*.
+- **Sets the pump's speed directly, but not the Touchscreen's state.** Injecting `0x18` works immediately on the pump, but then the Touchscreen overwrites it on its next cycle. Use [0x0F](#0x0f--set-channel-state-) to set the channel state the Touchscreen uses to send `0x18` *from*.
 
 ---
 
@@ -1478,6 +1541,35 @@ Sent by the Internet Gateway (`0x00F0`) to set a valve to a specific state direc
 
 ---
 
+### 0x29 — Valve Button ⚠️
+
+Broadcast by the Connect 8/10 (`0x0062`) when one of its Valve buttons is pressed. It is the valve counterpart of the [0x10 Channel Toggle](#0x10--channel-toggle-command-) the controller sends for its channel buttons: one byte naming which valve.
+
+**Pattern:** `02 00 62 FF FF 80 00 29 0D 18`
+
+**Examples:**
+
+```
+02 00 62 FF FF 80 00 29 0D 18 00 00 03   Valve 1 button
+02 00 62 FF FF 80 00 29 0D 18 01 01 03   Valve 2 button
+                              ^^ Valve index (0-based)
+                                 ^^ Data checksum (equals the valve index)
+```
+
+**Data Fields:**
+
+- Byte 10: Valve index, 0-based (`0x00` = Valve 1, `0x01` = Valve 2) — same indexing as [0x28](#0x28--valve-control-command-)
+- Byte 11: Data checksum (equals byte 10 since it is the only data byte)
+
+**Notes:**
+
+- The Touchscreen answers every press within ~200 ms with a [0x27 Valve State Broadcast](#0x27--valve-state-broadcast-).
+- Captured only on an install with no valve zones configured on the Touchscreen, so every answer was the short-form `0x27` and the press changed nothing. Valve 1 is confirmed by a single recorded press. Valve 2 is inferred from an earlier capture that also had `0x01` presses.
+- **Unknown:** what the press does when a valve zone is configured. By analogy with `0x10` it probably cycles the valve's state, which would show as a changed long-form `0x27`.
+- Handled by `handle_valve_button`, dispatched on the CMD byte alone. Log-only: valve state comes from the `0x27` that follows.
+
+---
+
 ### 0x2A — Favourite Control Command ✅
 
 Command sent to the Touchscreen (`0x0050`) to activate a favourite — the Pool and Spa built-ins, a stored user Favourite preset, All Off, or All Auto. A single data byte encodes the favourite value. Sent by the Internet Gateway (`0x00F0`) for remote activations, and by the Connect 8/10 Controller (`0x0062`) for activations made at the controller itself.
@@ -1496,8 +1588,10 @@ Command sent to the Touchscreen (`0x0050`) to activate a favourite — the Pool 
                               ^^ Favourite byte
                                  ^^ Data checksum (equals the favourite byte)
 
-02 00 62 00 50 80 00 2A 0D 6B 81 81 03   All Auto mode, triggered at the controller
+02 00 62 00 50 80 00 2A 0D 6B 81 81 03   All Auto mode, Auto button on the controller
 ```
+
+The Connect 8/10's Auto button sends All Auto (`0x81`). When the controller is in service mode, it first broadcasts a [0x12](#0x12--device-status-️) with the service bit cleared, then sends this command ~70 ms later.
 
 **Data Fields:**
 

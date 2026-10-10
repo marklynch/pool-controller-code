@@ -9,5 +9,5 @@ I (07:54:46.287) MSG_DECODER: [ICI Gas Heater -> Broadcast] Gas heater raw statu
 02 00 74 FF FF 80 00 12 10 16 00 02 00 00 02 03 
 
 I (07:54:46.285) MSG_DECODER: RX MSG: 02 00 74 FF FF 00 00 15 0B 94 03
-W (07:54:46.287) MSG_DECODER: Unhandled [ICI Gas Heater -> Broadcast] CMD=0x15 (Mode Set Cmd) LEN=11 payload=[]
+I (07:54:46.287) MSG_DECODER: [ICI Gas Heater -> Broadcast] Mode toggle command
 02 00 74 FF FF 00 00 15 0B 94 03

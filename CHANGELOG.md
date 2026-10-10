@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Decoded the Touchscreen's Internet Gateway WiFi credential writes (CMD `0x3A`, registers `0xD0`/`0xD1`, slot `0x07`), which are sent when the Gateway's network is changed. The log shows the new SSID and a masked password (length only); previously these were logged as an unknown register write
+- Decoded the Connect 8/10's front-panel buttons. The Valve button (CMD `0x29`, which carries the valve index) and the payload-less Pool/Spa toggle (CMD `0x15`, also sent by the ICI Gas Heater) are now logged instead of reported as unhandled. PROTOCOL.md now documents what the Cleaning, Service, Timeout and Auto buttons send
 ### Changed
+- CMD `0x0F` is now logged and documented as "Set channel state" instead of "Chlorinator pump control", as the Connect 8/10's Cleaning button sends it too
 - Message decoder: the pool state mutex take/stamp/snapshot/release boilerplate repeated across ~45 handlers is now two helpers, `state_lock()` and `state_unlock()`. A failure to take the mutex now always logs a warning naming the state being updated (about half the handlers previously failed silently)
 ### Fixed
 ### Removed
