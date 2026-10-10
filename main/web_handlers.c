@@ -9,6 +9,8 @@
 #include "device_serial.h"
 #include "firmware_update.h"
 #include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_app_desc.h"
@@ -17,6 +19,7 @@
 #include "nvs_flash.h"
 #include <string.h>
 #include <inttypes.h>
+#include <stdatomic.h>
 #include "cJSON.h"
 #include <stdlib.h>
 #include <time.h>
@@ -368,13 +371,15 @@ const char WIFI_PAGE[] =
         "s.textContent=msg;"
         "s.setAttribute('data-variant',isError?'danger':'success');"
         "s.removeAttribute('hidden');}"
+    // /scan answers 202 while the scan is still running; poll until the list arrives.
     "function scanWiFi(){"
         "const s=document.getElementById('ssid');"
         "s.innerHTML='<option value=\"\">Scanning...</option>';"
         "document.getElementById('retryScan').setAttribute('hidden','');"
-        "fetch('/scan')"
-        ".then(r=>{if(!r.ok)throw new Error('Scan failed ('+r.status+')');return r.json();})"
-        ".then(data=>{"
+        "const poll=()=>fetch('/scan')"
+        ".then(r=>{if(r.status===202)return new Promise(ok=>setTimeout(ok," STR(WIFI_SCAN_POLL_MS) ")).then(poll);"
+        "if(!r.ok)throw new Error('Scan failed ('+r.status+')');return r.json();});"
+        "poll().then(data=>{"
             "s.innerHTML='';"
             "data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
             "o.text=n.ssid+' ('+n.rssi+' dBm)'+(n.current?' \\u2713':'');"
@@ -417,7 +422,21 @@ static esp_err_t wifi_get_handler(httpd_req_t *req)
 // WiFi Scan Handler
 // ======================================================
 
-static esp_err_t scan_get_handler(httpd_req_t *req)
+// The scan runs in the background so it never holds the (single-threaded)
+// HTTP server for its several seconds: GET /scan starts one and answers 202,
+// the page polls, and once WIFI_EVENT_SCAN_DONE has fired the next poll gets
+// the results.
+enum { SCAN_IDLE, SCAN_RUNNING, SCAN_DONE };
+static atomic_int s_scan_state = SCAN_IDLE;
+static int64_t s_scan_started_us;   // Only touched by the HTTP server task
+
+static void scan_done_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    int expected = SCAN_RUNNING;
+    atomic_compare_exchange_strong(&s_scan_state, &expected, SCAN_DONE);
+}
+
+static esp_err_t scan_send_results(httpd_req_t *req)
 {
     // Load current WiFi SSID from the driver to mark it in scan results.
     char current_ssid[33] = {0};
@@ -426,23 +445,6 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         strncpy(current_ssid, (char *)wifi_cfg.sta.ssid, sizeof(current_ssid) - 1);
     }
     ESP_LOGI(TAG, "Current SSID: '%s'", current_ssid);
-
-    wifi_scan_config_t scan_config = {
-        .ssid = NULL,
-        .bssid = NULL,
-        .channel = 0,
-        .show_hidden = false,
-        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
-        .scan_time.active.min = WIFI_SCAN_TIME_MIN_MS,
-        .scan_time.active.max = WIFI_SCAN_TIME_MAX_MS,
-    };
-
-    esp_err_t scan_err = esp_wifi_scan_start(&scan_config, true);
-    if (scan_err != ESP_OK) {
-        ESP_LOGW(TAG, "WiFi scan failed: %s", esp_err_to_name(scan_err));
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "WiFi scan failed");
-        return ESP_FAIL;
-    }
 
     uint16_t ap_count = 0;
     esp_wifi_scan_get_ap_num(&ap_count);
@@ -539,6 +541,51 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     cJSON_free(json_resp);
     free(ap_list);
     free(unique_aps);
+    return ESP_OK;
+}
+
+static esp_err_t scan_get_handler(httpd_req_t *req)
+{
+    int state = atomic_load(&s_scan_state);
+    bool stale = (esp_timer_get_time() - s_scan_started_us) > (int64_t)WIFI_SCAN_MAX_AGE_MS * 1000;
+
+    if (state == SCAN_DONE && !stale) {
+        atomic_store(&s_scan_state, SCAN_IDLE);
+        return scan_send_results(req);
+    }
+
+    // A scan left over from an abandoned page, or one whose done event never
+    // came, is discarded and redone.
+    if (state == SCAN_IDLE || stale) {
+        if (state == SCAN_DONE) {
+            esp_wifi_clear_ap_list();
+        }
+
+        wifi_scan_config_t scan_config = {
+            .ssid = NULL,
+            .bssid = NULL,
+            .channel = 0,
+            .show_hidden = false,
+            .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+            .scan_time.active.min = WIFI_SCAN_TIME_MIN_MS,
+            .scan_time.active.max = WIFI_SCAN_TIME_MAX_MS,
+        };
+
+        // Marked running before starting, so a fast done event isn't missed.
+        atomic_store(&s_scan_state, SCAN_RUNNING);
+        s_scan_started_us = esp_timer_get_time();
+        esp_err_t scan_err = esp_wifi_scan_start(&scan_config, false);
+        if (scan_err != ESP_OK) {
+            atomic_store(&s_scan_state, SCAN_IDLE);
+            ESP_LOGW(TAG, "WiFi scan failed: %s", esp_err_to_name(scan_err));
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "WiFi scan failed");
+            return ESP_FAIL;
+        }
+    }
+
+    httpd_resp_set_status(req, "202 Accepted");
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
+    httpd_resp_sendstr(req, "{\"scanning\":true}");
     return ESP_OK;
 }
 
@@ -2399,6 +2446,8 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &static_files_uri);   // /static/* wildcard
     httpd_register_uri_handler(server, &favicon_redirect_uri); // /favicon.ico -> /static/favicon.ico
     httpd_register_uri_handler(server, &robots_txt_uri);
+
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE, scan_done_event_handler, NULL);
 
     // Register custom 404 error handler for captive portal
     // This catches all unmatched URIs and redirects to the provisioning page

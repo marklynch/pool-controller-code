@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking (HTTP):** the `/status` JSON resync counter `resyncs.bad_control` is renamed `resyncs.bad_frame_type`, and the matching Unknown Messages reason is now "bad frame type". Bytes 5–6 of a frame are now called the frame type (`80 00` = frame with data, `00 00` = frame with no data) rather than control bytes or "discovery" packets, which better matches what they do
 - Message decoder: the pool state mutex take/stamp/snapshot/release boilerplate repeated across ~45 handlers is now two helpers, `state_lock()` and `state_unlock()`. A failure to take the mutex now always logs a warning naming the state being updated (about half the handlers previously failed silently)
 ### Fixed
+- Fixed the WiFi config page hanging while it loads the network list. The scan blocked the web server for several seconds, holding up the page's own styles and scripts and every other request. The scan now runs in the background and the page polls `/scan` (which answers 202 until the results are ready)
 ### Removed
 - update_state_only and update_state_and_publish had no callers, which triggered -Wunused-function. Drop them along with the state_update_fn typedef.
 ### Deprecated

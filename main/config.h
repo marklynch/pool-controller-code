@@ -75,6 +75,8 @@
 #define WIFI_SCAN_TIME_MIN_MS          100     // Minimum scan time per channel
 #define WIFI_SCAN_TIME_MAX_MS          300     // Maximum scan time per channel
 #define WIFI_SCAN_MAX_RESULTS          20      // Maximum number of scan results to return
+#define WIFI_SCAN_POLL_MS              1000    // Web UI interval between /scan polls while a scan runs
+#define WIFI_SCAN_MAX_AGE_MS           30000   // A scan started longer ago than this is stale (or stuck) and is redone
 
 // ======================================================
 // Pool Hardware Limits
