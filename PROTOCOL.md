@@ -2137,7 +2137,7 @@ When the Gateway's WiFi network is changed from the Touchscreen, the Touchscreen
 - The string fills the whole value field. It has no length prefix and no null terminator, so its length comes from the message length byte (length − 14). Every byte up to the data checksum belongs to the string, including any trailing digits.
 - The password is sent in plaintext on the bus.
 - No `0x38` rebroadcast of either register was seen.
-- Not yet decoded in code: `handle_register_write_request` logs these as an unknown register, with the first string byte shown as the value.
+- Decoded in code by `handle_register_write_request`, which logs the SSID and a masked password showing only its length (log-only, no `pool_state` update).
 
 ---
 

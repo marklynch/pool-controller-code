@@ -2066,7 +2066,9 @@ static bool handle_temp_set_cmd_heaters(
  * Handler: Register write command (CMD 0x3A) — source-agnostic.
  * Sent by the Internet Gateway (0x00F0) for remote control and by the
  * Viron Chlorinator (0x0084), whose own app issues the same writes; same
- * {reg_id, slot, value} payload from either source.
+ * {reg_id, slot, value} payload from either source. The Touchscreen (0x0050)
+ * also uses it, addressed to the Gateway, to set the Gateway's WiFi SSID and
+ * password (slot 0x07, string value).
  */
 static bool handle_register_write_request(
     const uint8_t *data, int len,
@@ -2116,6 +2118,15 @@ static bool handle_register_write_request(
         // Heater 2 spa setpoint write (REG_ID_HEATER2_SPA_SETPOINT, slot 0x00) — see PROTOCOL.md 0x3A
         ESP_LOGI(TAG, "%s Heater 2 spa setpoint command -> %d°C",
                  addr_info, state);
+    } else if (reg_id == REG_ID_GATEWAY_WIFI_SSID && slot == 0x07) {
+        // Internet Gateway WiFi SSID (slot 0x07), sent Touchscreen -> Gateway.
+        // The value is an unterminated ASCII string filling the rest of the payload.
+        ESP_LOGI(TAG, "%s Internet Gateway WiFi SSID -> \"%.*s\"",
+                 addr_info, payload_len - 2, (const char *)&payload[2]);
+    } else if (reg_id == REG_ID_GATEWAY_WIFI_PASSWORD && slot == 0x07) {
+        // Internet Gateway WiFi password (slot 0x07) — masked, only its length is logged
+        ESP_LOGI(TAG, "%s Internet Gateway WiFi password -> ******** (%d chars)",
+                 addr_info, payload_len - 2);
     } else {
         // Recognised 0x3A frame, but this (register, slot) write target is not
         // in the documented set (PROTOCOL.md 0x3A).

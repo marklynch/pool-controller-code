@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Decoded the Touchscreen's Internet Gateway WiFi credential writes (CMD `0x3A`, registers `0xD0`/`0xD1`, slot `0x07`), which are sent when the Gateway's network is changed. The log shows the new SSID and a masked password (length only); previously these were logged as an unknown register write
 ### Changed
 - Message decoder: the pool state mutex take/stamp/snapshot/release boilerplate repeated across ~45 handlers is now two helpers, `state_lock()` and `state_unlock()`. A failure to take the mutex now always logs a warning naming the state being updated (about half the handlers previously failed silently)
 ### Fixed
