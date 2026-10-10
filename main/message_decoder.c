@@ -1403,7 +1403,7 @@ static bool handle_mode(
  *  - 1 byte (Touchscreen 0x0050): sets the mode; same encoding as the 0x14
  *    status (0x00 = Spa, 0x01 = Pool). Mode is updated optimistically — the
  *    touchscreen broadcasts a 0x14 status to confirm.
- *  - No payload (discovery packet, from the Connect 8/10 0x0062 Pool/Spa
+ *  - No payload (frame with no data, from the Connect 8/10 0x0062 Pool/Spa
  *    button and the ICI Gas Heater 0x0074): toggles the mode. Log-only, as
  *    the frame names no target — the new mode comes from the 0x14 that
  *    follows.
@@ -3799,19 +3799,19 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         return false;
     }
 
-    // Need enough bytes to read the control bytes (5-6) before classifying.
+    // Need enough bytes to read the frame type bytes (5-6) before classifying.
     if (len < 7) {
         unknown_buffer_record(data, len, UNKNOWN_REASON_BAD_FRAMING);
         return false;
     }
 
-    // Classify by control bytes (5-6) to get the right minimum length: a
-    // discovery packet is exactly the 10-byte header + end byte (11), with no
-    // data-checksum byte; a data packet always carries that extra byte too,
+    // Classify by frame type bytes (5-6) to get the right minimum length: a
+    // frame with no data is exactly the 10-byte header + end byte (11), with no
+    // data-checksum byte; a frame with data always carries that extra byte too,
     // so its minimum is 12. See framing.c for the same classification at the
     // reassembly layer.
     framing_packet_type_t packet_type = framing_classify_packet(data[5], data[6]);
-    int min_len = (packet_type == FRAMING_PACKET_DISCOVERY) ? 11 : 12;
+    int min_len = (packet_type == FRAME_NO_DATA) ? 11 : 12;
     if (len < min_len || data[0] != 0x02 || data[len - 1] != 0x03) {
         unknown_buffer_record(data, len, UNKNOWN_REASON_BAD_FRAMING);
         return false;
@@ -3830,10 +3830,10 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
     free(full_msg);
 
     // Extract data payload section (bytes 10 to len-3)
-    // Message format: [START=0][SRC=1-2][DST=3-4][CTRL=5-6][CMD=7][LEN=8][HDR_CHK=9][DATA=10...][DATA_CHK=len-2][END=len-1]
-    // A discovery packet has no data and no data-checksum byte.
+    // Message format: [START=0][SRC=1-2][DST=3-4][FRAME_TYPE=5-6][CMD=7][LEN=8][HDR_CHK=9][DATA=10...][DATA_CHK=len-2][END=len-1]
+    // A frame with no data has no payload and no data-checksum byte.
     const uint8_t *payload = &data[10];
-    int payload_len = (packet_type == FRAMING_PACKET_DISCOVERY) ? 0 : len - 12;  // len - (10 header bytes + data checksum + end)
+    int payload_len = (packet_type == FRAME_NO_DATA) ? 0 : len - 12;  // len - (10 header bytes + data checksum + end)
 
     // Extract source and destination addresses
     uint8_t src_hi = data[1], src_lo = data[2];
@@ -3912,7 +3912,7 @@ static bool dispatch_message(
     }
 
     // Mode set command (CMD 0x15) — source-agnostic. 1-byte payload from the
-    // Touchscreen (0x0050) sets the mode; the no-payload discovery packet from
+    // Touchscreen (0x0050) sets the mode; the frame with no data from
     // the Connect 8/10 (0x0062) and the ICI Gas Heater (0x0074) toggles it.
     if (cmd == 0x15) {
         return handle_mode_set_cmd(data, len, payload, payload_len, addr_info, ctx);

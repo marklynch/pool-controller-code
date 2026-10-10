@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Decoded the Connect 8/10's front-panel buttons. The Valve button (CMD `0x29`, which carries the valve index) and the payload-less Pool/Spa toggle (CMD `0x15`, also sent by the ICI Gas Heater) are now logged instead of reported as unhandled. PROTOCOL.md now documents what the Cleaning, Service, Timeout and Auto buttons send
 ### Changed
 - CMD `0x0F` is now logged and documented as "Set channel state" instead of "Chlorinator pump control", as the Connect 8/10's Cleaning button sends it too
+- **Breaking (HTTP):** the `/status` JSON resync counter `resyncs.bad_control` is renamed `resyncs.bad_frame_type`, and the matching Unknown Messages reason is now "bad frame type". Bytes 5–6 of a frame are now called the frame type (`80 00` = frame with data, `00 00` = frame with no data) rather than control bytes or "discovery" packets, which better matches what they do
 - Message decoder: the pool state mutex take/stamp/snapshot/release boilerplate repeated across ~45 handlers is now two helpers, `state_lock()` and `state_unlock()`. A failure to take the mutex now always logs a warning naming the state being updated (about half the handlers previously failed silently)
 ### Fixed
 ### Removed

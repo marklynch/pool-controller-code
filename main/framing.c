@@ -43,15 +43,15 @@ static void framing_resync_one_byte(framing_buffer_t *fb, uint8_t *out_frame, in
     fb->len--;
 }
 
-framing_packet_type_t framing_classify_packet(uint8_t ctrl_hi, uint8_t ctrl_lo)
+framing_packet_type_t framing_classify_packet(uint8_t frame_type_hi, uint8_t frame_type_lo)
 {
-    if (ctrl_hi == 0x80 && ctrl_lo == 0x00) {
-        return FRAMING_PACKET_DATA;
+    if (frame_type_hi == 0x80 && frame_type_lo == 0x00) {
+        return FRAME_WITH_DATA;
     }
-    if (ctrl_hi == 0x00 && ctrl_lo == 0x00) {
-        return FRAMING_PACKET_DISCOVERY;
+    if (frame_type_hi == 0x00 && frame_type_lo == 0x00) {
+        return FRAME_NO_DATA;
     }
-    return FRAMING_PACKET_INVALID;
+    return FRAME_INVALID;
 }
 
 void framing_init(framing_buffer_t *fb)
@@ -80,7 +80,7 @@ framing_result_t framing_process_next(framing_buffer_t *fb, uint8_t *out_frame, 
         return FRAMING_NEED_MORE_DATA;
     }
 
-    // Need at least minimum message: START + SRC + DST + CTRL + CMD + LEN + HCHK + END = 11 bytes
+    // Need at least minimum message: START + SRC + DST + FRAME_TYPE + CMD + LEN + HCHK + END = 11 bytes
     // (the smallest valid frame has zero payload bytes and no separate data
     // checksum byte - see the msg_len == 11 special case below)
     if (fb->len < 11) {
@@ -147,29 +147,30 @@ framing_result_t framing_process_next(framing_buffer_t *fb, uint8_t *out_frame, 
         return FRAMING_BAD_HEADER_CHECKSUM;
     }
 
-    // Validate control bytes (positions 5-6) and classify the packet type
+    // Validate frame type bytes (positions 5-6) and classify the packet type
     framing_packet_type_t packet_type = framing_classify_packet(fb->buffer[5], fb->buffer[6]);
-    if (packet_type == FRAMING_PACKET_INVALID) {
-        ESP_LOGW(TAG, "Invalid control bytes: %02X %02X (expected 80 00 or 00 00), resyncing by 1 byte",
+    if (packet_type == FRAME_INVALID) {
+        ESP_LOGW(TAG, "Invalid frame type bytes: %02X %02X (expected 80 00 or 00 00), resyncing by 1 byte",
                  fb->buffer[5], fb->buffer[6]);
         framing_resync_one_byte(fb, out_frame, out_len, MIN(fb->len, FRAMING_HEADER_CAPTURE_LEN));
-        return FRAMING_BAD_CONTROL_BYTES;
+        return FRAMING_BAD_FRAME_TYPE;
     }
 
-    // Read length from byte 8. Discovery packets are always exactly 11 bytes
-    // (header + END, no payload, no data checksum); data packets are always
-    // at least 12 (header + data-checksum byte + END, plus any payload).
+    // Read length from byte 8. Frames with no data are always exactly 11
+    // bytes (header + END, no payload, no data checksum); frames with data
+    // are always at least 12 (header + data-checksum byte + END, plus any
+    // payload).
     int msg_len = fb->buffer[8];
-    if (packet_type == FRAMING_PACKET_DISCOVERY) {
+    if (packet_type == FRAME_NO_DATA) {
         if (msg_len != 11) {
-            ESP_LOGW(TAG, "Invalid length field for discovery packet: 0x%02X (%d), expected 0x0B (11), resyncing by 1 byte",
+            ESP_LOGW(TAG, "Invalid length field for frame with no data: 0x%02X (%d), expected 0x0B (11), resyncing by 1 byte",
                      msg_len, msg_len);
             framing_resync_one_byte(fb, out_frame, out_len, MIN(fb->len, FRAMING_HEADER_CAPTURE_LEN));
             return FRAMING_BAD_LENGTH;
         }
     } else {
         if (msg_len < 12 || msg_len > BUS_MESSAGE_MAX_SIZE) {
-            ESP_LOGW(TAG, "Invalid length field for data packet: 0x%02X (%d), expected >= 0x0C (12), resyncing by 1 byte",
+            ESP_LOGW(TAG, "Invalid length field for frame with data: 0x%02X (%d), expected >= 0x0C (12), resyncing by 1 byte",
                      msg_len, msg_len);
             framing_resync_one_byte(fb, out_frame, out_len, MIN(fb->len, FRAMING_HEADER_CAPTURE_LEN));
             return FRAMING_BAD_LENGTH;
@@ -190,9 +191,9 @@ framing_result_t framing_process_next(framing_buffer_t *fb, uint8_t *out_frame, 
     }
 
     // Verify data checksum: sum(bytes 10..msg_len-3) & 0xFF.
-    // Discovery packets have no data-checksum byte at all (see above), so
+    // Frames with no data have no data-checksum byte at all (see above), so
     // there's nothing to verify for them.
-    if (packet_type == FRAMING_PACKET_DATA) {
+    if (packet_type == FRAME_WITH_DATA) {
         uint32_t data_sum = 0;
         for (int i = 10; i < msg_len - 2; i++) {
             data_sum += fb->buffer[i];

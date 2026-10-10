@@ -289,7 +289,7 @@ The device keeps global counters of all bus traffic, shown in the **Messages** r
   "errors": 3,
   "error_detail": {
     "no_start_byte": 0,
-    "bad_control": 1,
+    "bad_frame_type": 1,
     "no_end": 2,
     "bad_framing": 0,
     "length_mismatch": 0,
@@ -310,14 +310,14 @@ The three buckets are exclusive: `decoded + unknown + errors` equals the total t
 | Type | Detected by | Meaning |
 |------|-------------|---------|
 | `no_start_byte` | frame reassembly | Buffer contained no START byte (`0x02`); all bytes discarded |
-| `bad_control` | frame reassembly | START byte found but control bytes weren't `80 00`; resynced by one byte |
+| `bad_frame_type` | frame reassembly | START byte found but frame type bytes (5-6) weren't `80 00` or `00 00`; resynced by one byte |
 | `no_end` | frame reassembly | Buffer filled without a valid data checksum + END (`0x03`) match — an over-long message or a corrupted data checksum (indistinguishable, since the checksum is used to locate the end of frame) |
 | `bad_framing` | decoder | Frame shorter than 12 bytes or missing START/END markers |
 | `length_mismatch` | decoder | Length field (byte 8) didn't match the actual frame length |
 | `header_checksum` | decoder | Header checksum (byte 9) didn't match the sum of bytes 0–8 |
 | `data_checksum` | decoder | Data checksum didn't match (defensive — frame reassembly already validates it) |
 
-The frame-reassembly counters count discard *events*, not messages: a single corrupt stretch can increment `bad_control` once per stray `0x02` it contains, and `no_start_byte` counts whole-buffer discards. Treat them as bus-corruption indicators rather than exact message counts.
+The frame-reassembly counters count discard *events*, not messages: a single corrupt stretch can increment `bad_frame_type` once per stray `0x02` it contains, and `no_start_byte` counts whole-buffer discards. Treat them as bus-corruption indicators rather than exact message counts.
 
 ## Architecture
 
@@ -450,7 +450,7 @@ See [docs/installer.md](docs/installer.md) for how the site is built and deploye
 
 Documents the proprietary serial protocol used by the Connect 10, reverse-engineered by sniffing bus traffic. Covers:
 
-- **Message framing** — `START (0x02) | SRC | DST | CTRL | CMD | DATA | CHECKSUM | END (0x03)`
+- **Message framing** — `START (0x02) | SRC | DST | FRAME_TYPE | CMD | LEN | HEADER_CHECKSUM | DATA | DATA_CHECKSUM | END (0x03)`; frames with no data (`FRAME_TYPE 00 00`) omit DATA and DATA_CHECKSUM
 - **Device addresses** — Touch screen (`0x0050`), controller (`0x006F`), chlorinator (`0x0090`), internet gateway (`0x00F0`)
 - **30+ decoded message types** — temperatures, channel states, lighting zones (state, colour, name, multicolor capability), chlorinator pH/ORP, controller clock, firmware versions, gateway network status, and more
 - **Register system** — A unified register/slot dispatch mechanism used for channel names, types, lighting colors, and labels

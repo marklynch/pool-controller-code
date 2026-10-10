@@ -15,7 +15,7 @@ FF FF FF FF FF FF FF FF FF FF FF FF
 # (header checksum) is read; sum(bytes 0-8) != byte 9
 02 00 A0 02 00 A0 FF FF 80 00 3B 0E 69 04 65 69 03
 
-# bad_control: valid header checksum (0xBA) but control bytes (5-6) = 12 34
+# bad_frame_type: valid header checksum (0xBA) but frame type bytes (5-6) = 12 34
 02 00 50 FF FF 12 34 16 0E BA 02 00 A0 FF FF 80 00 3B 0E 69 04 65 69 03
 
 # bad_length: valid header checksum (0xEB) but length field (byte 8) = 0x05 (< 12)
@@ -27,7 +27,7 @@ FF FF FF FF FF FF FF FF FF FF FF FF
 # data_checksum: valid header and correct end byte, but data checksum = 0x6A (should be 0x69)
 02 00 A0 FF FF 80 00 3B 0E 69 04 65 6A 03 02 00 A0 FF FF 80 00 3B 0E 69 04 65 69 03
 
-# bad_length_discovery_packet_wrong_ctrl: zero-payload shape (LEN=0x0B)
-# but with 80 00 control bytes - invalid, since a data packet always carries
+# bad_length_no_data_frame_wrong_frame_type: no-data shape (LEN=0x0B)
+# but with 80 00 frame type bytes - invalid, since a frame with data always carries
 # a separate data-checksum byte and so has a minimum length of 12
 02 00 50 FF FF 80 00 99 0B 74 03 02 00 A0 FF FF 80 00 3B 0E 69 04 65 69 03

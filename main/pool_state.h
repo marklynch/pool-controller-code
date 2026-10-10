@@ -331,7 +331,7 @@ typedef struct {
     uint32_t resyncs_total;
     uint32_t resyncs_no_start;            // No START (0x02) in buffer; run discarded
     uint32_t resyncs_bad_header_checksum; // Header checksum (byte 9) mismatch
-    uint32_t resyncs_bad_control;         // Control bytes (5-6) != 80 00
+    uint32_t resyncs_bad_frame_type;      // Frame type bytes (5-6) not 80 00 or 00 00
     uint32_t resyncs_bad_length;          // Length field (byte 8) out of range
     uint32_t resyncs_bad_end;             // End byte != 0x03 at declared length
     uint32_t resyncs_bad_data_checksum;   // Data checksum mismatch

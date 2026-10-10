@@ -23,7 +23,7 @@ typedef enum {
     UNKNOWN_REASON_BAD_FRAMING,     // decoder: too short / missing START/END (guards test-decode)
     UNKNOWN_REASON_HEADER_CHECKSUM, // framing: header checksum (byte 9) mismatch
     UNKNOWN_REASON_DATA_CHECKSUM,   // framing: data checksum mismatch
-    UNKNOWN_REASON_BAD_CONTROL,     // framing: control bytes (5-6) not 80 00 or 00 00
+    UNKNOWN_REASON_BAD_FRAME_TYPE,  // framing: frame type bytes (5-6) not 80 00 or 00 00
     UNKNOWN_REASON_BAD_LENGTH,      // framing: length field (byte 8) out of range
     UNKNOWN_REASON_BAD_END,         // framing: end byte != 0x03 at declared length
     UNKNOWN_REASON_UNEXPECTED,      // resync/result type not recognized by the mapper

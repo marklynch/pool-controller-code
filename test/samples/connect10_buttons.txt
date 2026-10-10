@@ -7,7 +7,7 @@
 #   0x10  Channel Toggle   channel button (1-byte 0-based channel index)
 #   0x29  Valve Button     Valve 1 button (1-byte 0-based valve index)
 #   0x0F  Set Channel State  Cleaning button: on = ch2 On; off = ch2 Auto + ch1 Auto
-#   0x15  Mode toggle      Pool/Spa button (no payload, CTRL 00 00)
+#   0x15  Mode toggle      Pool/Spa button (no payload, FRAME_TYPE 00 00)
 #   0x2A  Favourite Cmd    Auto button sends All Auto (0x81)
 # ======================================================================
 

@@ -94,7 +94,7 @@ const char *unknown_reason_str(unknown_reason_t reason)
         case UNKNOWN_REASON_BAD_FRAMING:     return "bad framing";
         case UNKNOWN_REASON_HEADER_CHECKSUM: return "header checksum";
         case UNKNOWN_REASON_DATA_CHECKSUM:   return "data checksum";
-        case UNKNOWN_REASON_BAD_CONTROL:     return "bad control";
+        case UNKNOWN_REASON_BAD_FRAME_TYPE:  return "bad frame type";
         case UNKNOWN_REASON_BAD_LENGTH:      return "bad length";
         case UNKNOWN_REASON_BAD_END:         return "bad end";
         case UNKNOWN_REASON_UNEXPECTED:      return "unexpected";

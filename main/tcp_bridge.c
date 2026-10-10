@@ -323,8 +323,8 @@ static void tcp_bridge_task(void *pvParameters)
                             s_config.on_resync(TCP_BRIDGE_RESYNC_NO_START, frame, frame_len); break;
                         case FRAMING_BAD_HEADER_CHECKSUM:
                             s_config.on_resync(TCP_BRIDGE_RESYNC_BAD_HEADER_CHECKSUM, frame, frame_len); break;
-                        case FRAMING_BAD_CONTROL_BYTES:
-                            s_config.on_resync(TCP_BRIDGE_RESYNC_BAD_CONTROL, frame, frame_len); break;
+                        case FRAMING_BAD_FRAME_TYPE:
+                            s_config.on_resync(TCP_BRIDGE_RESYNC_BAD_FRAME_TYPE, frame, frame_len); break;
                         case FRAMING_BAD_LENGTH:
                             s_config.on_resync(TCP_BRIDGE_RESYNC_BAD_LENGTH, frame, frame_len); break;
                         case FRAMING_BAD_END_BYTE:

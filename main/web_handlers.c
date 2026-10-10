@@ -283,7 +283,7 @@ static esp_err_t home_get_handler(httpd_req_t *req)
         "const parts=[];"
         "if(rs.no_start)parts.push(rs.no_start+' no-start');"
         "if(rs.header_checksum)parts.push(rs.header_checksum+' header-checksum');"
-        "if(rs.bad_control)parts.push(rs.bad_control+' bad-control');"
+        "if(rs.bad_frame_type)parts.push(rs.bad_frame_type+' bad-frame-type');"
         "if(rs.bad_length)parts.push(rs.bad_length+' bad-length');"
         "if(rs.bad_end)parts.push(rs.bad_end+' bad-end');"
         "if(rs.data_checksum)parts.push(rs.data_checksum+' data-checksum');"
@@ -648,7 +648,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(resyncs, "total",           state.resyncs_total);
     cJSON_AddNumberToObject(resyncs, "no_start",        state.resyncs_no_start);
     cJSON_AddNumberToObject(resyncs, "header_checksum", state.resyncs_bad_header_checksum);
-    cJSON_AddNumberToObject(resyncs, "bad_control",     state.resyncs_bad_control);
+    cJSON_AddNumberToObject(resyncs, "bad_frame_type",  state.resyncs_bad_frame_type);
     cJSON_AddNumberToObject(resyncs, "bad_length",      state.resyncs_bad_length);
     cJSON_AddNumberToObject(resyncs, "bad_end",         state.resyncs_bad_end);
     cJSON_AddNumberToObject(resyncs, "data_checksum",   state.resyncs_bad_data_checksum);
@@ -1906,7 +1906,7 @@ static esp_err_t unknown_msgs_json_handler(httpd_req_t *req)
         if (!obj) continue;
 
         // Decode address/command fields from the raw frame
-        // Frame layout: [START=0][SRC=1-2][DST=3-4][CTRL=5-6][CMD=7][LEN=8][HDR_CHK=9][DATA=10...]
+        // Frame layout: [START=0][SRC=1-2][DST=3-4][FRAME_TYPE=5-6][CMD=7][LEN=8][HDR_CHK=9][DATA=10...]
         char addr_str[8];
         char name_buf[16];
         uint8_t src_hi = (e->raw_len > 2) ? e->raw[1] : 0;

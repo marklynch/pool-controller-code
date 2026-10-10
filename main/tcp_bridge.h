@@ -31,7 +31,7 @@ typedef void (*tcp_bridge_led_flash_fn)(void);
 typedef enum {
     TCP_BRIDGE_RESYNC_NO_START,            // No START byte (0x02) in buffer, all bytes discarded
     TCP_BRIDGE_RESYNC_BAD_HEADER_CHECKSUM, // Header checksum (byte 9) mismatch
-    TCP_BRIDGE_RESYNC_BAD_CONTROL,         // Control bytes (5-6) not 80 00 or 00 00
+    TCP_BRIDGE_RESYNC_BAD_FRAME_TYPE,      // Frame type bytes (5-6) not 80 00 or 00 00
     TCP_BRIDGE_RESYNC_BAD_LENGTH,          // Length field (byte 8) out of range
     TCP_BRIDGE_RESYNC_BAD_END,             // End byte != 0x03 at declared length
     TCP_BRIDGE_RESYNC_BAD_DATA_CHECKSUM,   // Data checksum mismatch

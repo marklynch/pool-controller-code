@@ -68,7 +68,7 @@ static void resync_wrapper(tcp_bridge_resync_type_t type, const uint8_t *data, i
     switch (type) {
         case TCP_BRIDGE_RESYNC_NO_START:            s_pool_state.resyncs_no_start++;            break;
         case TCP_BRIDGE_RESYNC_BAD_HEADER_CHECKSUM: s_pool_state.resyncs_bad_header_checksum++; break;
-        case TCP_BRIDGE_RESYNC_BAD_CONTROL:         s_pool_state.resyncs_bad_control++;         break;
+        case TCP_BRIDGE_RESYNC_BAD_FRAME_TYPE:      s_pool_state.resyncs_bad_frame_type++;      break;
         case TCP_BRIDGE_RESYNC_BAD_LENGTH:          s_pool_state.resyncs_bad_length++;          break;
         case TCP_BRIDGE_RESYNC_BAD_END:             s_pool_state.resyncs_bad_end++;             break;
         case TCP_BRIDGE_RESYNC_BAD_DATA_CHECKSUM:   s_pool_state.resyncs_bad_data_checksum++;   break;
@@ -82,7 +82,7 @@ static void resync_wrapper(tcp_bridge_resync_type_t type, const uint8_t *data, i
         switch (type) {
             case TCP_BRIDGE_RESYNC_NO_START:            reason = UNKNOWN_REASON_NO_START;        break;
             case TCP_BRIDGE_RESYNC_BAD_HEADER_CHECKSUM: reason = UNKNOWN_REASON_HEADER_CHECKSUM;  break;
-            case TCP_BRIDGE_RESYNC_BAD_CONTROL:         reason = UNKNOWN_REASON_BAD_CONTROL;      break;
+            case TCP_BRIDGE_RESYNC_BAD_FRAME_TYPE:      reason = UNKNOWN_REASON_BAD_FRAME_TYPE;   break;
             case TCP_BRIDGE_RESYNC_BAD_LENGTH:          reason = UNKNOWN_REASON_BAD_LENGTH;       break;
             case TCP_BRIDGE_RESYNC_BAD_END:             reason = UNKNOWN_REASON_BAD_END;          break;
             case TCP_BRIDGE_RESYNC_BAD_DATA_CHECKSUM:   reason = UNKNOWN_REASON_DATA_CHECKSUM;    break;

@@ -6,6 +6,7 @@ This document describes the proprietary serial protocol used by the Connect 10 p
 
 - [Message Structure](#message-structure)
   - [Message Format](#message-format)
+  - [Frame Types](#frame-types)
   - [Checksum Calculation](#checksum-calculation)
   - [Device Addresses](#device-addresses)
 - [Command Summary](#command-summary)
@@ -57,7 +58,7 @@ This document describes the proprietary serial protocol used by the Connect 10 p
 All messages follow this basic structure:
 
 ```
-[START] [SRC_HI] [SRC_LO] [DST_HI] [DST_LO] [CTRL_HI] [CTRL_LO] [CMD] [LENGTH] [HEADER_CHECKSUM] [DATA...] [DATA_CHECKSUM] [END]
+[START] [SRC_HI] [SRC_LO] [DST_HI] [DST_LO] [FRAME_TYPE_HI] [FRAME_TYPE_LO] [CMD] [LENGTH] [HEADER_CHECKSUM] [DATA...] [DATA_CHECKSUM] [END]
 ```
 
 ### Message Format
@@ -67,17 +68,40 @@ All messages follow this basic structure:
 | 0      | START           | Always `0x02`                                                     |
 | 1-2    | SOURCE          | Source device address (big endian)                                |
 | 3-4    | DEST            | Destination device address (big endian)                           |
-| 5-6    | CONTROL         | Control bytes (`0x80 0x00` or `0x00 0x00`)                        |
+| 5-6    | FRAME_TYPE      | `0x80 0x00` = frame with data, `0x00 0x00` = frame with no data (see [Frame Types](#frame-types)) |
 | 7      | COMMAND         | Command byte (message type)                                       |
 | 8      | LENGTH          | Total message length in bytes (including START and END bytes)     |
 | 9      | HEADER_CHECKSUM | Sum of bytes 0–8, masked to 8 bits (`sum(bytes[0..8]) & 0xFF`)    |
 | 10+    | DATA            | Payload data (varies by message type)                             |
-| N-2    | DATA_CHECKSUM   | Sum of all data bytes (from index 10 to N-3) masked with 0xFF     |
+| N-2    | DATA_CHECKSUM   | Sum of all data bytes (from index 10 to N-3) masked with 0xFF. Frames with data only |
 | N-1    | END             | Always `0x03`                                                     |
+
+### Frame Types
+
+The FRAME_TYPE bytes select one of two frame layouts:
+
+| FRAME_TYPE | Name | Layout | LENGTH | Data checksum |
+|------------|------------|--------|--------|---------------|
+| `80 00` | Frame with data    | Header, header checksum, payload, data checksum, END | `0x0C` or more | Present, even with zero payload bytes |
+| `00 00` | Frame with no data | Header, header checksum, END                         | Always `0x0B`  | Absent |
+
+A frame with no data carries nothing beyond its CMD byte: bytes 0–8 are the header, byte 9 the header checksum and byte 10 END. Almost all traffic uses frames with data.
+
+The same CMD can appear as either type, with a different meaning. For example, [0x15](#0x15--mode-set-command-spapool-) with data sets a named mode, and with no data toggles the mode.
+
+Frames with no data seen so far:
+
+| CMD | Source → Destination | Meaning |
+|-----|----------------------|---------|
+| `0x13` | `0x0081` VX 11S v3, `0x0084` Viron Chlorinator → Broadcast | Unknown; sent next to the chlorinator's [0x12](#0x12--device-status-️) status |
+| `0x15` | `0x0062` Connect 8/10, `0x0074` ICI Gas Heater → Broadcast | [Mode toggle](#toggle-form-) |
+| `0x1A` | `0x0050` Touchscreen → `0x007F` Internal Control | [Pre-Valve-Command Frame](#0x1a--pre-valve-command-frame-️); purpose unknown |
+
+Any other FRAME_TYPE value is invalid, and the frame is discarded.
 
 ### Checksum Calculation
 
-There are two checksums in every message:
+There are two checksums in every frame with data (a [frame with no data](#frame-types) has only the header checksum):
 
 **Header checksum** (byte 9): Sum of bytes 0–8 masked to 8 bits:
 
@@ -207,11 +231,11 @@ Click any CMD in the first column to jump to the full section in [Commands](#com
 | [`0x10`](#0x10--channel-toggle-command-)                      | Channel Toggle Command              | `0x00F0`, `0x0062` → Broadcast                                         | Same 1-byte channel-index payload from either source; dispatched on CMD byte alone         | Yes (unified handler)   |
 | [`0x12`](#0x12--device-status-️)                               | Device Status                       | `0x0050`, `0x0062`, `0x0070`, `0x0074`, `0x0081`, `0x0084`, `0x0090`, `0x00F0` → Broadcast | Payload layout differs per source                                                           | Yes (per-source)        |
 | [`0x14`](#0x14--mode-spapool-)                                 | Mode (Spa/Pool)                     | `0x0050` → Broadcast                                                   |                                                                                             | Yes                     |
-| [`0x15`](#0x15--mode-set-command-spapool-)                     | Mode Set Command (Spa/Pool)         | `0x0050`, `0x0062`, `0x0074` → Broadcast                               | Two forms by LEN: `0x0D` sets the mode, same encoding as the `0x14` status (Spa=`0x00`, Pool=`0x01`); `0x0B` (no payload, CTRL `00 00`, from the Connect 8/10 Pool/Spa button and the ICI Gas Heater) toggles it; dispatched on CMD byte alone | Yes (both forms)        |
+| [`0x15`](#0x15--mode-set-command-spapool-)                     | Mode Set Command (Spa/Pool)         | `0x0050`, `0x0062`, `0x0074` → Broadcast                               | Two forms by LEN: `0x0D` sets the mode, same encoding as the `0x14` status (Spa=`0x00`, Pool=`0x01`); `0x0B` (frame with no data, FRAME_TYPE `00 00`, from the Connect 8/10 Pool/Spa button and the ICI Gas Heater) toggles it; dispatched on CMD byte alone | Yes (both forms)        |
 | [`0x16`](#0x16--water-temperature-reading-)                    | Water Temperature Reading           | `0x0062` (LEN `0x0E`), `0x0070`/`0x0072`/`0x0074` (LEN `0x0D`) → Broadcast | Payload length differs by source: LEN `0x0E` = `{temp1, temp2}`, LEN `0x0D` = `{temp1}`; dispatched on CMD byte alone | Yes (unified handler)   |
 | [`0x17`](#0x17--temperature-settings-)                         | Temperature Settings                | `0x0050` (LEN `0x10`), `0x0070`/`0x0074` (LEN `0x0E`) → Broadcast | Source-dependent payload layout                                                             | Yes (per-source)        |
 | [`0x18`](#0x18--pump-speed-command-)                           | Pump Speed Command                  | `0x0050`, `0x0084` → `0x00A0` Viron XT Pump                            | Set pump speed (low/med/high)                                                       | Yes                     |
-| [`0x1A`](#0x1a--pre-valve-command-frame-️)                             | Pre-Valve-Command Frame             | `0x0050` → `0x007F` Internal Control                                   | Zero-payload unicast (LEN `0x0B`, CTRL `00 00`) sent immediately before a `0x41` valve command; purpose unknown | Yes (log-only)          |
+| [`0x1A`](#0x1a--pre-valve-command-frame-️)                             | Pre-Valve-Command Frame             | `0x0050` → `0x007F` Internal Control                                   | Unicast frame with no data (LEN `0x0B`, FRAME_TYPE `00 00`) sent immediately before a `0x41` valve command; purpose unknown | Yes (log-only)          |
 | [`0x1B`](#0x1b--pump-button-activity-)                         | Pump Button Activity                | `0x00A0` Viron XT Pump → Broadcast                                      | Speed button pressed on pump (Low/Med/High)                                                  | Yes (log-only)          |
 | [`0x19`](#0x19--temperature-setpoint-command-)                 | Temperature Setpoint Command        | `0x00F0` Gateway, `0x0050` Touchscreen → Broadcast                     | Sub-dispatched by slot byte (`0x01`/`0x02` Pool/Spa from Gateway, `0x03` heater pair from Touchscreen); dispatched on CMD byte alone | Yes (unified handler)   |
 | [`0x1D`](#0x1d--chlorinator-setpoint-)                         | Chlorinator Setpoint                | `0x0090` RolaChem, `0x0084` Viron, `0x0081` VX 11S v3 → Broadcast         | Byte 10: `0x00`=chlorine output level (VX 11S v3 only), `0x01`=pH, `0x02`=ORP; dispatched on CMD byte alone | Yes (unified handler)   |
@@ -917,7 +941,7 @@ Reports the current operating mode — pool or spa. Broadcast by the Touchscreen
 
 Command that switches the current operating mode between Pool and Spa. Comes in two forms, told apart by LEN:
 
-| Form | Source | LEN | CTRL | Payload | Effect |
+| Form | Source | LEN | FRAME_TYPE | Payload | Effect |
 |------|--------|-----|------|---------|--------|
 | Set    | `0x0050` Touchscreen  | `0x0D` | `80 00` | 1 byte: target mode | Sets the named mode |
 | Toggle | `0x0062` Connect 8/10, `0x0074` ICI Gas Heater | `0x0B` | `00 00` | none | Switches to the other mode |
@@ -962,7 +986,7 @@ Broadcast by the Connect 8/10 (`0x0062`) when its Pool/Spa button is pressed, an
 
 ```
 02 00 62 FF FF 00 00 15 0B 82 03
-               ^^^^^ CTRL 00 00, not the usual 80 00
+               ^^^^^ FRAME_TYPE 00 00 (frame with no data), not the usual 80 00
                      ^^ CMD 0x15
                         ^^ LEN 0x0B — no data bytes
 ```
@@ -1209,7 +1233,7 @@ Zero-payload unicast from the Touchscreen (`0x0050`) to Internal Control (`0x007
 ```
 02 00 50 00 7F 00 00 1A 0B F6 03
          ^^^^^ DST 0x007F Internal Control
-               ^^^^^ CTRL 00 00, not the usual 80 00
+               ^^^^^ FRAME_TYPE 00 00 (frame with no data), not the usual 80 00
                      ^^ CMD 0x1A
                         ^^ LEN 0x0B — no data bytes
 ```
@@ -2688,7 +2712,7 @@ The Connect 10 bus uses:
 ^^ Start byte
    ^^^^^  Source: 0x0050 (Touchscreen)
          ^^^^^  Destination: 0xFFFF (Broadcast)
-               ^^^^^  Control: 0x8000
+               ^^^^^  Frame type: 80 00 (frame with data)
                      ^^^^^^^^  Command: Mode message pattern
                               ^^ Data: 0x01 = Pool mode
                                  ^^ Checksum: 0x01 (sum of byte 10)

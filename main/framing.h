@@ -10,31 +10,31 @@ typedef enum {
     FRAMING_NEED_MORE_DATA,        // incomplete, wait for more bytes
     FRAMING_NO_START_BYTE,         // no 0x02 found, buffer cleared
     FRAMING_BAD_HEADER_CHECKSUM,   // header checksum mismatch, resynced by 1
-    FRAMING_BAD_CONTROL_BYTES,     // bytes 5-6 not 0x80 0x00 or 0x00 0x00, resynced by 1
+    FRAMING_BAD_FRAME_TYPE,        // bytes 5-6 not 0x80 0x00 or 0x00 0x00, resynced by 1
     FRAMING_BAD_LENGTH,            // length field out of range, resynced by 1
     FRAMING_BAD_END_BYTE,          // end byte not 0x03, resynced by 1
     FRAMING_BAD_DATA_CHECKSUM,     // data checksum mismatch, resynced by 1
     FRAMING_FRAME_READY,           // valid frame written to out_frame
 } framing_result_t;
 
-// The control bytes (offsets 5-6) determine the shape of the rest of the
-// frame. A data packet (0x80 0x00) always carries a data-checksum byte
+// The frame type bytes (offsets 5-6) determine the shape of the rest of the
+// frame. A frame with data (0x80 0x00) always carries a data-checksum byte
 // (offset N-2), even with zero payload bytes, so its minimum length is 12.
-// A discovery packet (0x00 0x00) carries no payload and no separate
+// A frame with no data (0x00 0x00) carries no payload and no separate
 // data-checksum byte at all - it's exactly 11 bytes (header + END), and
 // byte 9 is purely the header checksum. Shared between the reassembly layer
 // (framing.c) and the decoder (message_decoder.c), which both need to branch
-// on this classification rather than re-deriving it from raw control bytes.
+// on this classification rather than re-deriving it from raw frame type bytes.
 typedef enum {
-    FRAMING_PACKET_DATA,       // control bytes 0x80 0x00
-    FRAMING_PACKET_DISCOVERY,  // control bytes 0x00 0x00
-    FRAMING_PACKET_INVALID,    // anything else
+    FRAME_WITH_DATA,  // frame type bytes 0x80 0x00
+    FRAME_NO_DATA,    // frame type bytes 0x00 0x00
+    FRAME_INVALID,    // anything else
 } framing_packet_type_t;
 
 /**
- * Classify a frame's control bytes (offsets 5-6) into a packet type.
+ * Classify a frame's type bytes (offsets 5-6) into a packet type.
  */
-framing_packet_type_t framing_classify_packet(uint8_t ctrl_hi, uint8_t ctrl_lo);
+framing_packet_type_t framing_classify_packet(uint8_t frame_type_hi, uint8_t frame_type_lo);
 
 // Context structure holding the reassembly buffer
 typedef struct {

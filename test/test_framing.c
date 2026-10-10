@@ -61,7 +61,7 @@ static const char* resync_name(framing_result_t r) {
     switch (r) {
         case FRAMING_NO_START_BYTE:       return "no_start";
         case FRAMING_BAD_HEADER_CHECKSUM: return "header_checksum";
-        case FRAMING_BAD_CONTROL_BYTES:   return "bad_control";
+        case FRAMING_BAD_FRAME_TYPE:      return "bad_frame_type";
         case FRAMING_BAD_LENGTH:          return "bad_length";
         case FRAMING_BAD_END_BYTE:        return "bad_end";
         case FRAMING_BAD_DATA_CHECKSUM:   return "data_checksum";

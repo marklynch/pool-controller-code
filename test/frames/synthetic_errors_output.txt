@@ -7,7 +7,7 @@ Discard: Discarding 2 byte(s) before next start byte: 00 A0
 Decoded: Src=00A0 (Viron XT Pump), Dst=FFFF (Broadcast), Cmd=0x3B, Payload=0465
 
 --- Case 3 ---
-Resync:  bad_control
+Resync:  bad_frame_type
 Discard: Discarding 9 byte(s) before next start byte: 00 50 FF FF 12 34 16 0E BA
 Decoded: Src=00A0 (Viron XT Pump), Dst=FFFF (Broadcast), Cmd=0x3B, Payload=0465
 
