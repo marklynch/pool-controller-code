@@ -23,6 +23,12 @@ void mqtt_publish_heater(const pool_state_t *current_state, int index);
 // to pool/<id>/heater/<index>/gas_status/state. Called only when gas_heater_valid is set.
 void mqtt_publish_gas_heater(const pool_state_t *current_state, int index);
 
+// Publish a dedicated heater's communication availability and the timestamp
+// of its most recent direct device sample. `force` bypasses change detection
+// for real sample heartbeats and MQTT reconnect recovery.
+void mqtt_publish_heater_telemetry(const pool_state_t *current_state, int index,
+                                   bool force);
+
 // Publish mode (Pool/Spa) from pool state
 void mqtt_publish_mode(const pool_state_t *current_state);
 

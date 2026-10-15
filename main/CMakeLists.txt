@@ -19,6 +19,8 @@ idf_component_register(
         "filter_pump_type.c"
         "channel_states.c"
         "channel_energy.c"
+        "heater_freshness.c"
+        "heater_freshness_logic.c"
         "unknown_buffer.c"
         "dns_server.c"
         "heap_monitor.c"

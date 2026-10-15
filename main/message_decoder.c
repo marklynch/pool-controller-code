@@ -9,8 +9,33 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <time.h>
 
 static const char *TAG = "MSG_DECODER";
+
+static bool is_dedicated_heater_source(uint16_t address)
+{
+    return address == 0x0070 || address == 0x0071 ||
+           address == 0x0072 || address == 0x0074;
+}
+
+// Must be called while the pool-state mutex is held. Direct-device telemetry
+// is kept separate from the controller's heater-enable/request state.
+static void record_heater_sample_locked(pool_state_t *state, int heater_idx,
+                                        uint16_t device_address)
+{
+    if (heater_idx < 0 || heater_idx >= MAX_HEATERS) return;
+
+    pool_heater_t *heater = &state->heaters[heater_idx];
+    heater->communications_online = true;
+    heater->device_address = device_address;
+    heater->device_last_response_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+    time_t now = time(NULL);
+    if (now > 1577836800) {  // 2020-01-01: ignore unsynchronised boot time.
+        heater->device_last_sample_epoch = (int64_t)now;
+    }
+}
 
 // ======================================================
 // Little-endian byte-to-word conversion helpers
@@ -762,6 +787,12 @@ static bool handle_temp_reading(
     pool_state_t snapshot;
     if (!state_lock(ctx, "temp reading")) return true;
 
+    uint16_t source_address = ((uint16_t)data[1] << 8) | data[2];
+    bool heater_sample = is_dedicated_heater_source(source_address);
+    if (heater_sample) {
+        record_heater_sample_locked(ctx->pool_state, 0, source_address);
+    }
+
     int dev_idx = find_or_insert_seen_device_locked(ctx->pool_state, data[1], data[2]);
     if (dev_idx >= 0) {
         seen_device_t *dev = &ctx->pool_state->seen_devices[dev_idx];
@@ -789,6 +820,10 @@ static bool handle_temp_reading(
                       && !ctx->pool_state->seen_devices[dev_idx].single_sensor_source
                       && ctx->pool_state->seen_devices[dev_idx].temp2_valid;
     state_unlock(ctx, true, &snapshot);
+
+    if (ctx->enable_mqtt && heater_sample) {
+        mqtt_publish_heater_telemetry(&snapshot, 0, true);
+    }
 
     if (t1_invalid || dev_idx < 0) {
         return true;  // Invalid temp1 or registry full: skip publish.
@@ -1139,6 +1174,8 @@ static bool handle_gas_heater_status(
     heater_state->valid = true;
     heater_state->on = heater_on;
     heater_state->device_reported = true;
+    record_heater_sample_locked(
+        ctx->pool_state, 0, ((uint16_t)data[1] << 8) | data[2]);
 
     heater_state->gas_heater_valid = true;
     heater_state->water_flow_detected = water_flow_detected;
@@ -1154,6 +1191,7 @@ static bool handle_gas_heater_status(
     if (ctx->enable_mqtt) {
         mqtt_publish_heater(&snapshot, 0);
         mqtt_publish_gas_heater(&snapshot, 0);
+        mqtt_publish_heater_telemetry(&snapshot, 0, true);
     }
 
     return true;
@@ -1214,10 +1252,13 @@ static bool handle_genus_heater_status(
     ctx->pool_state->heaters[0].on = heater_on;
     ctx->pool_state->heaters[0].valid = true;
     ctx->pool_state->heaters[0].device_reported = true;
+    record_heater_sample_locked(
+        ctx->pool_state, 0, ((uint16_t)data[1] << 8) | data[2]);
     state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
         mqtt_publish_heater(&snapshot, 0);
+        mqtt_publish_heater_telemetry(&snapshot, 0, true);
     }
 
     return true;

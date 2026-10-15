@@ -51,6 +51,10 @@ void mqtt_publish_favourite(const pool_state_t *state) {}
 
 // Mock register requester
 void register_requester_notify(void) {}
+void mqtt_publish_heater_telemetry(const pool_state_t *state, int index, bool force)
+{
+    (void)state; (void)index; (void)force;
+}
 
 // Test context
 static pool_state_t test_pool_state;
@@ -1286,6 +1290,9 @@ void test_gas_heater_ici_heating(void)
     TEST_ASSERT(h->water_flow_detected,                "0x0F: water flow detected");
     TEST_ASSERT(!h->locked_out,                        "0x0F: not locked out");
     TEST_ASSERT(h->burner_state == BURNER_ALIGHT,      "0x0F: burner alight");
+    TEST_ASSERT(h->communications_online,              "0x0F: direct heater communications online");
+    TEST_ASSERT(h->device_address == 0x0074,           "0x0F: direct heater address recorded");
+    TEST_ASSERT(h->device_last_response_ms == 1000,    "0x0F: direct sample tick recorded");
 }
 
 void test_gas_heater_ici_cooldown(void)

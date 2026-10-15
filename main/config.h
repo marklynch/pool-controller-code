@@ -110,6 +110,11 @@
 #define UART_RX_TIMEOUT_MS             15     // Timeout waiting for RX read (at 9600 baud, ~1ms per byte)
 #define UART_TX_TIMEOUT_MS             100     // Timeout waiting for TX completion
 
+// Dedicated heaters normally broadcast status/temperature roughly once per
+// minute. Allow three minutes before marking their direct telemetry stale.
+#define HEATER_RESPONSE_TIMEOUT_MS     180000
+#define HEATER_FRESHNESS_POLL_MS        10000
+
 // ======================================================
 // LED Configuration
 // ======================================================

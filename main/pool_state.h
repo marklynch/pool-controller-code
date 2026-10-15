@@ -114,11 +114,20 @@ typedef struct {
 
     bool on;
 
-    // true once a dedicated heater device (Genus 0x0070, HiNRG 0x0072, ICI
-    // 0x0074) has reported its own CMD 0x12 status. The Connect 8/10's CMD 0x12
-    // heater bit then stops writing `on` — on installs with an external heater
-    // that bit does not track it (observed stuck at 0 while the heater ran).
+    // true once a dedicated heater device (Genus 0x0070, Viron 0x0071, HiNRG
+    // 0x0072, ICI 0x0074) has reported its own CMD 0x12 status. The Connect
+    // 8/10's CMD 0x12 heater bit then stops writing `on` — on installs with an
+    // external heater that bit does not track it (observed stuck at 0 while
+    // the heater ran).
     bool device_reported;
+
+    // Freshness of telemetry received directly from a dedicated heater. This
+    // is independent of controller enable/request state and generic bus
+    // activity. Epoch is zero until wall-clock time has synchronised.
+    bool communications_online;
+    uint16_t device_address;
+    uint32_t device_last_response_ms;
+    int64_t device_last_sample_epoch;
 
     // Temperature setpoints (per heater): 0xE7/0xE8 (Heater 1), 0xEA/0xEB (Heater 2)
     uint8_t pool_setpoint;     // °C

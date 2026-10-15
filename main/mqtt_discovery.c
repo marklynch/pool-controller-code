@@ -305,6 +305,13 @@ bool mqtt_discovery_reset_start(void)
 // Per-Source Temperature Sensor Discovery
 // ======================================================
 
+static bool is_dedicated_heater_address(uint8_t addr_hi, uint8_t addr_lo)
+{
+    if (addr_hi != 0x00) return false;
+    return addr_lo == 0x70 || addr_lo == 0x71 ||
+           addr_lo == 0x72 || addr_lo == 0x74;
+}
+
 static void publish_temperature_sensor_discovery(
     const char *device_id, const char *mac_suffix,
     uint8_t addr_hi, uint8_t addr_lo,
@@ -314,7 +321,12 @@ static void publish_temperature_sensor_discovery(
     get_device_slug(addr_hi, addr_lo, slug, sizeof(slug));
 
     char avail_topic[128];
-    snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
+    if (is_dedicated_heater_address(addr_hi, addr_lo)) {
+        snprintf(avail_topic, sizeof(avail_topic),
+                 "pool/%s/heater/0/telemetry/availability", device_id);
+    } else {
+        snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
+    }
 
     char state_topic[160];
     if (single_sensor_source) {
@@ -514,7 +526,8 @@ static void publish_gas_heater_detail_discovery(const char *device_id, const cha
 {
     char avail_topic[128];
     char state_topic[128];
-    snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
+    snprintf(avail_topic, sizeof(avail_topic),
+             "pool/%s/heater/%d/telemetry/availability", device_id, index);
     snprintf(state_topic, sizeof(state_topic), "pool/%s/heater/%d/gas_status/state", device_id, index);
 
     char display_name[48];
@@ -705,6 +718,57 @@ void mqtt_publish_gas_heater_discovery_single(int index)
 
     ESP_LOGI(TAG, "Publishing gas heater detail discovery for heater %d", index);
     publish_gas_heater_detail_discovery(device_id, mac_suffix, index);
+}
+
+void mqtt_publish_heater_telemetry_discovery_single(int index)
+{
+    char device_id[32];
+    char mac_suffix[DEVICE_MAC_SUFFIX_LEN];
+    mqtt_get_device_id(device_id, sizeof(device_id));
+    device_get_mac_suffix(mac_suffix, sizeof(mac_suffix));
+
+    char state_topic[128];
+    char uid[80];
+    char name[48];
+    snprintf(state_topic, sizeof(state_topic),
+             "pool/%s/heater/%d/telemetry/state", device_id, index);
+
+    snprintf(uid, sizeof(uid), DISCOVERY_ID_PREFIX "_%s_heater_%d_online",
+             mac_suffix, index);
+    snprintf(name, sizeof(name), "Heater %d Communications", index + 1);
+    cJSON *online = cJSON_CreateObject();
+    cJSON_AddStringToObject(online, "name", name);
+    cJSON_AddStringToObject(online, "device_class", "connectivity");
+    cJSON_AddStringToObject(online, "state_topic", state_topic);
+    cJSON_AddStringToObject(online, "value_template",
+                           "{{ 'ON' if value_json.online else 'OFF' }}");
+    add_entity_ids(online, "binary_sensor", mac_suffix, uid,
+                   "heater_%d_online", index + 1);
+    cJSON_AddItemToObject(online, "device", build_device_cjson(device_id, mac_suffix));
+    char *json = cJSON_PrintUnformatted(online);
+    if (json) {
+        publish_discovery("binary_sensor", uid, json);
+        cJSON_free(json);
+    }
+    cJSON_Delete(online);
+
+    snprintf(uid, sizeof(uid), DISCOVERY_ID_PREFIX "_%s_heater_%d_sample_time",
+             mac_suffix, index);
+    snprintf(name, sizeof(name), "Heater %d Last Sample", index + 1);
+    cJSON *sample = cJSON_CreateObject();
+    cJSON_AddStringToObject(sample, "name", name);
+    cJSON_AddStringToObject(sample, "device_class", "timestamp");
+    cJSON_AddStringToObject(sample, "state_topic", state_topic);
+    cJSON_AddStringToObject(sample, "value_template", "{{ value_json.sample_time }}");
+    add_entity_ids(sample, "sensor", mac_suffix, uid,
+                   "heater_%d_sample_time", index + 1);
+    cJSON_AddItemToObject(sample, "device", build_device_cjson(device_id, mac_suffix));
+    json = cJSON_PrintUnformatted(sample);
+    if (json) {
+        publish_discovery("sensor", uid, json);
+        cJSON_free(json);
+    }
+    cJSON_Delete(sample);
 }
 
 // ======================================================

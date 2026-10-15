@@ -25,6 +25,7 @@
 #include "unknown_buffer.h"
 #include "heap_monitor.h"
 #include "firmware_update.h"
+#include "heater_freshness.h"
 
 // ==================== APPLICATION =====================
 // All configuration values are in config.h
@@ -236,6 +237,7 @@ void app_main(void)
     }
 
     register_requester_start(&s_pool_state, s_pool_state_mutex);
+    heater_freshness_start();
 
     // Periodically integrate each channel's effective power into a
     // cumulative kWh total and publish it as an HA energy sensor.

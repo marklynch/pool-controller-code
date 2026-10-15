@@ -54,6 +54,10 @@ void mqtt_publish_pump(const pool_state_t *s) { (void)s; }
 void mqtt_publish_service_mode(const pool_state_t *s) { (void)s; }
 
 void register_requester_notify(void) {}
+void mqtt_publish_heater_telemetry(const pool_state_t *state, int index, bool force)
+{
+    (void)state; (void)index; (void)force;
+}
 
 static pool_state_t              g_state;
 static message_decoder_context_t g_ctx;
