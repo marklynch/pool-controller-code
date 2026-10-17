@@ -13,11 +13,15 @@
 // FreeRTOS tick type
 typedef uint32_t TickType_t;
 
-// Tick period in milliseconds
+// Most host tests use a 1 kHz clock for convenience. Bus arbitration is also
+// exercised at ESP-IDF's default 100 Hz to catch tick-rounding regressions.
+#ifdef TEST_FREERTOS_100HZ
+#define portTICK_PERIOD_MS 10
+#define pdMS_TO_TICKS(ms) ((ms) / portTICK_PERIOD_MS)
+#else
 #define portTICK_PERIOD_MS 1
-
-// Convert milliseconds to ticks
 #define pdMS_TO_TICKS(ms) (ms)
+#endif
 
 // Boolean values
 #define pdTRUE  1

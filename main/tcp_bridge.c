@@ -380,13 +380,15 @@ static void tcp_bridge_task(void *pvParameters)
                                 }
                             }
 
-                            // Store timestamp for loopback verification
-                            s_last_tx_time = xTaskGetTickCount();
-
                             // Parse and send the hex string
                             int sent = s_config.uart_write(line_buf);
                             bool client_kept = true;
                             if (sent > 0) {
+                                // uart_write returns after the guarded bus send
+                                // completes. Stamp the actual send completion,
+                                // not the start of a potentially blocking wait,
+                                // so its echo remains inside the loopback window.
+                                s_last_tx_time = xTaskGetTickCount();
                                 const char *ok_msg = "OK - sent\r\n";
                                 client_kept = send_to_client(client_sock, ok_msg, strlen(ok_msg));
 

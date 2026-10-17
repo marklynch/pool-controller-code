@@ -110,6 +110,14 @@
 #define UART_RX_TIMEOUT_MS             15     // Timeout waiting for RX read (at 9600 baud, ~1ms per byte)
 #define UART_TX_TIMEOUT_MS             100     // Timeout waiting for TX completion
 
+// Multi-device bus arbitration. The Connect 10 bus has no separate request
+// line, so only begin a transmission after RX has remained quiet continuously.
+// If the bus never becomes idle, drop the request rather than corrupting an
+// in-flight controller/chlorinator frame; callers can retry later.
+#define BUS_IDLE_GUARD_MS               12
+#define BUS_IDLE_WAIT_TIMEOUT_MS       1500
+#define BUS_TX_LOCK_TIMEOUT_MS         2000
+
 // ======================================================
 // LED Configuration
 // ======================================================

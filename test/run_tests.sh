@@ -49,17 +49,20 @@ for test_src in test_*.c; do
     # in channel_states.c; both are needed by message_decoder and
     # mqtt_commands. message_decoder also feeds filter_pump_type.c.
     extra_srcs=()
+    extra_cflags=()
     if [ "$module" = "message_decoder" ]; then
         extra_srcs=(../main/framing.c ../main/lighting_colors.c ../main/channel_states.c ../main/filter_pump_type.c)
     elif [ "$module" = "mqtt_commands" ]; then
         extra_srcs=(../main/lighting_colors.c ../main/channel_states.c)
+    elif [ "$module" = "bus" ]; then
+        extra_cflags=(-DTEST_FREERTOS_100HZ)
     fi
 
     echo "========================================"
     echo "  Compiling: $test_src"
     echo "========================================"
 
-    if gcc -fno-common -I. -I.. -o "$binary" "$test_src" "$main_src" ${extra_srcs[@]+"${extra_srcs[@]}"} "${SHARED[@]}" 2>&1; then
+    if gcc -fno-common -I. -I.. ${extra_cflags[@]+"${extra_cflags[@]}"} -o "$binary" "$test_src" "$main_src" ${extra_srcs[@]+"${extra_srcs[@]}"} "${SHARED[@]}" 2>&1; then
         if "$binary"; then
             PASS=$((PASS + 1))
         else
