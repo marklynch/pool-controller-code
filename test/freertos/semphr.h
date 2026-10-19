@@ -16,5 +16,6 @@ typedef void* SemaphoreHandle_t;
 // Mock semaphore functions
 extern BaseType_t xSemaphoreTake(SemaphoreHandle_t xSemaphore, TickType_t xBlockTime);
 extern void xSemaphoreGive(SemaphoreHandle_t xSemaphore);
+extern SemaphoreHandle_t xSemaphoreCreateMutex(void);
 
 #endif // SEMPHR_H

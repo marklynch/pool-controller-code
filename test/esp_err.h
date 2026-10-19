@@ -20,6 +20,8 @@ typedef int32_t esp_err_t;
 #define ESP_ERR_INVALID_STATE  0x103
 #define ESP_ERR_NOT_FOUND  0x105
 
+#define ESP_ERROR_CHECK(expr) do { if ((expr) != ESP_OK) abort(); } while (0)
+
 // Error-name lookup. The real implementation returns a symbolic name; the
 // stub only needs something printable and stable.
 static inline const char *esp_err_to_name(esp_err_t err)
