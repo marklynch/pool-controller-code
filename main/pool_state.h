@@ -266,12 +266,14 @@ typedef struct {
     uint8_t num_channels;
 
     // A dedicated Solar channel (type 0xFC) leaves its CMD 0x0B tuple at
-    // FC 00 00 even while running. CMD 0x2C carries its selected mode and
-    // live output state instead, so retain those values across broadcasts.
+    // FC 00 00 even while running. CMD 0x2C carries its selected mode;
+    // Connect 10 CMD 0x12 payload[1] bit 2 reports actual output activity.
     uint8_t solar_mode;       // 0=Off, 1=Auto, 2=On
     bool solar_mode_valid;
     bool solar_active;
     bool solar_active_valid;
+    uint8_t solar_status_byte;
+    uint32_t solar_status_ms;
 
     // Valves (up to MAX_VALVE_SLOTS)
     valve_state_t valves[MAX_VALVE_SLOTS];

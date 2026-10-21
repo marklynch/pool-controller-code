@@ -347,6 +347,8 @@ static void publish_temperature_sensor_discovery(
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "name", display_name);
     cJSON_AddStringToObject(root, "device_class", "temperature");
+    cJSON_AddStringToObject(root, "state_class", "measurement");
+    cJSON_AddBoolToObject(root, "force_update", true);
     cJSON_AddStringToObject(root, "icon", "mdi:thermometer");
     cJSON_AddStringToObject(root, "state_topic", state_topic);
     cJSON_AddStringToObject(root, "unit_of_measurement", "°C");
@@ -1522,6 +1524,8 @@ static void publish_pump_discovery(const char *device_id, const char *mac_suffix
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "name", "Pump Speed");
+    cJSON_AddStringToObject(root, "state_class", "measurement");
+    cJSON_AddBoolToObject(root, "force_update", true);
     cJSON_AddStringToObject(root, "state_topic", state_topic);
     cJSON_AddStringToObject(root, "value_template", "{{ value_json.speed_rpm }}");
     cJSON_AddStringToObject(root, "unit_of_measurement", "RPM");

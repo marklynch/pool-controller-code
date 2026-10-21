@@ -1,12 +1,12 @@
 
 Heater off, service mode off
 I (09:00:01.100) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03
-I (09:00:01.102) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off
+I (09:00:01.102) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 
 Heater on, service mode off
 I (09:00:02.100) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 01 08 09 03
-I (09:00:02.102) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - On, Service mode - Off
+I (09:00:02.102) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - On, Service mode - Off, Solar output - Inactive
 
 Heater off, service mode on
 I (09:00:03.100) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 02 08 0A 03
-I (09:00:03.102) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - On
+I (09:00:03.102) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - On, Solar output - Inactive

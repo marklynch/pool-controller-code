@@ -806,6 +806,27 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         cJSON_AddNullToObject(root, "service_mode");
     }
 
+    // Keep selected Solar mode separate from the last observed physical output.
+    cJSON *solar = cJSON_CreateObject();
+    if (state.solar_mode_valid) {
+        cJSON_AddStringToObject(solar, "mode", CHANNEL_STATE_NAMES[state.solar_mode]);
+    } else {
+        cJSON_AddNullToObject(solar, "mode");
+    }
+    if (state.solar_active_valid) {
+        uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        cJSON_AddBoolToObject(solar, "active", state.solar_active);
+        cJSON_AddNumberToObject(solar, "last_output_status_age_ms",
+                               (uint32_t)(now_ms - state.solar_status_ms));
+        cJSON_AddNumberToObject(solar, "controller_status_byte", state.solar_status_byte);
+    } else {
+        cJSON_AddNullToObject(solar, "active");
+        cJSON_AddNullToObject(solar, "last_output_status_age_ms");
+        cJSON_AddNullToObject(solar, "controller_status_byte");
+    }
+    cJSON_AddStringToObject(solar, "activity_source", "0x0062 CMD 0x12 payload[1] bit 2");
+    cJSON_AddItemToObject(root, "solar", solar);
+
     // Channels (excludes heater and light-zone channels — those appear in their own sections)
     cJSON *channels = cJSON_CreateArray();
     for (int i = 0; i < MAX_CHANNELS; i++) {
@@ -823,6 +844,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(ch, "name",  state.channels[i].name[0] ? state.channels[i].name : type_name);
         cJSON_AddStringToObject(ch, "type",  type_name);
         cJSON_AddStringToObject(ch, "state", state_name);
+        cJSON_AddBoolToObject(ch, "active", state.channels[i].active);
         cJSON_AddItemToArray(channels, ch);
     }
     cJSON_AddItemToObject(root, "channels", channels);

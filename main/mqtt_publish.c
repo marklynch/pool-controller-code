@@ -9,6 +9,7 @@
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static const char *TAG = "MQTT_PUBLISH";
 
@@ -133,6 +134,7 @@ void mqtt_publish_heater_setpoints(const pool_state_t *current_state, int index)
 
 void mqtt_publish_temperature_reading(const pool_state_t *current_state, int dev_idx, uint8_t sensor_index)
 {
+    if (!mqtt_client_is_connected()) return;
     if (dev_idx < 0 || dev_idx >= current_state->num_seen_devices) return;
     if (sensor_index < 1 || sensor_index > 2) return;
 
@@ -141,12 +143,9 @@ void mqtt_publish_temperature_reading(const pool_state_t *current_state, int dev
     bool    valid = (sensor_index == 1) ? d->temp1_valid : d->temp2_valid;
     if (!valid) return;
 
-    // Change detection against the per-device cached snapshot.
-    if (dev_idx < s_last_published_state.num_seen_devices) {
-        const seen_device_t *last = &s_last_published_state.seen_devices[dev_idx];
-        if (sensor_index == 1 && last->temp1_valid && last->temp1 == value) return;
-        if (sensor_index == 2 && last->temp2_valid && last->temp2 == value) return;
-    }
+    // Called for an actual sensor report, including an unchanged reading.
+    // Do not cache the whole device: that would mark its other sensor as
+    // published before that sensor's own call has run.
 
     char device_id[32];
     mqtt_get_device_id(device_id, sizeof(device_id));
@@ -171,14 +170,6 @@ void mqtt_publish_temperature_reading(const pool_state_t *current_state, int dev
     char payload[64];
     snprintf(payload, sizeof(payload), "{\"value\":%d}", value);
     mqtt_publish(topic, payload, 0, true);
-
-    // Mirror the published device entry into the cache.
-    if (dev_idx < MAX_SEEN_DEVICES) {
-        s_last_published_state.seen_devices[dev_idx] = *d;
-        if (dev_idx >= s_last_published_state.num_seen_devices) {
-            s_last_published_state.num_seen_devices = dev_idx + 1;
-        }
-    }
 
     if (d->single_sensor_source) {
         ESP_LOGI(TAG, "Published temperature: %s=%d°C", slug, value);
@@ -848,16 +839,11 @@ void mqtt_publish_chlorinator(const pool_state_t *current_state)
 
 void mqtt_publish_pump(const pool_state_t *current_state)
 {
+    if (!mqtt_client_is_connected()) return;
     ESP_LOGD(TAG, "mqtt_publish_pump: speed_rpm=%d valid=%d",
              current_state->pump_speed, current_state->pump_speed_valid);
 
-    // Check if anything changed
-    if (s_last_published_state.pump_speed_valid == current_state->pump_speed_valid &&
-        s_last_published_state.pump_speed == current_state->pump_speed &&
-        s_last_published_state.pump_power_watts_valid == current_state->pump_power_watts_valid &&
-        s_last_published_state.pump_power_watts == current_state->pump_power_watts) {
-        return;  // No change, skip publish
-    }
+    // A fresh pump report is a sample even if RPM and power are unchanged.
 
     // Publish discovery on first valid reading, and again if the pump's power
     // and energy sensors gain a source: a pump that has only sent speed-only

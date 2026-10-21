@@ -1,0 +1,40 @@
+# Connect 10 output evidence, 2026-10-18: Auto/running -> On/running ->
+# Off/stopped -> Auto/running. Payloads are from the observed sequence;
+# timestamps and the leading type-register setup are synthetic for replay.
+# CMD 0x2C byte 12 remains 02 and must not decide activity.
+
+I (1000) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 6D 02 FC 6B 03
+I (1000) MSG_DECODER: [Touch Screen -> Broadcast] Channel 2 type - Solar Controller (252)
+02 00 50 FF FF 80 00 38 0F 17 6D 02 FC 6B 03
+
+I (1100) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 2C 12 0E 2B 01 02 00 02 04 34 03
+I (1100) MSG_DECODER: [Touch Screen -> Broadcast] Solar status - Mode: Auto, Season: Summer, Flush daily: on, Filter pump required: yes, Unknown config: 0x02, Differential: 4°C, Unknown: 0x00
+02 00 50 FF FF 80 00 2C 12 0E 2B 01 02 00 02 04 34 03
+
+I (1200) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 04 00 04 03
+I (1200) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Active
+02 00 62 FF FF 80 00 12 0F 03 00 04 00 04 03
+
+I (1300) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 2C 12 0E 2B 02 02 00 02 04 35 03
+I (1300) MSG_DECODER: [Touch Screen -> Broadcast] Solar status - Mode: On, Season: Summer, Flush daily: on, Filter pump required: yes, Unknown config: 0x02, Differential: 4°C, Unknown: 0x00
+02 00 50 FF FF 80 00 2C 12 0E 2B 02 02 00 02 04 35 03
+
+I (1400) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 04 00 04 03
+I (1400) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Active
+02 00 62 FF FF 80 00 12 0F 03 00 04 00 04 03
+
+I (1500) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 2C 12 0E 2B 00 02 00 02 04 33 03
+I (1500) MSG_DECODER: [Touch Screen -> Broadcast] Solar status - Mode: Off, Season: Summer, Flush daily: on, Filter pump required: yes, Unknown config: 0x02, Differential: 4°C, Unknown: 0x00
+02 00 50 FF FF 80 00 2C 12 0E 2B 00 02 00 02 04 33 03
+
+I (1600) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 00 00 03
+I (1600) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
+02 00 62 FF FF 80 00 12 0F 03 00 00 00 00 03
+
+I (1700) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 2C 12 0E 2B 01 02 00 02 04 34 03
+I (1700) MSG_DECODER: [Touch Screen -> Broadcast] Solar status - Mode: Auto, Season: Summer, Flush daily: on, Filter pump required: yes, Unknown config: 0x02, Differential: 4°C, Unknown: 0x00
+02 00 50 FF FF 80 00 2C 12 0E 2B 01 02 00 02 04 34 03
+
+I (1800) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 04 00 04 03
+I (1800) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Active
+02 00 62 FF FF 80 00 12 0F 03 00 04 00 04 03

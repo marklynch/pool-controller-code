@@ -589,6 +589,7 @@ static bool handle_heater1_type(const uint8_t *data, int len, const uint8_t *pay
 static bool handle_heater_power_channel(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_chlor_unknown_countdown(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_chlor_unknown_value(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool apply_solar_status(pool_state_t *ps, channel_state_t *ch);
 
 /**
  * Register message dispatch table
@@ -822,15 +823,13 @@ static bool handle_temp_reading(
 
     bool publish_temp2 = (dev_idx >= 0)
                       && !ctx->pool_state->seen_devices[dev_idx].single_sensor_source
-                      && ctx->pool_state->seen_devices[dev_idx].temp2_valid;
+                      && payload_len >= 2 && !temp_is_invalid(payload[1]);
     state_unlock(ctx, true, &snapshot);
 
-    if (t1_invalid || dev_idx < 0) {
-        return true;  // Invalid temp1 or registry full: skip publish.
-    }
-
     if (ctx->enable_mqtt) {
-        mqtt_publish_temperature_reading(&snapshot, dev_idx, 1);
+        if (!t1_invalid && dev_idx >= 0) {
+            mqtt_publish_temperature_reading(&snapshot, dev_idx, 1);
+        }
         if (publish_temp2) {
             mqtt_publish_temperature_reading(&snapshot, dev_idx, 2);
         }
@@ -1529,15 +1528,19 @@ static bool handle_heater(
     uint8_t status = payload[1];
     bool heater_on    = (status & 0x01) != 0;
     bool service_mode = (status & 0x02) != 0;
-    ESP_LOGI(TAG, "%s Heater - %s, Service mode - %s",
-             addr_info, heater_on ? "On" : "Off", service_mode ? "On" : "Off");
+    // Captured against physical stop/start: clears when Solar stops, sets in
+    // Auto when the pump starts, and stays set when Auto changes to On.
+    bool solar_active = (status & 0x04) != 0;
+    ESP_LOGI(TAG, "%s Heater - %s, Service mode - %s, Solar output - %s",
+             addr_info, heater_on ? "On" : "Off", service_mode ? "On" : "Off",
+             solar_active ? "Active" : "Inactive");
 
     // Flag undocumented field values for protocol research (PROTOCOL.md 0x12,
     // Connect 8/10 variant). Byte 10 is unknown, observed as 0x00 or 0x04;
-    // byte 11 a status bitfield (bit 0 heater, bit 1 service mode; higher bits
+    // byte 11 a status bitfield (bit 0 heater, bit 1 service, bit 2 Solar; higher bits
     // unseen); byte 12 unknown, observed as 0x00 or 0x08. Any other value is
     // surfaced for capture.
-    bool undocumented = (payload[0] != 0x00 && payload[0] != 0x04) || (status & ~0x03) != 0;
+    bool undocumented = (payload[0] != 0x00 && payload[0] != 0x04) || (status & ~0x07) != 0;
     if (payload_len >= 3 && payload[2] != 0x00 && payload[2] != 0x08) {
         undocumented = true;
     }
@@ -1556,6 +1559,18 @@ static bool handle_heater(
     }
     ctx->pool_state->service_mode = service_mode;
     ctx->pool_state->service_mode_valid = true;
+    ctx->pool_state->solar_active = solar_active;
+    ctx->pool_state->solar_active_valid = true;
+    ctx->pool_state->solar_status_byte = status;
+    ctx->pool_state->solar_status_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    uint8_t solar_channels[MAX_CHANNELS];
+    int solar_count = 0;
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        channel_state_t *ch = &ctx->pool_state->channels[i];
+        if (ch->configured && apply_solar_status(ctx->pool_state, ch)) {
+            solar_channels[solar_count++] = (uint8_t)(i + 1);
+        }
+    }
     state_unlock(ctx, true, &snapshot);
 
     if (ctx->enable_mqtt) {
@@ -1563,6 +1578,9 @@ static bool handle_heater(
             mqtt_publish_heater(&snapshot, 0);
         }
         mqtt_publish_service_mode(&snapshot);
+        for (int i = 0; i < solar_count; i++) {
+            mqtt_publish_channel(&snapshot, solar_channels[i]);
+        }
     }
 
     return true;
@@ -3072,10 +3090,10 @@ static bool handle_solar_setpoint_broadcast(
 }
 
 /**
- * Apply the retained CMD 0x2C Solar mode/output to a dedicated Solar channel
+ * Apply retained Solar mode (CMD 0x2C) and output (0x0062 CMD 0x12) to a channel
  * (type 0xFC). Called wherever a channel's state may be written from another
- * source (CMD 0x0B, the channel type and channel state registers), so CMD 0x2C
- * stays the single authority for that channel once it has been seen.
+ * source (CMD 0x0B, the channel type and channel state registers), so stale
+ * ordinary-channel data cannot overwrite either independently observed value.
  * Caller must hold the state mutex. Returns true if the channel changed.
  */
 static bool apply_solar_status(pool_state_t *ps, channel_state_t *ch)
@@ -3098,9 +3116,10 @@ static bool apply_solar_status(pool_state_t *ps, channel_state_t *ch)
  * Dispatched on the CMD byte alone (source-agnostic).
  *
  * Solar config/status block from the Touchscreen: config bitmask (season,
- * flush daily, filter pump required), selected mode, live output state, one
- * unknown byte and the temperature differential. The mode and live output
- * here are authoritative for a dedicated Solar channel (type 0xFC): its CMD
+ * flush daily, filter pump required), selected mode, unknown configuration
+ * bytes and the temperature differential. Only the mode here is authoritative
+ * for a dedicated Solar channel (type 0xFC). Output activity comes from
+ * 0x0062 CMD 0x12 payload[1] bit 2, independently of selected mode: its CMD
  * 0x0B tuple remains FC 00 00 even when Solar is Auto and running, and CMD
  * 0x0D omits that controller-managed output.
  */
@@ -3114,30 +3133,28 @@ static bool handle_solar_status_broadcast(
 
     uint8_t flags = payload[0];
     uint8_t mode  = payload[1];
-    uint8_t runtime_state = payload[2];
-    bool solar_active = runtime_state != 0;
     const char *mode_name = (mode == 0x00) ? "Off" : (mode == 0x01) ? "Auto" : (mode == 0x02) ? "On" : "Unknown";
 
     ESP_LOGI(TAG, "%s Solar status - Mode: %s, Season: %s, Flush daily: %s, "
-             "Filter pump required: %s, Output: %s (0x%02X), Differential: %d°C, Unknown: 0x%02X",
+             "Filter pump required: %s, Unknown config: 0x%02X, Differential: %d°C, Unknown: 0x%02X",
              addr_info, mode_name,
              (flags & 0x20) ? "Summer" : "Winter",
              (flags & 0x02) ? "on" : "off",
              (flags & 0x08) ? "yes" : "no",
-             solar_active ? "Active" : "Inactive", runtime_state,
+             payload[2],
              payload[5], payload[3]);
 
-    // An undocumented mode is not retained, but the live output state in the
-    // same frame is still applied.
+    // Byte 12 stays 0x02 even with mode Off and the pump physically stopped.
+    // Its meaning is unresolved; do not use it to create an activity sample.
     bool mode_known = mode <= 0x02;
     if (!mode_known) {
         ESP_LOGW(TAG, "%s Solar status has undocumented mode 0x%02X", addr_info, mode);
     }
-    if (runtime_state > 0x02) {
-        ESP_LOGW(TAG, "%s Solar status has undocumented runtime state 0x%02X",
-                 addr_info, runtime_state);
+    if (payload[2] > 0x02) {
+        ESP_LOGW(TAG, "%s Solar status has undocumented configuration byte 0x%02X",
+                 addr_info, payload[2]);
     }
-    if (!mode_known || runtime_state > 0x02) {
+    if (!mode_known || payload[2] > 0x02) {
         record_undocumented(data, len);
     }
 
@@ -3151,8 +3168,6 @@ static bool handle_solar_status_broadcast(
             ps->solar_mode = mode;
             ps->solar_mode_valid = true;
         }
-        ps->solar_active = solar_active;
-        ps->solar_active_valid = true;
 
         for (int i = 0; i < MAX_CHANNELS; i++) {
             channel_state_t *channel = &ps->channels[i];

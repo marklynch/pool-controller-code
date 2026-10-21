@@ -21,9 +21,10 @@
 extern int unknown_buffer_record_count;
 
 // Mock FreeRTOS function implementations
+static uint32_t mock_ticks = 1000;
 uint32_t xTaskGetTickCount(void)
 {
-    return 1000;  // Mock tick count
+    return mock_ticks;
 }
 
 BaseType_t xSemaphoreTake(SemaphoreHandle_t xSemaphore, TickType_t xBlockTime)
@@ -42,7 +43,11 @@ void xSemaphoreGive(SemaphoreHandle_t xSemaphore)
 // Mock MQTT functions (disabled in tests)
 void mqtt_publish_mode(const pool_state_t *state) {}
 void mqtt_publish_heater_setpoints(const pool_state_t *state, int index) {}
-void mqtt_publish_temperature_reading(const pool_state_t *state, int dev_idx, uint8_t sensor_index) {}
+static unsigned temperature_publish_calls[2];
+void mqtt_publish_temperature_reading(const pool_state_t *state, int dev_idx, uint8_t sensor_index)
+{
+    temperature_publish_calls[sensor_index - 1]++;
+}
 void mqtt_publish_heater(const pool_state_t *state, int index) {}
 void mqtt_publish_gas_heater(const pool_state_t *state, int index) {}
 static int heater_config_publishes = 0;
@@ -76,6 +81,7 @@ static int tests_failed = 0;
 static void init_test_context(void)
 {
     memset(&test_pool_state, 0, sizeof(test_pool_state));
+    mock_ticks = 1000;
     test_ctx.pool_state = &test_pool_state;
     test_ctx.state_mutex = (SemaphoreHandle_t)&dummy_mutex;
     test_ctx.enable_mqtt = false;
@@ -89,6 +95,20 @@ static void set_heater_config(uint8_t heater1_type, bool heater2_configured)
     test_pool_state.heater1_type_valid       = true;
     test_pool_state.heater2_configured       = heater2_configured;
     test_pool_state.heater2_configured_valid = true;
+}
+
+static bool decode_test_frame(uint8_t source, uint8_t command,
+                              const uint8_t *payload, int payload_len)
+{
+    uint8_t message[64] = {0x02, 0x00, source, 0xFF, 0xFF, 0x80, 0x00, command};
+    if (payload_len < 0 || payload_len > 52) return false;
+    int length = payload_len + 12;
+    message[8] = length;
+    for (int i = 0; i < 9; i++) message[9] += message[i];
+    memcpy(message + 10, payload, payload_len);
+    for (int i = 0; i < payload_len; i++) message[length - 2] += payload[i];
+    message[length - 1] = 0x03;
+    return decode_message(message, length, &test_ctx);
 }
 
 #define TEST_ASSERT(condition, message) \
@@ -1045,19 +1065,27 @@ void test_dedicated_solar_uses_solar_status_mode_and_activity(void)
                 "Solar mode retained from CMD 0x2C");
     TEST_ASSERT(test_pool_state.channels[1].state == 1,
                 "Dedicated Solar channel reports Auto from CMD 0x2C");
+    TEST_ASSERT(!test_pool_state.solar_active_valid,
+                "CMD 0x2C does not invent an output sample");
+    uint8_t stopped[] = {0, 0, 0};
+    TEST_ASSERT(decode_test_frame(0x62, 0x12, stopped, 3), "Stopped controller output decoded");
     TEST_ASSERT(test_pool_state.solar_active_valid && !test_pool_state.solar_active,
-                "Inactive Solar output retained from CMD 0x2C");
+                "Inactive output comes from controller status");
 
-    // In the running capture only payload byte 2 changes to 0x02; mode stays
-    // Auto, the 0x0B Solar tuple stays FC 00 00 and CMD 0x0D names Filter only.
+    // This configuration byte also stays 0x02 with the pump stopped.
+    // It cannot establish activity; the independent controller bit must do so.
     uint8_t solar_running[] = {
         0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x2C, 0x12, 0x0E,
         0x2B, 0x01, 0x02, 0x00, 0x02, 0x04, 0x34, 0x03
     };
     TEST_ASSERT(decode_message(solar_running, sizeof(solar_running), &test_ctx),
                 "Running Solar status decoded");
+    TEST_ASSERT(!test_pool_state.solar_active,
+                "Nonzero CMD 0x2C configuration does not activate Solar");
+    uint8_t running[] = {0, 4, 0};
+    TEST_ASSERT(decode_test_frame(0x62, 0x12, running, 3), "Running controller output decoded");
     TEST_ASSERT(test_pool_state.solar_active && test_pool_state.channels[1].active,
-                "Dedicated Solar channel reports active from CMD 0x2C runtime state");
+                "Dedicated Solar activity comes from 0x0062 CMD 0x12 bit 2");
 
     TEST_ASSERT(decode_message(channel_status, sizeof(channel_status), &test_ctx),
                 "Following dedicated Solar channel status decoded");
@@ -1066,24 +1094,29 @@ void test_dedicated_solar_uses_solar_status_mode_and_activity(void)
 
     TEST_ASSERT(decode_message(solar_auto, sizeof(solar_auto), &test_ctx),
                 "Solar stop status decoded");
+    TEST_ASSERT(test_pool_state.channels[1].active,
+                "Zero CMD 0x2C configuration does not clear actual activity");
+    TEST_ASSERT(decode_test_frame(0x62, 0x12, stopped, 3), "Stopped output decoded");
     TEST_ASSERT(!test_pool_state.channels[1].active,
-                "Dedicated Solar channel clears from CMD 0x2C runtime state");
+                "Dedicated Solar clears only from controller output status");
 }
 
 /**
  * Test: the Channel State register (0x8C+N) cannot overwrite a dedicated Solar
- * channel's CMD 0x2C mode — its register value is as stale as its 0x0B tuple.
+ * channel's separately retained mode and output — its register value is as stale as its 0x0B tuple.
  */
 void test_dedicated_solar_state_register_does_not_override(void)
 {
     init_test_context();
+    uint8_t output[] = {0, 4, 0};
+    TEST_ASSERT(decode_test_frame(0x62, 0x12, output, 3), "Actual running output received");
 
     // Channel 2 type register = 0xFC (dedicated Solar)
     uint8_t type_reg[] = {
         0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F, 0x17,
         0x6D, 0x02, 0xFC, 0x6B, 0x03
     };
-    // CMD 0x2C: Auto, output active
+    // CMD 0x2C: Auto, unknown configuration byte 0x02
     uint8_t solar_running[] = {
         0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x2C, 0x12, 0x0E,
         0x2B, 0x01, 0x02, 0x00, 0x02, 0x04, 0x34, 0x03
@@ -1111,6 +1144,8 @@ void test_dedicated_solar_state_register_does_not_override(void)
 void test_dedicated_solar_status_before_type_register(void)
 {
     init_test_context();
+    uint8_t output[] = {0, 4, 0};
+    TEST_ASSERT(decode_test_frame(0x62, 0x12, output, 3), "Actual running output received");
 
     uint8_t solar_running[] = {
         0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x2C, 0x12, 0x0E,
@@ -1127,22 +1162,24 @@ void test_dedicated_solar_status_before_type_register(void)
                 "Solar channel type register decoded");
     TEST_ASSERT(test_pool_state.channels[1].configured &&
                 test_pool_state.channels[1].state == 1 && test_pool_state.channels[1].active,
-                "Retained CMD 0x2C applied when Solar channel type is learned");
+                "Retained mode/output applied when Solar channel type is learned");
 }
 
 /**
  * Test: an undocumented CMD 0x2C mode is flagged and not retained, but the
- * live output state in the same frame is still applied.
+ * independent controller output sample is retained.
  */
 void test_dedicated_solar_undocumented_mode_keeps_active(void)
 {
     init_test_context();
+    uint8_t output[] = {0, 4, 0};
+    TEST_ASSERT(decode_test_frame(0x62, 0x12, output, 3), "Actual running output received");
 
     uint8_t type_reg[] = {
         0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F, 0x17,
         0x6D, 0x02, 0xFC, 0x6B, 0x03
     };
-    // Mode 0x03 (undocumented), output active
+    // Mode 0x03 (undocumented), unknown configuration byte 0x02
     uint8_t solar_odd_mode[] = {
         0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x2C, 0x12, 0x0E,
         0x23, 0x03, 0x02, 0x00, 0x04, 0x07, 0x33, 0x03
@@ -1158,7 +1195,7 @@ void test_dedicated_solar_undocumented_mode_keeps_active(void)
     TEST_ASSERT(!test_pool_state.solar_mode_valid,
                 "Undocumented Solar mode is not retained");
     TEST_ASSERT(test_pool_state.channels[1].active,
-                "Output state applied despite undocumented mode");
+                "Independent output state preserved despite undocumented mode");
 }
 
 /**
@@ -2059,6 +2096,97 @@ void test_genus_heater_undocumented_status(void)
 /**
  * Run all tests
  */
+static void test_solar_mode_and_output_are_independent(void)
+{
+    init_test_context();
+    test_ctx.enable_mqtt = true;
+    uint8_t type[] = {0x6D, 2, 0xFC};
+    uint8_t config[] = {0x2B, 0, 2, 0, 2, 4};
+    uint8_t status[] = {0, 4, 0};
+    decode_test_frame(0x50, 0x38, type, sizeof(type));
+    decode_test_frame(0x50, 0x2C, config, sizeof(config));
+    TEST_ASSERT(!test_pool_state.solar_active_valid,
+                "Off mode and persistent config 02 do not establish activity");
+    int before = unknown_buffer_record_count;
+    decode_test_frame(0x62, 0x12, status, sizeof(status));
+    TEST_ASSERT(unknown_buffer_record_count == before,
+                "Controller Solar bit is documented");
+    TEST_ASSERT(test_pool_state.channels[1].state == 0 && test_pool_state.channels[1].active,
+                "Mode Off does not overwrite a still-active physical output report");
+    TEST_ASSERT(!test_pool_state.heaters[0].valid,
+                "Solar sample does not bypass heater configuration guards");
+    TEST_ASSERT(test_pool_state.solar_status_byte == 4 && test_pool_state.solar_status_ms == mock_ticks,
+                "Solar diagnostics identify the genuine controller sample");
+    mock_ticks += 1000;
+    decode_test_frame(0x50, 0x2C, config, sizeof(config));
+    TEST_ASSERT(test_pool_state.solar_status_ms != mock_ticks,
+                "Mode report does not refresh physical output sample time");
+    decode_test_frame(0x62, 0x12, status, sizeof(status));
+    TEST_ASSERT(test_pool_state.solar_status_ms == mock_ticks,
+                "Unchanged real output report refreshes its sample time");
+    uint8_t mask[] = {0x80};
+    decode_test_frame(0x50, 0x0D, mask, sizeof(mask));
+    TEST_ASSERT(test_pool_state.channels[1].active,
+                "Ordinary channel bitmap cannot clear the dedicated output");
+    status[1] = 0;
+    decode_test_frame(0x62, 0x12, status, sizeof(status));
+    TEST_ASSERT(!test_pool_state.channels[1].active && test_pool_state.channels[1].state == 0,
+                "Physical stop clears activity while mode remains Off");
+    decode_test_frame(0x50, 0x2C, config, sizeof(config));
+    TEST_ASSERT(!test_pool_state.channels[1].active,
+                "Persistent config 02 cannot reactivate a stopped pump");
+    config[1] = 2;
+    decode_test_frame(0x50, 0x2C, config, sizeof(config));
+    TEST_ASSERT(test_pool_state.channels[1].state == 2 && !test_pool_state.channels[1].active,
+                "On mode does not invent a running output before a real sample");
+    uint8_t relay_type[] = {0x6E, 2, 0x08};
+    decode_test_frame(0x50, 0x38, relay_type, sizeof(relay_type));
+    status[1] = 4;
+    decode_test_frame(0x62, 0x12, status, sizeof(status));
+    TEST_ASSERT(!test_pool_state.channels[2].active,
+                "Controller Solar bit does not affect a relay Solar channel");
+    set_heater_config(HEATER1_TYPE_CONNECT_INBUILT, false);
+    status[1] = 7;
+    decode_test_frame(0x62, 0x12, status, sizeof(status));
+    TEST_ASSERT(test_pool_state.heaters[0].on && test_pool_state.service_mode && test_pool_state.solar_active,
+                "Combined heater/service/Solar bits remain independent");
+    before = unknown_buffer_record_count;
+    status[1] = 8;
+    decode_test_frame(0x62, 0x12, status, sizeof(status));
+    TEST_ASSERT(unknown_buffer_record_count > before,
+                "Unmapped upper controller bits are still flagged");
+}
+
+static void test_temperature_samples_are_independent(void)
+{
+    init_test_context();
+    test_ctx.enable_mqtt = true;
+    memset(temperature_publish_calls, 0, sizeof(temperature_publish_calls));
+    uint8_t temps[] = {24, 46};
+    TEST_ASSERT(decode_test_frame(0x62, 0x16, temps, 2), "Two valid temperatures decoded");
+    TEST_ASSERT(temperature_publish_calls[0] == 1 && temperature_publish_calls[1] == 1,
+                "Both sensors published from the same frame");
+    temps[1] = 0xFF;
+    decode_test_frame(0x62, 0x16, temps, 2);
+    TEST_ASSERT(temperature_publish_calls[0] == 2 && temperature_publish_calls[1] == 1,
+                "Invalid roof sample does not republish its cached reading");
+    temps[0] = 0xFF; temps[1] = 47;
+    decode_test_frame(0x62, 0x16, temps, 2);
+    TEST_ASSERT(temperature_publish_calls[0] == 2 && temperature_publish_calls[1] == 2,
+                "Valid roof sample publishes even when water sample is invalid");
+    temps[1] = 0xFF;
+    decode_test_frame(0x62, 0x16, temps, 2);
+    TEST_ASSERT(temperature_publish_calls[0] == 2 && temperature_publish_calls[1] == 2,
+                "Two invalid samples do not create history points");
+    temps[0] = 24;
+    decode_test_frame(0x62, 0x16, temps, 1);
+    TEST_ASSERT(temperature_publish_calls[0] == 3 && temperature_publish_calls[1] == 2,
+                "Missing roof sample does not republish its cached reading");
+    decode_test_frame(0x62, 0x31, temps, 1);
+    TEST_ASSERT(temperature_publish_calls[0] == 3,
+                "Alternate CMD 0x31 remains log-only and does not duplicate history");
+}
+
 int main(void)
 {
     printf("\n");
@@ -2088,6 +2216,7 @@ int main(void)
     test_heater_configured_helper();
     test_heater_config_change_publishes();
     test_decode_temp_reading();
+    test_temperature_samples_are_independent();
     test_decode_heater_on();
     test_decode_heater_off();
     test_decode_heater_bit_ignored_until_type_known();
@@ -2104,6 +2233,7 @@ int main(void)
     test_dedicated_solar_status_before_type_register();
     test_dedicated_solar_undocumented_mode_keeps_active();
     test_dedicated_solar_undocumented_raw_state_flagged();
+    test_solar_mode_and_output_are_independent();
     test_decode_channel_status_lights_active();
     test_decode_channel_status_multispeed_pump();
     test_channel_status_teaches_filter_pump_type();

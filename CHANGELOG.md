@@ -15,8 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Solar diagnostics in `/status`: selected mode, nullable output activity, the
+  last real output-sample age, controller status byte and activity source.
 ### Changed
 ### Fixed
+- Dedicated Solar activity now comes from Connect 10 `0x0062` CMD `0x12`
+  payload byte 1 bit 2. CMD `0x2C` only supplies mode: its byte 12 remained `02`
+  during physically confirmed running and stopped states, so treating it as
+  activity could leave Solar permanently active.
+- Publish both temperature sensors independently. Publishing sensor 1 no longer
+  suppresses sensor 2, and invalid/missing current samples cannot republish
+  cached values as new. Fresh unchanged temperatures and pump reports reach
+  MQTT; temperature and RPM discovery enables measurement statistics and
+  repeated-sample recording in Home Assistant.
 ### Removed
 ### Deprecated
 ### Security
