@@ -29,6 +29,8 @@ idf_component_register(
         "static/favicon.svg"
         "static/oat.min.css"
         "static/oat.min.js"
+        "static/status_view.css"
+        "static/status_view.js"
     EMBED_FILES
         "static/favicon.png"
     REQUIRES
