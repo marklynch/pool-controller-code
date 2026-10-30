@@ -849,6 +849,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(ch, "name",  state.channels[i].name[0] ? state.channels[i].name : type_name);
         cJSON_AddStringToObject(ch, "type",  type_name);
         cJSON_AddStringToObject(ch, "state", state_name);
+        cJSON_AddBoolToObject(ch,   "active", state.channels[i].active);
         cJSON_AddItemToArray(channels, ch);
     }
     cJSON_AddItemToObject(root, "channels", channels);
@@ -1030,6 +1031,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(timer, "start", start_str);
         cJSON_AddStringToObject(timer, "stop",  stop_str);
         cJSON_AddStringToObject(timer, "days",  days_str);
+        cJSON_AddNumberToObject(timer, "days_mask", t->days);
         cJSON_AddItemToArray(timers, timer);
     }
     cJSON_AddItemToObject(root, "timers", timers);
@@ -1115,57 +1117,36 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 static esp_err_t status_view_get_handler(httpd_req_t *req)
 {
     const char *status_view_page =
-        "<h1>Pool Controller Status</h1>"
-        "<p class='text-right'><small><a href='/status'>View raw JSON</a></small></p>"
+        "<link rel='stylesheet' href='/static/status_view.css'>"
+        "<header class='status-heading'>"
+        "<div><h1>Pool Controller Status</h1><p class='text-lighter'>Live overview of the controller and connected equipment.</p></div>"
+        "<div class='status-actions'><span id='refresh-state' class='text-lighter'>Loading...</span>"
+        "<button id='refresh-status' class='outline small' type='button'>Refresh</button>"
+        "<a class='button outline small' href='/status'>Raw JSON</a></div>"
+        "</header>"
         "<div id='status-error' role='alert' data-variant='danger' hidden></div>"
-        "<pre><code id='status-content'>Loading status...</code></pre>"
-        "<p id='time-info' class='text-lighter mt-4' hidden></p>"
-        "<script>"
-        "fetch('/status').then(r=>r.json()).then(data=>{"
-        "const fmt=(obj,indent=0)=>{"
-        "const pad=' '.repeat(indent);"
-        "let out='';"
-        "for(const[k,v]of Object.entries(obj)){"
-        "if(v===null){out+=pad+k+': null\\n';}"
-        "else if(Array.isArray(v)){"
-        "out+=pad+k+': [\\n';"
-        "v.forEach(item=>{"
-        "if(typeof item==='object'){out+=fmt(item,indent+2)+',\\n';}"
-        "else{out+=pad+'  '+JSON.stringify(item)+',\\n';}"
-        "});"
-        "out+=pad+']\\n';"
-        "}else if(typeof v==='object'){"
-        "out+=pad+k+': {\\n'+fmt(v,indent+2)+pad+'}\\n';"
-        "}else if(typeof v==='string'){"
-        "out+=pad+k+': \"'+v+'\"\\n';"
-        "}else{"
-        "out+=pad+k+': '+v+'\\n';"
-        "}"
-        "}"
-        "return out;"
-        "};"
-        "document.getElementById('status-content').textContent=fmt(data);"
-        "const ti=document.getElementById('time-info');"
-        "let localTime='NTP not synced';"
-        "if(data.current_time&&data.current_time!=='NTP not synced'){"
-        "const d=new Date(data.current_time.replace(' UTC','Z').replace(' ','T'));"
-        "const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;"
-        "localTime=d.toLocaleString()+' ('+tz+')';}"
-        "let ageStr='Never';"
-        "if(data.last_update_ms){"
-        "const s=Math.floor((data.current_ms-data.last_update_ms)/1000);"
-        "if(s<60)ageStr=s+'s ago';"
-        "else if(s<3600)ageStr=Math.floor(s/60)+'m '+(s%60)+'s ago';"
-        "else ageStr=Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m ago';}"
-        "ti.innerHTML='Time: <strong>'+localTime+'</strong> &nbsp;|&nbsp; Last update: <strong>'+ageStr+'</strong>';"
-        "ti.removeAttribute('hidden');"
-        "}).catch(e=>{"
-        "const err=document.getElementById('status-error');"
-        "err.textContent='Error loading status: '+e;"
-        "err.removeAttribute('hidden');"
-        "document.getElementById('status-content').textContent='';"
-        "});"
-        "</script>";
+        "<section id='summary' class='status-summary' aria-label='System summary'>"
+        "<article class='card metric'><span class='metric-label'>Mode</span><strong id='summary-mode'>--</strong><span id='summary-service' class='text-lighter'>Loading</span></article>"
+        "<article class='card metric'><span class='metric-label'>Controller data</span><strong id='summary-update'>--</strong><span id='summary-clock' class='text-lighter'>Loading</span></article>"
+        "<article class='card metric'><span class='metric-label'>Bus health</span><strong id='summary-bus'>--</strong><span id='summary-messages' class='text-lighter'>Loading</span></article>"
+        "<article class='card metric'><span class='metric-label'>Pump</span><strong id='summary-pump'>--</strong><span id='summary-power' class='text-lighter'>Loading</span></article>"
+        "</section>"
+        "<section aria-labelledby='equipment-heading'><div class='section-heading'><div><h2 id='equipment-heading'>Equipment</h2>"
+        "<p id='equipment-summary' class='text-lighter'>Loading equipment...</p></div></div>"
+        "<div id='equipment-grid' class='equipment-grid'></div></section>"
+        "<section id='temperature-section' aria-labelledby='temperature-heading' hidden><h2 id='temperature-heading'>Temperatures</h2>"
+        "<div id='temperature-grid' class='temperature-grid'></div></section>"
+        "<section aria-labelledby='timers-heading'><div class='section-heading'><div><h2 id='timers-heading'>Timers</h2>"
+        "<p class='text-lighter'>Schedule state uses this browser's local day and time.</p></div></div>"
+        "<div id='timer-grid' class='timer-grid'></div>"
+        "<p class='timer-note'>The controller exposes timer times and weekdays, but not which outputs each timer controls. Equipment activity above is live; it cannot yet be attributed to a particular timer.</p>"
+        "</section>"
+        "<section aria-labelledby='details-heading'><h2 id='details-heading'>System details</h2>"
+        "<details><summary>Controller and network</summary><div id='controller-details'></div></details>"
+        "<details><summary>Connected bus devices</summary><div id='device-details'></div></details>"
+        "<details><summary>Water chemistry and heating</summary><div id='water-details'></div></details>"
+        "</section>"
+        "<script src='/static/status_view.js'></script>";
 
     char page_title[] = "Pool Controller Status";
     char *header = get_page_header(page_title);
@@ -2337,6 +2318,8 @@ extern const char _binary_favicon_png_end[];  // used to compute exact byte leng
 // main/static/oat.min.css + oat.min.js  (https://oat.ink, MIT license)
 extern const char _binary_oat_min_css_start[];
 extern const char _binary_oat_min_js_start[];
+extern const char _binary_status_view_css_start[];
+extern const char _binary_status_view_js_start[];
 
 // --- File table ---
 
@@ -2368,6 +2351,20 @@ static const static_file_t STATIC_FILES[] = {
         .content_end   = NULL,
         .content_type  = "application/javascript",
         .cache_control = "max-age=86400",
+    },
+    {
+        .uri           = "/static/status_view.css",
+        .content       = _binary_status_view_css_start,
+        .content_end   = NULL,
+        .content_type  = "text/css",
+        .cache_control = "no-cache",
+    },
+    {
+        .uri           = "/static/status_view.js",
+        .content       = _binary_status_view_js_start,
+        .content_end   = NULL,
+        .content_type  = "application/javascript",
+        .cache_control = "no-cache",
     },
 };
 #define STATIC_FILES_COUNT (sizeof(STATIC_FILES) / sizeof(STATIC_FILES[0]))
