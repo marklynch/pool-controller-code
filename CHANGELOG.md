@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed retained MQTT commands being re-run every time the device reconnected to the broker, e.g. a retained reboot command caused a boot loop and a retained heater command switched the heater back on after every reconnect. Retained messages on command topics are now ignored with a warning, while live commands work as before
 - Fixed MQTT command handling reading past the end of the topic when parsing it or logging an invalid one, because the topic isn't NUL-terminated. Not reachable with the current subscriptions, but it would have been with a wildcard subscription
 - Fixed WiFi networks with a 32-character name (the maximum) or a 64-hex-digit raw key as the password never connecting, because the last character was dropped when the credentials were saved
+- Fixed the pump's speed and power showing their last value indefinitely after the pump stopped sending them while the Filter channel stayed on, e.g. when the pump is unplugged or has failed. The firmware now sets both to 0 once no reading has arrived for 3 minutes (three missed cycles), as it already did when the Filter channel turned off. The Filter channel's state (e.g. High) is left as it is, so Home Assistant can flag a pump that is set to run but reports 0 RPM and 0 W
 ### Removed
 ### Deprecated
 ### Security

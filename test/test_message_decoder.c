@@ -1854,6 +1854,55 @@ void test_decode_pump_speed_zero(void)
 }
 
 /**
+ * Test: pump speed/power are zeroed once no CMD 0x3B has arrived for 3 minutes
+ * (the pump is unplugged or has failed) while the controller keeps reporting
+ * the Filter channel on High. The channel state is kept, so the pump reads as
+ * set to run but reporting nothing.
+ * Real messages: pump.txt (1150 RPM, 217 W), valves.txt (Filter on High)
+ */
+void test_pump_readings_expire(void)
+{
+    init_test_context();
+
+    uint8_t pump_reading[] = {0x02, 0x00, 0xA0, 0xFF, 0xFF, 0x80, 0x00, 0x3B, 0x10, 0x6B, 0x04, 0x7E, 0x00, 0xD9, 0x5B, 0x03};
+    uint8_t filter_high[] = {
+        0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x0B, 0x25, 0x00,
+        0x08,
+        0x01, 0x05, 0x01,  // Ch1: Filter, High (0x05), Active
+        0x02, 0x00, 0x00,
+        0x12, 0x00, 0x00,
+        0x12, 0x00, 0x00,
+        0x12, 0x00, 0x00,
+        0x09, 0x00, 0x00,
+        0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00,
+        0x50, 0x03
+    };
+
+    decode_message(filter_high, sizeof(filter_high), &test_ctx);
+    decode_message(pump_reading, sizeof(pump_reading), &test_ctx);
+    TEST_ASSERT(test_pool_state.pump_speed == 1150, "pump_speed should be 1150 RPM");
+    TEST_ASSERT(test_pool_state.pump_power_watts == 217, "pump_power_watts should be 217 W");
+
+    mock_tick += 3 * 60 * 1000 - 1;
+    decode_message(filter_high, sizeof(filter_high), &test_ctx);
+    TEST_ASSERT(test_pool_state.pump_speed == 1150 && test_pool_state.pump_power_watts == 217,
+                "Readings should be kept just under 3 minutes old");
+
+    mock_tick += 1;
+    decode_message(filter_high, sizeof(filter_high), &test_ctx);
+    TEST_ASSERT(test_pool_state.pump_speed == 0 && test_pool_state.pump_power_watts == 0,
+                "Readings should be zeroed once 3 minutes old");
+    TEST_ASSERT(test_pool_state.pump_speed_valid && test_pool_state.pump_power_watts_valid,
+                "Zeroed readings should stay valid, so they publish as 0 rather than unknown");
+    TEST_ASSERT(test_pool_state.channels[0].active && test_pool_state.channels[0].state == 5,
+                "Filter channel should stay active on High");
+
+    decode_message(pump_reading, sizeof(pump_reading), &test_ctx);
+    TEST_ASSERT(test_pool_state.pump_speed == 1150, "A new reading should replace the zero");
+}
+
+/**
  * Test: Pump button activity (CMD 0x1B) — decoded but no state change
  * Real message from log: 02 00 A0 FF FF 80 00 1B 0D 48 01 01 03
  */
@@ -2329,6 +2378,7 @@ int main(void)
     test_decode_pump_speed_1350();
     test_decode_pump_speed_1500();
     test_decode_pump_speed_zero();
+    test_pump_readings_expire();
     test_decode_pump_activity();
 
     // Gas heater status tests (CMD 0x12)

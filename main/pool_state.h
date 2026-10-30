@@ -327,6 +327,7 @@ typedef struct {
     bool pump_speed_valid;
     uint16_t pump_power_watts; // Current pump power in Watts
     bool pump_power_watts_valid;
+    uint32_t pump_reading_ms;  // When the last CMD 0x3B arrived (ms since boot)
     // True once a genuine Viron XT pump telemetry message (CMD 0x3B, source
     // 0x00A0) has been decoded — the signal that "this install has a
     // variable-speed pump reporting its own readings". Unlike the _valid flags

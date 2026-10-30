@@ -772,6 +772,44 @@ static __attribute__((noinline)) void expire_chlor_readings(message_decoder_cont
     }
 }
 
+// A Viron XT pump broadcasts its speed and power (CMD 0x3B) every ~60 s while
+// it has power. If those stop while the Filter channel is still on (e.g. the
+// pump is unplugged or has failed), the readings are zeroed after three missed
+// cycles, as they are when the Filter channel turns off. The channel's state
+// (Low/Medium/High) is left as is, so an automation can see the pump is meant
+// to be running but is not reporting.
+#define PUMP_READING_STALE_MS (3 * 60 * 1000)
+
+/**
+ * Zero pump speed/power readings that have gone stale, and publish the change.
+ *
+ * noinline keeps its pool_state_t snapshot out of decode_message()'s frame,
+ * where it would sit on the stack alongside the handlers' own snapshots.
+ */
+static __attribute__((noinline)) void expire_pump_readings(message_decoder_context_t *ctx)
+{
+    pool_state_t *state = ctx->pool_state;
+    uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    bool cleared = false;
+    pool_state_t snapshot;
+    if (!state_lock(ctx, "pump reading expiry")) return;
+    if (state->pump_telemetry_seen &&
+        (state->pump_speed != 0 || state->pump_power_watts != 0) &&
+        now_ms - state->pump_reading_ms >= PUMP_READING_STALE_MS) {
+        state->pump_speed = 0;
+        state->pump_power_watts = 0;
+        cleared = true;
+    }
+    state_unlock(ctx, cleared, cleared ? &snapshot : NULL);
+    if (!cleared) return;
+
+    ESP_LOGI(TAG, "Pump readings stale (none for %d s) - zeroed",
+             PUMP_READING_STALE_MS / 1000);
+    if (ctx->enable_mqtt) {
+        mqtt_publish_pump(&snapshot);
+    }
+}
+
 /**
  * Handler: Water temperature reading (CMD 0x16 and CMD 0x31)
  *
@@ -4367,6 +4405,7 @@ static bool handle_pump_speed(
     ctx->pool_state->pump_speed = speed_rpm;
     ctx->pool_state->pump_speed_valid = true;
     ctx->pool_state->pump_telemetry_seen = true;
+    ctx->pool_state->pump_reading_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
     if (has_power) {
         ctx->pool_state->pump_power_watts = power_watts;
@@ -4566,6 +4605,7 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
 
     // Checked on every frame, as the bus is never quiet for long.
     expire_chlor_readings(ctx);
+    expire_pump_readings(ctx);
 
     return decoded;
 }
