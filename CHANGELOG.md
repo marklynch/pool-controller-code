@@ -14,9 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Changed
+### Fixed
+### Removed
+### Deprecated
+### Security
+
+## [1.20.1] - 2026-10-31
+### Added
 - Added automatic rollback of firmware updates: if a newly installed version crashes or restarts within its first minute, the device boots back into the previous version. This lives in the bootloader, which updates never replace, so existing devices only get it after one USB flash
 - Added the bootloader version to the home page and the startup log, with a note on whether it supports update rollback, so you can tell whether a device still needs that USB flash
-### Changed
 ### Fixed
 - Fixed the heater and Pool/Spa mode MQTT commands accepting a partial or empty payload, e.g. clearing a retained heater command with an empty message switched the heater on. Payloads must now match in full, as the light and valve commands already do
 - Fixed an interrupted firmware upload from the web page (a dropped connection or a closed tab) leaving the web server stuck in a loop until the device was restarted. The upload is now abandoned when the connection closes or stalls for longer than the 2-minute upload limit
@@ -24,8 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed MQTT command handling reading past the end of the topic when parsing it or logging an invalid one, because the topic isn't NUL-terminated. Not reachable with the current subscriptions, but it would have been with a wildcard subscription
 - Fixed WiFi networks with a 32-character name (the maximum) or a 64-hex-digit raw key as the password never connecting, because the last character was dropped when the credentials were saved
 - Fixed the pump's speed and power showing their last value indefinitely after the pump stopped sending them while the Filter channel stayed on, e.g. when the pump is unplugged or has failed. The firmware now sets both to 0 once no reading has arrived for 3 minutes (three missed cycles), as it already did when the Filter channel turned off. The Filter channel's state (e.g. High) is left as it is, so Home Assistant can flag a pump that is set to run but reports 0 RPM and 0 W
-### Removed
-### Deprecated
 ### Security
 - Enabled the compiler's stack protector, so a stack buffer overflow now stops the device with a crash report naming the function, instead of silently corrupting memory
 
