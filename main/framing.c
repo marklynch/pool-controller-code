@@ -54,6 +54,37 @@ framing_packet_type_t framing_classify_packet(uint8_t frame_type_hi, uint8_t fra
     return FRAME_INVALID;
 }
 
+static bool is_secret_frame(const uint8_t *frame, int len)
+{
+    // Header + register + slot + at least one value byte + data checksum + END
+    return len > FRAMING_SECRET_VALUE_OFFSET + 2 &&
+           framing_classify_packet(frame[5], frame[6]) == FRAME_WITH_DATA &&
+           frame[7] == FRAMING_CMD_REGISTER_WRITE &&
+           frame[FRAMING_PAYLOAD_OFFSET] == FRAMING_SECRET_REG_ID &&
+           frame[FRAMING_PAYLOAD_OFFSET + 1] == FRAMING_SECRET_SLOT;
+}
+
+int framing_format_hex(const uint8_t *frame, int len, char *out, size_t out_size)
+{
+    if (out_size == 0) {
+        return 0;
+    }
+
+    // The value runs up to the data checksum (len - 2), which is left visible
+    bool secret = is_secret_frame(frame, len);
+    size_t pos = 0;
+    for (int i = 0; i < len && pos + 3 < out_size; i++) {
+        if (secret && i >= FRAMING_SECRET_VALUE_OFFSET && i < len - 2) {
+            memcpy(&out[pos], "** ", 3);
+        } else {
+            snprintf(&out[pos], out_size - pos, "%02X ", frame[i]);
+        }
+        pos += 3;
+    }
+    out[pos] = '\0';
+    return (int)pos;
+}
+
 void framing_init(framing_buffer_t *fb)
 {
     if (fb) {

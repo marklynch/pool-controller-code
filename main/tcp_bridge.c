@@ -1,6 +1,7 @@
 #include "tcp_bridge.h"
 #include "framing.h"
 #include "config.h"
+#include "web_log.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -87,7 +88,8 @@ static bool send_to_client(int sock, const void *data, int len)
 }
 
 /**
- * Custom vprintf that outputs to both console and TCP client
+ * Custom vprintf that outputs to the console, the TCP client and the web UI's
+ * log viewer. Each line is formatted once and shared by both network outputs.
  */
 static int tcp_bridge_vprintf(const char *fmt, va_list args)
 {
@@ -101,19 +103,36 @@ static int tcp_bridge_vprintf(const char *fmt, va_list args)
         va_end(args_copy);
     }
 
-    // Format outside the mutex — vsnprintf is CPU-only, no reason to hold the lock for it
-    if (s_log_mutex) {
-        char log_buf[256];
-        int tcp_len = vsnprintf(log_buf, sizeof(log_buf), fmt, args);
+    // Skip formatting entirely when nobody is listening. The unlocked socket
+    // read is only a hint; it is re-checked under the mutex before sending.
+    bool tcp_active = s_log_mutex && s_log_client_sock >= 0;
+    bool web_active = web_log_active();
+    if (!tcp_active && !web_active) {
+        return len;
+    }
 
-        // Use timeout 0: log callbacks must never block, so drop the message on contention
-        if (tcp_len > 0 && xSemaphoreTake(s_log_mutex, 0) == pdTRUE) {
-            if (s_log_client_sock >= 0) {
-                int send_len = MIN(tcp_len, (int)sizeof(log_buf) - 1);
-                send(s_log_client_sock, log_buf, send_len, MSG_DONTWAIT);
-            }
-            xSemaphoreGive(s_log_mutex);
+    // Format outside the mutex — vsnprintf is CPU-only, no reason to hold the lock for it
+    char log_buf[256];
+    int out_len = vsnprintf(log_buf, sizeof(log_buf), fmt, args);
+    if (out_len <= 0) {
+        return len;
+    }
+    if (out_len >= (int)sizeof(log_buf)) {
+        // Truncated: keep the line terminator so the next line doesn't run on
+        out_len = sizeof(log_buf) - 1;
+        log_buf[out_len - 1] = '\n';
+    }
+
+    // Use timeout 0: log callbacks must never block, so drop the message on contention
+    if (tcp_active && xSemaphoreTake(s_log_mutex, 0) == pdTRUE) {
+        if (s_log_client_sock >= 0) {
+            send(s_log_client_sock, log_buf, out_len, MSG_DONTWAIT);
         }
+        xSemaphoreGive(s_log_mutex);
+    }
+
+    if (web_active) {
+        web_log_append(log_buf, out_len);
     }
 
     return len;
@@ -280,21 +299,14 @@ static void tcp_bridge_task(void *pvParameters)
             framing_result_t result;
             while ((result = framing_process_next(&s_framing_buffer, frame, &frame_len)) != FRAMING_NEED_MORE_DATA) {
                 if (result == FRAMING_FRAME_READY) {
-                    char hexLine[3 * BUS_MESSAGE_MAX_SIZE + 3];
-                    int hex_pos = 0;
-                    for (int i = 0; i < frame_len; i++) {
-                        if (hex_pos < (int)(sizeof(hexLine) - 3)) {
-                            hex_pos += snprintf(&hexLine[hex_pos], sizeof(hexLine) - hex_pos, "%02X ", frame[i]);
-                        }
-                    }
-                    hexLine[hex_pos] = '\0';
-
                     bool is_loopback = false;
                     if (s_last_tx_len > 0 && frame_len == s_last_tx_len) {
                         TickType_t time_since_tx = xTaskGetTickCount() - s_last_tx_time;
                         if (time_since_tx < pdMS_TO_TICKS(LOOPBACK_DETECTION_MS)) {
                             if (memcmp(frame, s_last_tx_msg, frame_len) == 0) {
                                 is_loopback = true;
+                                char hexLine[3 * BUS_MESSAGE_MAX_SIZE + 1];
+                                framing_format_hex(frame, frame_len, hexLine, sizeof(hexLine));
                                 ESP_LOGI(TAG, "RX LOOPBACK (our TX echoed): %s", hexLine);
                                 s_last_tx_len = 0;
                             }

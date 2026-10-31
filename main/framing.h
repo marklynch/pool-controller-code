@@ -36,6 +36,24 @@ typedef enum {
  */
 framing_packet_type_t framing_classify_packet(uint8_t frame_type_hi, uint8_t frame_type_lo);
 
+// Frames carrying a secret: the Touchscreen writing the Internet Gateway's
+// WiFi password (CMD 0x3A register write to register 0xD1, slot 0x07). The
+// value bytes after register and slot are masked wherever a frame is logged
+// as hex, so the password never reaches the console, port 7373 or the web
+// Debug Log (whose downloads are meant for public bug reports).
+#define FRAMING_CMD_REGISTER_WRITE     0x3A
+#define FRAMING_SECRET_REG_ID          0xD1
+#define FRAMING_SECRET_SLOT            0x07
+#define FRAMING_PAYLOAD_OFFSET         10    // First payload byte; the register write's register ID
+#define FRAMING_SECRET_VALUE_OFFSET    12    // First value byte, after register ID and slot
+
+/**
+ * Format a frame as space-separated hex ("02 00 50 ... 03 ") for logging,
+ * writing secret value bytes (see FRAMING_SECRET_*) as "**". Writes whole
+ * bytes only and always NUL-terminates; returns the string length.
+ */
+int framing_format_hex(const uint8_t *frame, int len, char *out, size_t out_size);
+
 // Context structure holding the reassembly buffer
 typedef struct {
     uint8_t buffer[BUS_MESSAGE_MAX_SIZE];

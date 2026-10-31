@@ -39,6 +39,7 @@ Requires ESP-IDF v5.5+ with environment sourced (`. $IDF_PATH/export.sh`).
 - **mqtt_commands.c/.h**: MQTT command subscription and handling
 - **firmware_update.c/.h**: GitHub release checker + pull-based OTA. Periodically reads the repo's recent release tags from the streamed `releases.atom` feed (latest + prior versions), compares the newest against the running build, and can install any tracked release's update binary over HTTPS (`esp_https_ota`). Exposes status + the version list to the web UI and the Home Assistant `update` entity
 - **web_handlers.c/.h**: HTTP server endpoints (status, provisioning, MQTT config)
+- **web_log.c/.h**: Live log feed for the web UI's Debug Log page (`/log_view`). The log vprintf hook (in `tcp_bridge.c`) copies each formatted line into a fixed ring buffer, without blocking, while a viewer is connected. A sender task batches the lines to the `/ws/log` WebSocket clients via `httpd_queue_work`, and also transmits `TX <hex>` frames the page sends (queued from the WS handler so a slow bus send never stalls httpd). Connections from a foreign `Origin` are rejected. The capture itself lives only in the browser
 - **led_helper.c/.h**: WS2812 LED control for status indication
 - **heap_monitor.c/.h**: Low-priority task that periodically logs heap stats (free, min-free watermark, largest block) for leak/fragmentation diagnostics
 
@@ -81,6 +82,7 @@ To add a new message decoder:
 main.c
   ├─> bus (UART init, read, send)
   ├─> tcp_bridge (bus <-> TCP forwarding)
+  │     ├─> web_log (feed log lines to the web Debug Log page)
   │     └─> message_decoder (decode bus messages)
   │           ├─> mqtt_publish (publish state changes)
   │           ├─> filter_pump_type (learn the filter pump type from CMD 0x0B)
@@ -97,7 +99,9 @@ main.c
   ├─> firmware_update (GitHub release check + pull OTA)
   │     └─> mqtt_poolclient (publish HA update entity state)
   ├─> web_handlers (HTTP API)
-  │     └─> firmware_update (check/install from GitHub)
+  │     ├─> firmware_update (check/install from GitHub)
+  │     └─> web_log (/ws/log WebSocket endpoint)
+  │           └─> bus (send hex frames typed into the Debug Log page)
   ├─> led_helper (status LED)
   └─> heap_monitor (periodic heap-stats logging)
 ```

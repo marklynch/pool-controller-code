@@ -14,11 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Added a Debug Log page to the web UI (`/log_view`) that shows the device's log live in any browser, including the `RX MSG` line for every bus message, so a log can be captured without a TCP client on port 7373. Lines are coloured by log level, and the page has Pause, Clear, a view filter and a **Download** button that saves the capture as a `.txt` file in the port 7373 format. The capture is kept only in the open tab (up to 50,000 lines), and gaps from dropped lines or a reconnect are marked in it. The download starts with a summary for bug reports: firmware version, uptime, memory, WiFi signal (marked "weak" below -75 dBm), the number of heaters, solar and separate pool/spa modes, and each device seen on the bus with its firmware version and decoded/unknown message counts, and the signatures of all valid but undecoded frames, most hits first. Network names, IP addresses and serial numbers are left out. Hex frames can also be sent to the bus from the page for testing. Only pages served by the device itself can connect, so another website open in the browser can't read the log or send to the bus
+- Added `heaters_configured`, `has_solar` and `wifi_rssi` to the `/status` JSON. Each is `null` until it is known
 ### Changed
 ### Fixed
+- Fixed log lines longer than 255 characters running into the next line on the port 7373 TCP output, because cutting them short dropped the line ending
 ### Removed
 ### Deprecated
 ### Security
+- Fixed the Internet Gateway's WiFi password appearing in the log when the Touchscreen sends it to the Gateway. The decoded line already hid it, but the raw hex `RX MSG` line showed every byte. The password bytes are now shown as `**` in the `RX MSG`, `TX` and loopback hex lines, so they no longer reach the serial console, port 7373 or the Debug Log page
 
 ## [1.20.1] - 2026-10-31
 ### Added
