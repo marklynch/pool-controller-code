@@ -1,6 +1,7 @@
 #include "bus.h"
 #include "config.h"
 #include "led_helper.h"
+#include "framing.h"
 #include "esp_log.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -300,22 +301,9 @@ int bus_send_bytes(const uint8_t *data, size_t len)
         return -1;
     }
 
-    // Format message for logging
+    // Format message for logging (with any secret value masked)
     char hex_log[3 * BUS_MESSAGE_MAX_SIZE + 4];
-    int pos = 0;
-    for (size_t i = 0; i < len; i++) {
-        int remaining = (int)sizeof(hex_log) - pos;
-        if (remaining < 4) break;
-        int written = snprintf(&hex_log[pos], remaining, "%02X ", data[i]);
-        if (written < 0) break;
-        pos += written;
-        if (pos >= (int)sizeof(hex_log)) {
-            pos = (int)sizeof(hex_log) - 1;
-            break;
-        }
-    }
-    if (pos >= (int)sizeof(hex_log)) pos = (int)sizeof(hex_log) - 1;
-    hex_log[pos] = '\0';
+    framing_format_hex(data, (int)len, hex_log, sizeof(hex_log));
 
     if (len > BUS_MESSAGE_MAX_SIZE) {
         ESP_LOGE(TAG, "bus_send_bytes: %d bytes exceeds max frame size %d", (int)len, BUS_MESSAGE_MAX_SIZE);

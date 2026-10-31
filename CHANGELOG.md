@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 ### Deprecated
 ### Security
+- Fixed the Internet Gateway's WiFi password appearing in the log when the Touchscreen sends it to the Gateway. The decoded line already hid it, but the raw hex `RX MSG` line showed every byte. The password bytes are now shown as `**` in the `RX MSG`, `TX` and loopback hex lines, so they no longer reach the serial console, port 7373 or the Debug Log page
 
 ## [1.20.1] - 2026-10-31
 ### Added

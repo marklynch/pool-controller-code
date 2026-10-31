@@ -10,6 +10,11 @@
 #include <string.h>
 #include <inttypes.h>
 
+// Hex logging masks the Gateway WiFi password write by framing.h's constants;
+// keep them pointing at the register the decoder knows as that password.
+_Static_assert(FRAMING_SECRET_REG_ID == REG_ID_GATEWAY_WIFI_PASSWORD,
+               "framing.h's masked register must be the Gateway WiFi password register");
+
 static const char *TAG = "MSG_DECODER";
 
 // ======================================================
@@ -4546,15 +4551,11 @@ bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx
         return false;
     }
 
-    // Log full message before decoding
+    // Log full message before decoding (with any secret value masked)
     int full_msg_size = 3 * len + 1;
     char *full_msg = malloc(full_msg_size);
     if (!full_msg) return false;
-    int msg_pos = 0;
-    for (int i = 0; i < len && msg_pos < full_msg_size - 3; i++) {
-        msg_pos += snprintf(&full_msg[msg_pos], full_msg_size - msg_pos, "%02X ", data[i]);
-    }
-    full_msg[msg_pos] = '\0';
+    framing_format_hex(data, len, full_msg, full_msg_size);
     ESP_LOGI(TAG, "RX MSG: %s", full_msg);
     free(full_msg);
 

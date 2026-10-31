@@ -210,7 +210,9 @@ static void web_log_sender_task(void *arg)
         ulTaskNotifyTake(pdTRUE, wait);
 
         while (xQueueReceive(s_tx_queue, s_tx_cmd, 0) == pdTRUE) {
-            ESP_LOGI(TAG, "Web UI send: %s", s_tx_cmd);
+            // Not echoing the typed hex: bus_send_bytes logs the frame as a
+            // TX line with any secret value masked
+            ESP_LOGI(TAG, "Web UI send");
             if (bus_send_message(s_tx_cmd) < 0) {
                 ESP_LOGW(TAG, "Web UI send failed");
             }

@@ -299,21 +299,14 @@ static void tcp_bridge_task(void *pvParameters)
             framing_result_t result;
             while ((result = framing_process_next(&s_framing_buffer, frame, &frame_len)) != FRAMING_NEED_MORE_DATA) {
                 if (result == FRAMING_FRAME_READY) {
-                    char hexLine[3 * BUS_MESSAGE_MAX_SIZE + 3];
-                    int hex_pos = 0;
-                    for (int i = 0; i < frame_len; i++) {
-                        if (hex_pos < (int)(sizeof(hexLine) - 3)) {
-                            hex_pos += snprintf(&hexLine[hex_pos], sizeof(hexLine) - hex_pos, "%02X ", frame[i]);
-                        }
-                    }
-                    hexLine[hex_pos] = '\0';
-
                     bool is_loopback = false;
                     if (s_last_tx_len > 0 && frame_len == s_last_tx_len) {
                         TickType_t time_since_tx = xTaskGetTickCount() - s_last_tx_time;
                         if (time_since_tx < pdMS_TO_TICKS(LOOPBACK_DETECTION_MS)) {
                             if (memcmp(frame, s_last_tx_msg, frame_len) == 0) {
                                 is_loopback = true;
+                                char hexLine[3 * BUS_MESSAGE_MAX_SIZE + 1];
+                                framing_format_hex(frame, frame_len, hexLine, sizeof(hexLine));
                                 ESP_LOGI(TAG, "RX LOOPBACK (our TX echoed): %s", hexLine);
                                 s_last_tx_len = 0;
                             }
