@@ -218,7 +218,9 @@ The page shows the device's log live as it is written, including an `RX MSG` lin
 
 The capture lives only in the open browser tab: reloading or closing the page discards it, and nothing is stored on the device. The page keeps the most recent 50,000 lines. A gap in the log is marked with a `--- N lines dropped ---` or `--- reconnected ---` line.
 
-The page is read-only. To send messages to the bus, use the TCP port.
+To send a message to the bus for testing, type it as hex (e.g. `02 00 50 FF FF 03`) in the **Send to bus** box and press **Send**. It goes out exactly as entered, with no checksum or framing checks, the same as the TCP port. The send and its result appear in the log, followed by the message's echo, decoded as an `RX MSG` line. The text stays in the box so you can send it again.
+
+The page only accepts connections opened by the device's own web UI, so a web page from another site open in your browser can't read the log or send to the bus through it.
 
 ### TCP debug port 7373
 

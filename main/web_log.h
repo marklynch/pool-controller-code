@@ -12,6 +12,9 @@
  * pushed to connected browsers over a WebSocket (/ws/log) by a small sender
  * task. The device never stores the capture itself — the page keeps it.
  *
+ * The page can also send hex frames to the bus over the same socket
+ * ("TX <hex>"); they are queued and transmitted by the sender task.
+ *
  * When no viewer is connected, web_log_active() returns false and the hook
  * skips this module entirely, so the feature costs nothing when unused.
  */

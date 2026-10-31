@@ -1,12 +1,15 @@
 #include "web_log.h"
 #include "config.h"
+#include "bus.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 static const char *TAG = "WEB_LOG";
 
@@ -163,35 +166,57 @@ static unsigned count_lines(const char *data, size_t len)
     return n;
 }
 
+// ======================================================
+// Bus send (hex commands typed into the page)
+// ======================================================
+// The WS handler only queues the command; the sender task puts it on the bus.
+// bus_send_message can wait up to a second for a quiet bus and retry on a
+// collision, which must not stall the HTTP server task. The echo of a sent
+// frame comes back through the bus bridge and is decoded as an RX MSG.
+
+static QueueHandle_t s_tx_queue = NULL;
+static char s_tx_cmd[WEB_LOG_RX_MAX + 1];  // Sender-task only
+
+static void drain_ring_to_clients(void)
+{
+    while (atomic_load(&s_client_count) > 0) {
+        if (xSemaphoreTake(s_ring_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            break;
+        }
+        s_frame_len = ring_read(s_frame, sizeof(s_frame));
+        xSemaphoreGive(s_ring_mutex);
+
+        if (s_frame_len == 0) {
+            break;
+        }
+        if (httpd_queue_work(s_server, send_frame_work, NULL) != ESP_OK) {
+            // Batch lost; account for it so the page shows the gap
+            atomic_fetch_add(&s_dropped, count_lines(s_frame, s_frame_len));
+            break;
+        }
+        xSemaphoreTake(s_send_done, portMAX_DELAY);
+    }
+}
+
 static void web_log_sender_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        if (atomic_load(&s_client_count) == 0) {
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // Woken by add_client
-            continue;
+        // Woken early by a new viewer or a queued bus command. While viewers
+        // are connected, otherwise wake each flush interval so lines
+        // accumulate into a batch per frame.
+        TickType_t wait = atomic_load(&s_client_count) > 0
+                              ? pdMS_TO_TICKS(WEB_LOG_FLUSH_MS) : portMAX_DELAY;
+        ulTaskNotifyTake(pdTRUE, wait);
+
+        while (xQueueReceive(s_tx_queue, s_tx_cmd, 0) == pdTRUE) {
+            ESP_LOGI(TAG, "Web UI send: %s", s_tx_cmd);
+            if (bus_send_message(s_tx_cmd) < 0) {
+                ESP_LOGW(TAG, "Web UI send failed");
+            }
         }
 
-        // Let lines accumulate so each frame carries a batch
-        vTaskDelay(pdMS_TO_TICKS(WEB_LOG_FLUSH_MS));
-
-        while (atomic_load(&s_client_count) > 0) {
-            if (xSemaphoreTake(s_ring_mutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
-                break;
-            }
-            s_frame_len = ring_read(s_frame, sizeof(s_frame));
-            xSemaphoreGive(s_ring_mutex);
-
-            if (s_frame_len == 0) {
-                break;
-            }
-            if (httpd_queue_work(s_server, send_frame_work, NULL) != ESP_OK) {
-                // Batch lost; account for it so the page shows the gap
-                atomic_fetch_add(&s_dropped, count_lines(s_frame, s_frame_len));
-                break;
-            }
-            xSemaphoreTake(s_send_done, portMAX_DELAY);
-        }
+        drain_ring_to_clients();
     }
 }
 
@@ -199,28 +224,72 @@ static void web_log_sender_task(void *arg)
 // WebSocket endpoint
 // ======================================================
 
+// A browser always sends Origin on a WebSocket handshake, and WebSockets are
+// exempt from the same-origin policy. Without this check any web page open in
+// a browser on the LAN could connect, read the log and write to the bus.
+// Clients that send no Origin (websocat, scripts) aren't browsers and so can't
+// be driven by a third-party page; they get the same access as port 7373.
+static bool origin_allowed(httpd_req_t *req)
+{
+    size_t origin_len = httpd_req_get_hdr_value_len(req, "Origin");
+    if (origin_len == 0) {
+        return true;
+    }
+
+    char origin[WEB_LOG_HOST_MAX];
+    char host[WEB_LOG_HOST_MAX];
+    if (origin_len >= sizeof(origin) ||
+        httpd_req_get_hdr_value_str(req, "Origin", origin, sizeof(origin)) != ESP_OK ||
+        httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) {
+        return false;
+    }
+
+    const char *origin_host = strstr(origin, "://");
+    origin_host = origin_host ? origin_host + 3 : origin;
+    return strcasecmp(origin_host, host) == 0;
+}
+
 static esp_err_t ws_log_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
+        if (!origin_allowed(req)) {
+            ESP_LOGW(TAG, "Rejected log viewer from a foreign origin");
+            return ESP_FAIL;  // Closes the session
+        }
         // Handshake complete — register this socket as a viewer
         add_client(httpd_req_to_sockfd(req));
         ESP_LOGI(TAG, "Log viewer connected (%d open)", s_num_clients);
         return ESP_OK;
     }
 
-    // The page sends a small keepalive periodically so httpd's LRU purge
-    // doesn't pick this long-lived socket. Read and discard it.
+    // Frames from the page: a periodic keepalive (so httpd's LRU purge doesn't
+    // pick this long-lived socket), or "TX <hex>" to send a frame to the bus.
     httpd_ws_frame_t frame = {0};
     esp_err_t err = httpd_ws_recv_frame(req, &frame, 0);
     if (err != ESP_OK || frame.len == 0) {
         return err;
     }
-    uint8_t buf[WEB_LOG_RX_MAX];
-    if (frame.len > sizeof(buf)) {
+    char buf[WEB_LOG_RX_MAX + 1];
+    if (frame.len > WEB_LOG_RX_MAX) {
         return ESP_FAIL;  // Not something our page sends; close the session
     }
-    frame.payload = buf;
-    return httpd_ws_recv_frame(req, &frame, frame.len);
+    frame.payload = (uint8_t *)buf;
+    err = httpd_ws_recv_frame(req, &frame, frame.len);
+    if (err != ESP_OK) {
+        return err;
+    }
+    buf[frame.len] = '\0';
+
+    if (strncmp(buf, WEB_LOG_TX_PREFIX, strlen(WEB_LOG_TX_PREFIX)) == 0) {
+        // Shift the hex down over the prefix so the queue item is the command
+        memmove(buf, buf + strlen(WEB_LOG_TX_PREFIX), frame.len - strlen(WEB_LOG_TX_PREFIX) + 1);
+        if (xQueueSend(s_tx_queue, buf, 0) == pdTRUE) {
+            xTaskNotifyGive(s_sender_task);
+        } else {
+            ESP_LOGW(TAG, "Web UI send dropped: previous sends still in progress");
+        }
+    }
+    return ESP_OK;
 }
 
 static const httpd_uri_t ws_log_uri = {
@@ -242,8 +311,9 @@ esp_err_t web_log_init(void)
 
     s_ring_mutex = xSemaphoreCreateMutex();
     s_send_done  = xSemaphoreCreateBinary();
-    if (!s_ring_mutex || !s_send_done) {
-        ESP_LOGE(TAG, "Failed to create semaphores");
+    s_tx_queue   = xQueueCreate(WEB_LOG_TX_QUEUE_LEN, sizeof(s_tx_cmd));
+    if (!s_ring_mutex || !s_send_done || !s_tx_queue) {
+        ESP_LOGE(TAG, "Failed to create semaphores/queue");
         return ESP_ERR_NO_MEM;
     }
 

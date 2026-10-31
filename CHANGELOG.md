@@ -14,8 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Added a Debug Log page to the web UI (`/log_view`) that shows the device's log live in any browser, including the `RX MSG` line for every bus message, so a log can be captured without a TCP client on port 7373. Lines are coloured by log level, and the page has Pause, Clear, a view filter and a **Download** button that saves the capture as a `.txt` file in the port 7373 format. The capture is kept only in the open tab (up to 50,000 lines), and gaps from dropped lines or a reconnect are marked in it. Hex frames can also be sent to the bus from the page for testing. Only pages served by the device itself can connect, so another website open in the browser can't read the log or send to the bus
 ### Changed
 ### Fixed
+- Fixed log lines longer than 255 characters running into the next line on the port 7373 TCP output, because cutting them short dropped the line ending
 ### Removed
 ### Deprecated
 ### Security

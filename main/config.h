@@ -142,10 +142,13 @@
 
 #define WEB_LOG_RING_SIZE              8192    // Bytes of log queued for viewers between sends (static, always allocated)
 #define WEB_LOG_FRAME_MAX              1024    // Max bytes per WebSocket text frame (static send buffer)
-#define WEB_LOG_RX_MAX                 16      // Largest frame accepted from the page (its keepalive)
+#define WEB_LOG_TX_PREFIX              "TX "   // Page -> device frame: "TX <hex>" sends <hex> to the bus
+#define WEB_LOG_RX_MAX                 (3 + 3 * BUS_MESSAGE_MAX_SIZE)  // Largest frame accepted from the page: prefix + a full frame as spaced hex
+#define WEB_LOG_TX_QUEUE_LEN           2       // Bus sends queued from the page while one is in progress
+#define WEB_LOG_HOST_MAX               96      // Buffer for the Origin/Host headers checked on connect
 #define WEB_LOG_MAX_CLIENTS            2       // Concurrent viewers; a new one evicts the oldest
 #define WEB_LOG_FLUSH_MS               100     // Sender batches lines for this long between frames
-#define WEB_LOG_TASK_STACK             3072    // Sender task stack size
+#define WEB_LOG_TASK_STACK             4096    // Sender task stack: bus_send_message's parse + hex-log buffers, plus the logging path
 #define WEB_LOG_TASK_PRIORITY          3       // Below the TCP bridge so logging never starves bus reads
 #define WEB_LOG_KEEPALIVE_MS           20000   // Page sends a keepalive this often to stay off httpd's LRU purge
 #define WEB_LOG_BROWSER_MAX_LINES      50000   // Page keeps at most this many lines, dropping the oldest
