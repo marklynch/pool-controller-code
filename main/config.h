@@ -153,6 +153,7 @@
 #define WEB_LOG_KEEPALIVE_MS           20000   // Page sends a keepalive this often to stay off httpd's LRU purge
 #define WEB_LOG_BROWSER_MAX_LINES      50000   // Page keeps at most this many lines, dropping the oldest
 #define WEB_LOG_DISPLAY_MAX_LINES      2000    // Page renders at most this many of the matching lines
+#define WEB_LOG_RSSI_WEAK_DBM          -75     // Download header flags WiFi RSSI below this as "(weak)": dropouts become likely
 
 // TCP keepalive — reap a silently dead client (one that never sends FIN/RST)
 // so the single client slot is freed. Worst-case detection time is roughly

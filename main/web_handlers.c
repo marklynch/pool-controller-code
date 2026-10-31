@@ -2372,7 +2372,7 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "const f=st.firmware||{},m=st.memory||{};"
         "h.push('Firmware:  '+f.version+' (IDF '+f.idf_version+'), built '+f.compile_time);"
         "h.push('Uptime:    '+fmtDur(st.current_ms||0)+'   Free heap: '+m.free_heap+' (min '+m.min_free_heap+')'"
-        "+'   WiFi RSSI: '+known(st.wifi_rssi,v=>v+' dBm'));"
+        "+'   WiFi RSSI: '+known(st.wifi_rssi,v=>v+' dBm'+(v<" STR(WEB_LOG_RSSI_WEAK_DBM) "?' (weak)':'')));"
         "h.push('System:    heaters '+known(st.heaters_configured,String)+', solar '+known(st.has_solar,yn)"
         "+', separate pool/spa modes '+known(st.separate_pool_spa_modes,yn));"
         "const devs=st.devices||[];h.push('','Devices:');"
