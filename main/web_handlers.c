@@ -836,6 +836,48 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         cJSON_AddNullToObject(root, "separate_pool_spa_modes");
     }
 
+    // Number of heaters configured on the Touchscreen (registers 0xC8, 0xCC);
+    // null until every heater's configuration register has been received
+    int heaters_configured = 0;
+    bool heaters_known = true;
+    for (int i = 0; i < MAX_HEATERS; i++) {
+        bool known;
+        if (heater_configured(&state, i, &known)) {
+            heaters_configured++;
+        }
+        heaters_known = heaters_known && known;
+    }
+    if (heaters_known) {
+        cJSON_AddNumberToObject(root, "heaters_configured", heaters_configured);
+    } else {
+        cJSON_AddNullToObject(root, "heaters_configured");
+    }
+
+    // Whether a Solar or Solar Controller channel is configured; null until
+    // any channel configuration has been received
+    bool any_channel = false, has_solar = false;
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (!state.channels[i].configured) continue;
+        any_channel = true;
+        if (state.channels[i].type == CHANNEL_TYPE_SOLAR ||
+            state.channels[i].type == CHANNEL_TYPE_SOLAR_CONTROLLER) {
+            has_solar = true;
+        }
+    }
+    if (any_channel) {
+        cJSON_AddBoolToObject(root, "has_solar", has_solar);
+    } else {
+        cJSON_AddNullToObject(root, "has_solar");
+    }
+
+    // Station signal strength; null while not connected
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        cJSON_AddNumberToObject(root, "wifi_rssi", ap_info.rssi);
+    } else {
+        cJSON_AddNullToObject(root, "wifi_rssi");
+    }
+
     // Controller service mode (CMD 0x12 status bitfield, bit 1)
     if (state.service_mode_valid) {
         cJSON_AddBoolToObject(root, "service_mode", state.service_mode);
@@ -2247,6 +2289,7 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "<script>"
         "const CAP=" STR(WEB_LOG_BROWSER_MAX_LINES) ",SHOW=" STR(WEB_LOG_DISPLAY_MAX_LINES) ";"
         "const lines=[];let bytes=0,trimmed=0,partial='',paused=false,filter='',ws=null,everOpen=false,state='Connecting…';"
+        "let captureStart=new Date(),gaps=0,reconnects=0;"
         "const logEl=document.getElementById('log'),statEl=document.getElementById('log-status');"
         "function matches(l){return !filter||l.toLowerCase().includes(filter);}"
         "function fmtSize(b){return b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';}"
@@ -2267,7 +2310,8 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "logEl.replaceChildren(f);"
         "logEl.scrollTop=logEl.scrollHeight;}"
         "function add(newLines){"
-        "for(const l of newLines){lines.push(l);bytes+=l.length+1;}"
+        "for(const l of newLines){lines.push(l);bytes+=l.length+1;"
+        "if(/^--- \\d+ lines dropped ---$/.test(l))gaps++;else if(l==='--- reconnected ---')reconnects++;}"
         "if(lines.length>CAP+1000){const n=lines.length-CAP;"
         "for(let i=0;i<n;i++)bytes-=lines[i].length+1;lines.splice(0,n);trimmed+=n;}"
         "if(!paused){"
@@ -2304,14 +2348,53 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "document.getElementById('pause-btn').addEventListener('click',function(){"
         "paused=!paused;this.textContent=paused?'Resume':'Pause';if(!paused)render();status();});"
         "document.getElementById('clear-btn').addEventListener('click',function(){"
-        "lines.length=0;bytes=0;trimmed=0;render();status();});"
+        "lines.length=0;bytes=0;trimmed=0;gaps=0;reconnects=0;captureStart=new Date();render();status();});"
         "document.getElementById('filter').addEventListener('input',function(){"
         "filter=this.value.toLowerCase();render();});"
-        "document.getElementById('dl-btn').addEventListener('click',function(){"
-        "const d=new Date(),p=n=>String(n).padStart(2,'0');"
-        "const name='pool-controller-log-'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'"
-        "+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'.txt';"
-        "const text=lines.join('\\n')+(lines.length?'\\n':'')+partial;"
+        // Download header: a '#'-commented summary from /status, fetched at
+        // download time so it includes devices learned during the capture.
+        // It sits above the log because the decoder replay test skips lines
+        // before the first RX MSG but treats lines after one as its output.
+        // SSID, IP addresses and serial numbers are left out on purpose, as
+        // the file is meant to be attached to public bug reports.
+        "const p2=n=>String(n).padStart(2,'0');"
+        "function fmtLocal(d){return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '"
+        "+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds());}"
+        "function fmtDur(ms){const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);"
+        "return(d?d+'d ':'')+(d||h?h+'h ':'')+m+'m';}"
+        "function known(v,f){return v===null||v===undefined?'unknown':f(v);}"
+        "const yn=v=>v?'yes':'no';"
+        "function header(st,err,end){"
+        "const h=['Pool Controller debug log'];"
+        "h.push('Captured:  '+fmtLocal(captureStart)+' to '+fmtLocal(end)+' ('+Intl.DateTimeFormat().resolvedOptions().timeZone+')');"
+        "h.push('Lines:     '+lines.length+' ('+trimmed+' oldest discarded by the page, '+gaps+' device gaps, '+reconnects+' reconnects)');"
+        "if(!st){h.push('Status:    unavailable ('+err+')');}else{"
+        "const f=st.firmware||{},m=st.memory||{};"
+        "h.push('Firmware:  '+f.version+' (IDF '+f.idf_version+'), built '+f.compile_time);"
+        "h.push('Uptime:    '+fmtDur(st.current_ms||0)+'   Free heap: '+m.free_heap+' (min '+m.min_free_heap+')'"
+        "+'   WiFi RSSI: '+known(st.wifi_rssi,v=>v+' dBm'));"
+        "h.push('System:    heaters '+known(st.heaters_configured,String)+', solar '+known(st.has_solar,yn)"
+        "+', separate pool/spa modes '+known(st.separate_pool_spa_modes,yn));"
+        "const devs=st.devices||[];h.push('','Devices:');"
+        "if(!devs.length)h.push('  (none seen yet)');"
+        "const w=Math.max(4,...devs.map(d=>d.name.length));"
+        "for(const d of devs){const c=d.message_counts||{};"
+        "h.push('  '+d.address+'  '+d.name.padEnd(w)+'  fw '+String(d.firmware_version||'?').padEnd(6)"
+        "+'decoded '+String(c.decoded).padStart(7)+'  unknown '+String(c.unknown).padStart(6));}"
+        "const mc=st.message_counts||{},r=st.resyncs||{};"
+        "const rb=Object.keys(r).filter(k=>k!=='total'&&r[k]).map(k=>k.replace(/_/g,' ')+' '+r[k]);"
+        "h.push('','Message counts: decoded '+mc.decoded+', unknown '+mc.unknown+', resyncs '+(r.total||0)"
+        "+(rb.length?' ('+rb.join(', ')+')':''));}"
+        "return h.map(l=>l?'# '+l:'#').join('\\n')+'\\n# ---\\n';}"
+        "document.getElementById('dl-btn').addEventListener('click',async function(){"
+        "const d=new Date();let st=null,err='';"
+        "try{const ac=new AbortController(),t=setTimeout(()=>ac.abort(),5000);"
+        "const r=await fetch('/status',{signal:ac.signal});clearTimeout(t);"
+        "if(!r.ok)throw new Error('HTTP '+r.status);st=await r.json();}"
+        "catch(e){err=e.message||String(e);}"
+        "const name='pool-controller-log-'+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+'-'"
+        "+p2(d.getHours())+p2(d.getMinutes())+p2(d.getSeconds())+'.txt';"
+        "const text=header(st,err,d)+lines.join('\\n')+(lines.length?'\\n':'')+partial;"
         "const url=URL.createObjectURL(new Blob([text],{type:'text/plain'}));"
         "const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();"
         "a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);});"
