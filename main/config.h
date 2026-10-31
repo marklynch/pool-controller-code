@@ -19,7 +19,7 @@
 
 // HTTP Server
 #define HTTP_SERVER_PORT               80
-#define HTTP_MAX_URI_HANDLERS          24      // Number of endpoint handlers
+#define HTTP_MAX_URI_HANDLERS          28      // Number of endpoint handlers (23 registered; spare for growth)
 #define HTTP_RECV_TIMEOUT_SEC          10      // Timeout for receiving requests
 #define HTTP_SEND_TIMEOUT_SEC          10      // Timeout for sending responses
 #define HTTP_STACK_SIZE                8192    // Stack size for HTTP server task
@@ -135,6 +135,21 @@
 #define TCP_LINE_BUFFER_SIZE           512     // Line buffering for TCP bridge
 #define TCP_TASK_STACK_SIZE            8192    // TCP bridge task stack size
 #define TCP_TASK_PRIORITY              5       // TCP bridge task priority
+
+// ======================================================
+// Web Log Viewer (/log_view page, /ws/log WebSocket)
+// ======================================================
+
+#define WEB_LOG_RING_SIZE              8192    // Bytes of log queued for viewers between sends (static, always allocated)
+#define WEB_LOG_FRAME_MAX              1024    // Max bytes per WebSocket text frame (static send buffer)
+#define WEB_LOG_RX_MAX                 16      // Largest frame accepted from the page (its keepalive)
+#define WEB_LOG_MAX_CLIENTS            2       // Concurrent viewers; a new one evicts the oldest
+#define WEB_LOG_FLUSH_MS               100     // Sender batches lines for this long between frames
+#define WEB_LOG_TASK_STACK             3072    // Sender task stack size
+#define WEB_LOG_TASK_PRIORITY          3       // Below the TCP bridge so logging never starves bus reads
+#define WEB_LOG_KEEPALIVE_MS           20000   // Page sends a keepalive this often to stay off httpd's LRU purge
+#define WEB_LOG_BROWSER_MAX_LINES      50000   // Page keeps at most this many lines, dropping the oldest
+#define WEB_LOG_DISPLAY_MAX_LINES      2000    // Page renders at most this many of the matching lines
 
 // TCP keepalive — reap a silently dead client (one that never sends FIN/RST)
 // so the single client slot is freed. Worst-case detection time is roughly

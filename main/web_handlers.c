@@ -8,6 +8,7 @@
 #include "unknown_buffer.h"
 #include "device_serial.h"
 #include "firmware_update.h"
+#include "web_log.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_timer.h"
@@ -107,6 +108,7 @@ char *get_page_nav(const char page) {
         "<li><a href='/mqtt_config'" "%s" ">MQTT Config</a></li>"
         "<li><a href='/status_view'" "%s" ">Status</a></li>"
         "<li><a href='/unknown_msgs_view'" "%s" ">Unknown Messages</a></li>"
+        "<li><a href='/log_view'" "%s" ">Debug Log</a></li>"
         "<li><a href='/update'" "%s" ">Firmware Update</a></li>"
         "</ul></nav>"
         "<footer><small>%s</small></footer>"
@@ -120,6 +122,7 @@ char *get_page_nav(const char page) {
         page == 'm' ? cur : none,
         page == 's' ? cur : none,
         page == 'x' ? cur : none,
+        page == 'l' ? cur : none,
         page == 'u' ? cur : none,
         app_desc->version);
     if (n < 0) return NULL;
@@ -133,6 +136,7 @@ char *get_page_nav(const char page) {
         page == 'm' ? cur : none,
         page == 's' ? cur : none,
         page == 'x' ? cur : none,
+        page == 'l' ? cur : none,
         page == 'u' ? cur : none,
         app_desc->version);
     return nav;
@@ -2205,6 +2209,119 @@ static esp_err_t unknown_msgs_view_handler(httpd_req_t *req)
 }
 
 // ======================================================
+// Debug Log Page Handler
+// ======================================================
+// Lines arrive over the /ws/log WebSocket (see web_log.c). The capture lives
+// only in this page's memory and is downloaded as a Blob — nothing is stored
+// on the device or in browser storage.
+
+static esp_err_t log_view_handler(httpd_req_t *req)
+{
+    const char *page_content =
+        "<h1>Debug Log</h1>"
+        "<p class='text-lighter'>Live firmware log, including an <code>RX MSG</code> line for every bus frame. "
+        "The capture is kept in this page only, and is lost on reload. Download it to attach to a bug report.</p>"
+        "<div style='display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.5rem'>"
+        "<button id='pause-btn' class='outline'>Pause</button>"
+        "<button id='clear-btn' class='outline' data-variant='danger'>Clear</button>"
+        "<button id='dl-btn'>Download</button>"
+        "<input id='filter' type='search' placeholder='Filter view (e.g. RX MSG)' style='flex:1;min-width:12em;margin:0'>"
+        "</div>"
+        "<p style='margin:0 0 0.5rem'><small id='log-status' class='text-lighter'>Connecting…</small></p>"
+        "<pre id='log' style='height:65vh;overflow:auto;margin:0;font-size:0.8em;white-space:pre-wrap;word-break:break-all'></pre>"
+        // Per-level line colours, keyed on the ESP-IDF "X (time) TAG: ..." prefix.
+        // Info keeps the default text colour; markers are gaps the page inserted
+        // or the device reported.
+        "<style>"
+        "#log .lE{color:var(--danger)}"
+        "#log .lW{color:var(--warning)}"
+        "#log .lD,#log .lV{color:var(--muted-foreground)}"
+        "#log .lM{color:var(--muted-foreground);font-style:italic}"
+        "</style>"
+        "<script>"
+        "const CAP=" STR(WEB_LOG_BROWSER_MAX_LINES) ",SHOW=" STR(WEB_LOG_DISPLAY_MAX_LINES) ";"
+        "const lines=[];let bytes=0,trimmed=0,partial='',paused=false,filter='',ws=null,everOpen=false,state='Connecting…';"
+        "const logEl=document.getElementById('log'),statEl=document.getElementById('log-status');"
+        "function matches(l){return !filter||l.toLowerCase().includes(filter);}"
+        "function fmtSize(b){return b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';}"
+        "function status(){"
+        "let s=state+' · '+lines.length+' lines · '+fmtSize(bytes);"
+        "if(trimmed)s+=' · '+trimmed+' oldest lines discarded (page keeps '+CAP+')';"
+        "if(paused)s+=' · paused';"
+        "statEl.textContent=s;}"
+        "function lineEl(l){"
+        "const s=document.createElement('span'),m=/^([EWIDV]) \\(/.exec(l);"
+        "if(m)s.className='l'+m[1];else if(l.startsWith('--- '))s.className='lM';"
+        "s.textContent=l+'\\n';return s;}"
+        "function render(){"
+        "const out=[];"
+        "for(let i=lines.length-1;i>=0&&out.length<SHOW;i--){if(matches(lines[i]))out.push(lines[i]);}"
+        "const f=document.createDocumentFragment();"
+        "for(let i=out.length-1;i>=0;i--)f.appendChild(lineEl(out[i]));"
+        "logEl.replaceChildren(f);"
+        "logEl.scrollTop=logEl.scrollHeight;}"
+        "function add(newLines){"
+        "for(const l of newLines){lines.push(l);bytes+=l.length+1;}"
+        "if(lines.length>CAP+1000){const n=lines.length-CAP;"
+        "for(let i=0;i<n;i++)bytes-=lines[i].length+1;lines.splice(0,n);trimmed+=n;}"
+        "if(!paused){"
+        "const show=newLines.filter(matches);"
+        "if(show.length){"
+        "const atEnd=logEl.scrollHeight-logEl.scrollTop-logEl.clientHeight<40;"
+        "const f=document.createDocumentFragment();"
+        "for(const l of show)f.appendChild(lineEl(l));"
+        "logEl.appendChild(f);"
+        // Keep the rendered view bounded; when the user has scrolled up, shift
+        // scrollTop by the height removed so the text they're reading stays put
+        "if(logEl.childNodes.length>SHOW){const h=logEl.scrollHeight;"
+        "while(logEl.childNodes.length>SHOW)logEl.firstChild.remove();"
+        "if(!atEnd)logEl.scrollTop-=h-logEl.scrollHeight;}"
+        "if(atEnd)logEl.scrollTop=logEl.scrollHeight;}}"
+        "status();}"
+        "function connect(){"
+        "ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/log');"
+        "ws.onopen=()=>{if(everOpen)add(['--- reconnected ---']);everOpen=true;state='Live';status();};"
+        "ws.onmessage=e=>{const parts=(partial+e.data).split('\\n');partial=parts.pop();"
+        "add(parts.map(l=>l.replace(/\\r$/,'')));};"
+        "ws.onclose=()=>{state='Disconnected, retrying…';status();ws=null;setTimeout(connect,2000);};"
+        "ws.onerror=()=>{try{ws.close();}catch(_){}};}"
+        "setInterval(()=>{if(ws&&ws.readyState===1)ws.send('k');}," STR(WEB_LOG_KEEPALIVE_MS) ");"
+        "document.getElementById('pause-btn').addEventListener('click',function(){"
+        "paused=!paused;this.textContent=paused?'Resume':'Pause';if(!paused)render();status();});"
+        "document.getElementById('clear-btn').addEventListener('click',function(){"
+        "lines.length=0;bytes=0;trimmed=0;render();status();});"
+        "document.getElementById('filter').addEventListener('input',function(){"
+        "filter=this.value.toLowerCase();render();});"
+        "document.getElementById('dl-btn').addEventListener('click',function(){"
+        "const d=new Date(),p=n=>String(n).padStart(2,'0');"
+        "const name='pool-controller-log-'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'"
+        "+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'.txt';"
+        "const text=lines.join('\\n')+(lines.length?'\\n':'')+partial;"
+        "const url=URL.createObjectURL(new Blob([text],{type:'text/plain'}));"
+        "const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();"
+        "a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);});"
+        "connect();status();"
+        "</script>";
+
+    char page_title[] = "Debug Log";
+    char *header = get_page_header(page_title);
+    char *nav    = get_page_nav('l');
+    char *footer = get_page_footer();
+
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    httpd_resp_send_chunk(req, header,       HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, nav,          HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, page_content, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, footer,       HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+
+    free(footer);
+    free(nav);
+    free(header);
+    return ESP_OK;
+}
+
+// ======================================================
 // URI Handlers
 // ======================================================
 
@@ -2308,6 +2425,12 @@ static const httpd_uri_t unknown_msgs_clear_uri = {
     .uri = "/unknown_msgs/clear",
     .method = HTTP_POST,
     .handler = unknown_msgs_clear_handler
+};
+
+static const httpd_uri_t log_view_uri = {
+    .uri = "/log_view",
+    .method = HTTP_GET,
+    .handler = log_view_handler
 };
 
 static const httpd_uri_t unknown_msgs_view_uri = {
@@ -2485,7 +2608,9 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &unknown_msgs_json_uri);
     httpd_register_uri_handler(server, &unknown_msgs_clear_uri);
     httpd_register_uri_handler(server, &unknown_msgs_view_uri);
-    httpd_register_uri_handler(server, &static_files_uri);   // /static/* wildcard
+    httpd_register_uri_handler(server, &log_view_uri);
+    web_log_register(server);                                 // /ws/log WebSocket
+    httpd_register_uri_handler(server, &static_files_uri);  // /static/* wildcard
     httpd_register_uri_handler(server, &favicon_redirect_uri); // /favicon.ico -> /static/favicon.ico
     httpd_register_uri_handler(server, &robots_txt_uri);
 

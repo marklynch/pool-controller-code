@@ -10,6 +10,7 @@ idf_component_register(
         "mqtt_discovery.c"
         "mqtt_commands.c"
         "web_handlers.c"
+        "web_log.c"
         "tcp_bridge.c"
         "framing.c"
         "lighting_colors.c"

@@ -202,12 +202,23 @@ The device serves a small web UI and JSON API at `http://poolcontrol-AABBCC.loca
 | `/update` | Firmware update — check/install from GitHub, or upload a `.bin` manually |
 | `/unknown_msgs_view` | Bus messages the decoder has no handler for, with a button to clear the buffer |
 | `/unknown_msgs` | The same buffer as JSON |
+| `/log_view` | Live debug log with a Download button — see [Debug Log page](#debug-log-page) |
 | `/api/test_decode` | POST a hex frame to run it through the decoder — see [Testing message decoding](#testing-message-decoding) |
 | `/reboot`, `/ha-reset` | POST endpoints behind the Reboot and Reset entities buttons on the update page |
 
 `/wifi`, `/scan` and `/provision` are served only in provisioning mode, and are covered by [Setup step 2](#2-provision-wifi).
 
 ## Bus Debugging
+
+### Debug Log page
+
+The easiest way to capture a log, for example to attach to a bug report, is the **Debug Log** page in the web UI (`http://poolcontrol-A1B2C3.local/log_view`). It works in any browser, including on a phone, and needs no extra tools.
+
+The page shows the device's log live as it is written, including an `RX MSG` line for every bus message. It keeps everything received since it was opened, and **Download** saves that as a `.txt` file in the same format as the TCP port below. **Pause** freezes the view while capture carries on, **Clear** starts a fresh capture, and the filter box narrows what is shown without affecting the download.
+
+The capture lives only in the open browser tab: reloading or closing the page discards it, and nothing is stored on the device. The page keeps the most recent 50,000 lines. A gap in the log is marked with a `--- N lines dropped ---` or `--- reconnected ---` line.
+
+The page is read-only. To send messages to the bus, use the TCP port.
 
 ### TCP debug port 7373
 

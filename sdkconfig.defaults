@@ -18,6 +18,9 @@ CONFIG_MQTT_TRANSPORT_SSL=n
 CONFIG_MQTT_PROTOCOL_311=n
 CONFIG_MQTT_PROTOCOL_5=y
 
+# HTTP server - WebSocket support for the web UI's live Debug Log page (/ws/log)
+CONFIG_HTTPD_WS_SUPPORT=y
+
 # mDNS
 CONFIG_MDNS_ENABLE_CONSOLE_CLI=n
 
