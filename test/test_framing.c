@@ -306,6 +306,48 @@ static bool run_overflow_test(int *passed, int *failed) {
     return ok;
 }
 
+// framing_format_hex masks the value of the Gateway WiFi password write
+// (CMD 0x3A, register 0xD1, slot 0x07) and nothing else. Checksums are not
+// validated by the formatter, so placeholder values are fine here.
+static void run_hex_mask_test(int *passed, int *failed) {
+    printf("Checking framing_format_hex secret masking ...\n");
+    struct { const char *name, *frame, *expected; } cases[] = {
+        { "password write masked",
+          "02 00 50 00 F0 80 00 3A 10 AA D1 07 70 61 73 73 BB 03",
+          "02 00 50 00 F0 80 00 3A 10 AA D1 07 ** ** ** ** BB 03 " },
+        { "SSID write left visible",
+          "02 00 50 00 F0 80 00 3A 10 AA D0 07 6E 65 74 BB 03",
+          "02 00 50 00 F0 80 00 3A 10 AA D0 07 6E 65 74 BB 03 " },
+        { "same register, other slot left visible",
+          "02 00 50 00 F0 80 00 3A 0F AA D1 01 05 BB 03",
+          "02 00 50 00 F0 80 00 3A 0F AA D1 01 05 BB 03 " },
+        { "other CMD with D1 07 payload left visible",
+          "02 00 50 00 F0 80 00 38 0F AA D1 07 05 BB 03",
+          "02 00 50 00 F0 80 00 38 0F AA D1 07 05 BB 03 " },
+        { "no-data frame left visible",
+          "02 00 50 00 F0 00 00 3A 0B AA 03",
+          "02 00 50 00 F0 00 00 3A 0B AA 03 " },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        uint8_t frame[BUS_MESSAGE_MAX_SIZE];
+        char out[3 * BUS_MESSAGE_MAX_SIZE + 1];
+        int len = parse_hex_to_bytes(cases[i].frame, frame);
+        framing_format_hex(frame, len, out, sizeof(out));
+        bool ok = strcmp(out, cases[i].expected) == 0;
+        printf("  %s -> %s\n", cases[i].name, ok ? "PASS" : "FAIL");
+        if (!ok) printf("    got:      %s\n    expected: %s\n", out, cases[i].expected);
+        if (ok) (*passed)++; else (*failed)++;
+    }
+
+    // A buffer too small for the whole frame gets whole bytes only, terminated
+    uint8_t frame[3] = {0x02, 0x00, 0x50};
+    char small[8];
+    framing_format_hex(frame, 3, small, sizeof(small));
+    bool ok = strcmp(small, "02 00 ") == 0;
+    printf("  truncates to whole bytes -> %s\n", ok ? "PASS" : "FAIL");
+    if (ok) (*passed)++; else (*failed)++;
+}
+
 // Feed `n` bytes through a fresh parser, split into chunks at the given sorted
 // byte offsets (draining after each chunk), and write only the ordered
 // "Decoded:" lines to `out`. num_splits==0 means feed everything in one shot.
@@ -450,6 +492,7 @@ int main(int argc, char **argv) {
     int chunk_cases = run_file("frames/chunked_reassembly.txt",
                                "frames/chunked_reassembly_output.txt", bless, &passed, &failed);
     run_overflow_test(&passed, &failed);
+    run_hex_mask_test(&passed, &failed);
 
     // Property test: feeding the same bytes split at any boundary must recover
     // the same frames. Runs over the existing whole-line captures only (no '|').

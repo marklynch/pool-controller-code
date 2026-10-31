@@ -8,6 +8,7 @@
 #include "unknown_buffer.h"
 #include "device_serial.h"
 #include "firmware_update.h"
+#include "web_log.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_timer.h"
@@ -107,6 +108,7 @@ char *get_page_nav(const char page) {
         "<li><a href='/mqtt_config'" "%s" ">MQTT Config</a></li>"
         "<li><a href='/status_view'" "%s" ">Status</a></li>"
         "<li><a href='/unknown_msgs_view'" "%s" ">Unknown Messages</a></li>"
+        "<li><a href='/log_view'" "%s" ">Debug Log</a></li>"
         "<li><a href='/update'" "%s" ">Firmware Update</a></li>"
         "</ul></nav>"
         "<footer><small>%s</small></footer>"
@@ -120,6 +122,7 @@ char *get_page_nav(const char page) {
         page == 'm' ? cur : none,
         page == 's' ? cur : none,
         page == 'x' ? cur : none,
+        page == 'l' ? cur : none,
         page == 'u' ? cur : none,
         app_desc->version);
     if (n < 0) return NULL;
@@ -133,6 +136,7 @@ char *get_page_nav(const char page) {
         page == 'm' ? cur : none,
         page == 's' ? cur : none,
         page == 'x' ? cur : none,
+        page == 'l' ? cur : none,
         page == 'u' ? cur : none,
         app_desc->version);
     return nav;
@@ -830,6 +834,48 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         cJSON_AddBoolToObject(root, "separate_pool_spa_modes", state.separate_pool_spa_modes);
     } else {
         cJSON_AddNullToObject(root, "separate_pool_spa_modes");
+    }
+
+    // Number of heaters configured on the Touchscreen (registers 0xC8, 0xCC);
+    // null until every heater's configuration register has been received
+    int heaters_configured = 0;
+    bool heaters_known = true;
+    for (int i = 0; i < MAX_HEATERS; i++) {
+        bool known;
+        if (heater_configured(&state, i, &known)) {
+            heaters_configured++;
+        }
+        heaters_known = heaters_known && known;
+    }
+    if (heaters_known) {
+        cJSON_AddNumberToObject(root, "heaters_configured", heaters_configured);
+    } else {
+        cJSON_AddNullToObject(root, "heaters_configured");
+    }
+
+    // Whether a Solar or Solar Controller channel is configured; null until
+    // any channel configuration has been received
+    bool any_channel = false, has_solar = false;
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (!state.channels[i].configured) continue;
+        any_channel = true;
+        if (state.channels[i].type == CHANNEL_TYPE_SOLAR ||
+            state.channels[i].type == CHANNEL_TYPE_SOLAR_CONTROLLER) {
+            has_solar = true;
+        }
+    }
+    if (any_channel) {
+        cJSON_AddBoolToObject(root, "has_solar", has_solar);
+    } else {
+        cJSON_AddNullToObject(root, "has_solar");
+    }
+
+    // Station signal strength; null while not connected
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        cJSON_AddNumberToObject(root, "wifi_rssi", ap_info.rssi);
+    } else {
+        cJSON_AddNullToObject(root, "wifi_rssi");
     }
 
     // Controller service mode (CMD 0x12 status bitfield, bit 1)
@@ -2205,6 +2251,192 @@ static esp_err_t unknown_msgs_view_handler(httpd_req_t *req)
 }
 
 // ======================================================
+// Debug Log Page Handler
+// ======================================================
+// Lines arrive over the /ws/log WebSocket (see web_log.c). The capture lives
+// only in this page's memory and is downloaded as a Blob — nothing is stored
+// on the device or in browser storage.
+
+static esp_err_t log_view_handler(httpd_req_t *req)
+{
+    const char *page_content =
+        "<h1>Debug Log</h1>"
+        "<p class='text-lighter'>Live firmware log, including an <code>RX MSG</code> line for every bus frame. "
+        "The capture is kept in this page only, and is lost on reload. Download it to attach to a bug report. "
+        "Hex frames entered below are sent to the bus as-is.</p>"
+        "<div style='display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.5rem'>"
+        "<button id='pause-btn' class='outline'>Pause</button>"
+        "<button id='clear-btn' class='outline' data-variant='danger'>Clear</button>"
+        "<button id='dl-btn'>Download</button>"
+        "<input id='filter' type='search' placeholder='Filter view (e.g. RX MSG)' style='flex:1;min-width:12em;margin:0'>"
+        "</div>"
+        "<form id='tx-form' style='display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.5rem'>"
+        "<input id='tx-hex' type='text' autocomplete='off' spellcheck='false' "
+        "placeholder='Send to bus, e.g. 02 00 50 FF FF 03' style='flex:1;min-width:12em;margin:0;font-family:var(--font-mono)'>"
+        "<button id='tx-btn' type='submit' class='outline' disabled>Send</button>"
+        "</form>"
+        "<p style='margin:0 0 0.5rem'><small id='log-status' class='text-lighter'>Connecting…</small></p>"
+        "<pre id='log' style='height:65vh;overflow:auto;margin:0;font-size:0.8em;white-space:pre-wrap;word-break:break-all'></pre>"
+        // Per-level line colours, keyed on the ESP-IDF "X (time) TAG: ..." prefix.
+        // Info keeps the default text colour; markers are gaps the page inserted
+        // or the device reported.
+        "<style>"
+        "#log .lE{color:var(--danger)}"
+        "#log .lW{color:var(--warning)}"
+        "#log .lD,#log .lV{color:var(--muted-foreground)}"
+        "#log .lM{color:var(--muted-foreground);font-style:italic}"
+        "</style>"
+        "<script>"
+        "const CAP=" STR(WEB_LOG_BROWSER_MAX_LINES) ",SHOW=" STR(WEB_LOG_DISPLAY_MAX_LINES) ";"
+        "const lines=[];let bytes=0,trimmed=0,partial='',paused=false,filter='',ws=null,everOpen=false,state='Connecting…';"
+        "let captureStart=new Date(),gaps=0,reconnects=0;"
+        "const logEl=document.getElementById('log'),statEl=document.getElementById('log-status');"
+        "function matches(l){return !filter||l.toLowerCase().includes(filter);}"
+        "function fmtSize(b){return b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';}"
+        "function status(){"
+        "let s=state+' · '+lines.length+' lines · '+fmtSize(bytes);"
+        "if(trimmed)s+=' · '+trimmed+' oldest lines discarded (page keeps '+CAP+')';"
+        "if(paused)s+=' · paused';"
+        "statEl.textContent=s;}"
+        "function lineEl(l){"
+        "const s=document.createElement('span'),m=/^([EWIDV]) \\(/.exec(l);"
+        "if(m)s.className='l'+m[1];else if(l.startsWith('--- '))s.className='lM';"
+        "s.textContent=l+'\\n';return s;}"
+        "function render(){"
+        "const out=[];"
+        "for(let i=lines.length-1;i>=0&&out.length<SHOW;i--){if(matches(lines[i]))out.push(lines[i]);}"
+        "const f=document.createDocumentFragment();"
+        "for(let i=out.length-1;i>=0;i--)f.appendChild(lineEl(out[i]));"
+        "logEl.replaceChildren(f);"
+        "logEl.scrollTop=logEl.scrollHeight;}"
+        "function add(newLines){"
+        "for(const l of newLines){lines.push(l);bytes+=l.length+1;"
+        "if(/^--- \\d+ lines dropped ---$/.test(l))gaps++;else if(l==='--- reconnected ---')reconnects++;}"
+        "if(lines.length>CAP+1000){const n=lines.length-CAP;"
+        "for(let i=0;i<n;i++)bytes-=lines[i].length+1;lines.splice(0,n);trimmed+=n;}"
+        "if(!paused){"
+        "const show=newLines.filter(matches);"
+        "if(show.length){"
+        "const atEnd=logEl.scrollHeight-logEl.scrollTop-logEl.clientHeight<40;"
+        "const f=document.createDocumentFragment();"
+        "for(const l of show)f.appendChild(lineEl(l));"
+        "logEl.appendChild(f);"
+        // Keep the rendered view bounded; when the user has scrolled up, shift
+        // scrollTop by the height removed so the text they're reading stays put
+        "if(logEl.childNodes.length>SHOW){const h=logEl.scrollHeight;"
+        "while(logEl.childNodes.length>SHOW)logEl.firstChild.remove();"
+        "if(!atEnd)logEl.scrollTop-=h-logEl.scrollHeight;}"
+        "if(atEnd)logEl.scrollTop=logEl.scrollHeight;}}"
+        "status();}"
+        "function connect(){"
+        "ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/log');"
+        "ws.onopen=()=>{if(everOpen)add(['--- reconnected ---']);everOpen=true;state='Live';txBtn.disabled=false;status();};"
+        "ws.onmessage=e=>{const parts=(partial+e.data).split('\\n');partial=parts.pop();"
+        "add(parts.map(l=>l.replace(/\\r$/,'')));};"
+        "ws.onclose=()=>{state='Disconnected, retrying…';txBtn.disabled=true;status();ws=null;setTimeout(connect,2000);};"
+        "ws.onerror=()=>{try{ws.close();}catch(_){}};}"
+        "setInterval(()=>{if(ws&&ws.readyState===1)ws.send('k');}," STR(WEB_LOG_KEEPALIVE_MS) ");"
+        // The device logs the send (and any parse/collision error); the frame's
+        // echo then comes back decoded as an RX MSG line. The text is left in
+        // the box so the same frame can be resent.
+        "const txBtn=document.getElementById('tx-btn'),txHex=document.getElementById('tx-hex');"
+        "document.getElementById('tx-form').addEventListener('submit',function(e){"
+        "e.preventDefault();const v=txHex.value.trim();"
+        "const ok=/^[0-9a-f]{2}(\\s*[0-9a-f]{2})*$/i.test(v);"
+        "if(ok)txHex.removeAttribute('aria-invalid');else txHex.setAttribute('aria-invalid','true');"
+        "if(ok&&ws&&ws.readyState===1)ws.send('" WEB_LOG_TX_PREFIX "'+v);});"
+        "document.getElementById('pause-btn').addEventListener('click',function(){"
+        "paused=!paused;this.textContent=paused?'Resume':'Pause';if(!paused)render();status();});"
+        "document.getElementById('clear-btn').addEventListener('click',function(){"
+        "lines.length=0;bytes=0;trimmed=0;gaps=0;reconnects=0;captureStart=new Date();render();status();});"
+        "document.getElementById('filter').addEventListener('input',function(){"
+        "filter=this.value.toLowerCase();render();});"
+        // Download header: a '#'-commented summary from /status, fetched at
+        // download time so it includes devices learned during the capture.
+        // It sits above the log because the decoder replay test skips lines
+        // before the first RX MSG but treats lines after one as its output.
+        // SSID, IP addresses and serial numbers are left out on purpose, as
+        // the file is meant to be attached to public bug reports.
+        "const p2=n=>String(n).padStart(2,'0');"
+        "function fmtLocal(d){return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '"
+        "+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds());}"
+        "function fmtDur(ms){const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);"
+        "return(d?d+'d ':'')+(d||h?h+'h ':'')+m+'m';}"
+        "function known(v,f){return v===null||v===undefined?'unknown':f(v);}"
+        "const yn=v=>v?'yes':'no';"
+        "function header(st,err,unk,end){"
+        "const h=['Pool Controller debug log'];"
+        "h.push('Captured:  '+fmtLocal(captureStart)+' to '+fmtLocal(end)+' ('+Intl.DateTimeFormat().resolvedOptions().timeZone+')');"
+        "h.push('Lines:     '+lines.length+' ('+trimmed+' oldest discarded by the page, '+gaps+' device gaps, '+reconnects+' reconnects)');"
+        "if(!st){h.push('Status:    unavailable ('+err+')');}else{"
+        "const f=st.firmware||{},m=st.memory||{};"
+        "h.push('Firmware:  '+f.version+' (IDF '+f.idf_version+'), built '+f.compile_time);"
+        "h.push('Uptime:    '+fmtDur(st.current_ms||0)+'   Free heap: '+m.free_heap+' (min '+m.min_free_heap+')'"
+        "+'   WiFi RSSI: '+known(st.wifi_rssi,v=>v+' dBm'+(v<" STR(WEB_LOG_RSSI_WEAK_DBM) "?' (weak)':'')));"
+        "h.push('System:    heaters '+known(st.heaters_configured,String)+', solar '+known(st.has_solar,yn)"
+        "+', separate pool/spa modes '+known(st.separate_pool_spa_modes,yn));"
+        "const devs=st.devices||[];h.push('','Devices:');"
+        "if(!devs.length)h.push('  (none seen yet)');"
+        "const w=Math.max(4,...devs.map(d=>d.name.length));"
+        "for(const d of devs){const c=d.message_counts||{};"
+        "h.push('  '+d.address+'  '+d.name.padEnd(w)+'  fw '+String(d.firmware_version||'?').padEnd(6)"
+        "+'decoded '+String(c.decoded).padStart(7)+'  unknown '+String(c.unknown).padStart(6));}"
+        "const mc=st.message_counts||{},r=st.resyncs||{};"
+        "const rb=Object.keys(r).filter(k=>k!=='total'&&r[k]).map(k=>k.replace(/_/g,' ')+' '+r[k]);"
+        "h.push('','Message counts: decoded '+mc.decoded+', unknown '+mc.unknown+', resyncs '+(r.total||0)"
+        "+(rb.length?' ('+rb.join(', ')+')':''));}"
+        // Unknown-message signatures, most hits first: already deduplicated,
+        // so a capture arrives with its own summary of protocol gaps. Broken
+        // frames are left out: this is for valid frames the decoder doesn't
+        // handle yet, and resyncs are already counted above.
+        "h.push('');"
+        "if(!unk.data){h.push('Unknown signatures: unavailable ('+unk.err+')');}else{"
+        "const es=(unk.data.entries||[]).filter(e=>!e.is_error).sort((a,b)=>b.hits-a.hits);"
+        "const tot=es.reduce((s,e)=>s+e.hits,0),mc=st&&st.message_counts;"
+        "const share=mc&&(mc.decoded+mc.unknown)?', '+(100*mc.unknown/(mc.decoded+mc.unknown)).toFixed(2)+'% of all frames unknown':'';"
+        "h.push('Unknown signatures (valid frames, most hits first): '+es.length+' held, '+tot+' hits'+share);"
+        "if(es.length){"
+        "const sw=Math.max(...es.map(e=>e.src_name.length)),dw=Math.max(...es.map(e=>e.dst_name.length));"
+        "for(const e of es)h.push('  '+String(e.hits).padStart(7)+'  '+e.cmd+'  '+e.src_name.padEnd(sw)+' -> '+e.dst_name.padEnd(dw)"
+        "+'  '+(e.payload||'(empty)')+(e.reason!=='unhandled'?'  ['+e.reason+']':'')"
+        "+(e.raw_len>" STR(UNKNOWN_BUFFER_MAX_RAW_BYTES) "?'  (truncated, '+e.raw_len+' bytes)':''));}}"
+        "return h.map(l=>l?'# '+l:'#').join('\\n')+'\\n# ---\\n';}"
+        // Fetches JSON with a timeout, so a stalled request can't hold up the
+        // download. Returns {data} or {err}.
+        "async function getJson(u){try{const ac=new AbortController(),t=setTimeout(()=>ac.abort(),5000);"
+        "const r=await fetch(u,{signal:ac.signal});clearTimeout(t);"
+        "if(!r.ok)throw new Error('HTTP '+r.status);return{data:await r.json()};}"
+        "catch(e){return{err:e.message||String(e)};}}"
+        "document.getElementById('dl-btn').addEventListener('click',async function(){"
+        "const d=new Date();const[s,unk]=await Promise.all([getJson('/status'),getJson('/unknown_msgs')]);"
+        "const name='pool-controller-log-'+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+'-'"
+        "+p2(d.getHours())+p2(d.getMinutes())+p2(d.getSeconds())+'.txt';"
+        "const text=header(s.data||null,s.err,unk,d)+lines.join('\\n')+(lines.length?'\\n':'')+partial;"
+        "const url=URL.createObjectURL(new Blob([text],{type:'text/plain'}));"
+        "const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();"
+        "a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);});"
+        "connect();status();"
+        "</script>";
+
+    char page_title[] = "Debug Log";
+    char *header = get_page_header(page_title);
+    char *nav    = get_page_nav('l');
+    char *footer = get_page_footer();
+
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    httpd_resp_send_chunk(req, header,       HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, nav,          HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, page_content, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, footer,       HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+
+    free(footer);
+    free(nav);
+    free(header);
+    return ESP_OK;
+}
+
+// ======================================================
 // URI Handlers
 // ======================================================
 
@@ -2308,6 +2540,12 @@ static const httpd_uri_t unknown_msgs_clear_uri = {
     .uri = "/unknown_msgs/clear",
     .method = HTTP_POST,
     .handler = unknown_msgs_clear_handler
+};
+
+static const httpd_uri_t log_view_uri = {
+    .uri = "/log_view",
+    .method = HTTP_GET,
+    .handler = log_view_handler
 };
 
 static const httpd_uri_t unknown_msgs_view_uri = {
@@ -2485,7 +2723,9 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &unknown_msgs_json_uri);
     httpd_register_uri_handler(server, &unknown_msgs_clear_uri);
     httpd_register_uri_handler(server, &unknown_msgs_view_uri);
-    httpd_register_uri_handler(server, &static_files_uri);   // /static/* wildcard
+    httpd_register_uri_handler(server, &log_view_uri);
+    web_log_register(server);                                 // /ws/log WebSocket
+    httpd_register_uri_handler(server, &static_files_uri);  // /static/* wildcard
     httpd_register_uri_handler(server, &favicon_redirect_uri); // /favicon.ico -> /static/favicon.ico
     httpd_register_uri_handler(server, &robots_txt_uri);
 

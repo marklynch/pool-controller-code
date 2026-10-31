@@ -18,6 +18,7 @@
 #include "pool_state.h"
 #include "wifi_provisioning.h"
 #include "tcp_bridge.h"
+#include "web_log.h"
 #include "message_decoder.h"
 #include "register_requester.h"
 #include "version_broadcast.h"
@@ -211,6 +212,10 @@ void app_main(void)
     bus_init();
     ESP_ERROR_CHECK(led_init());
     led_set_startup();
+
+    // Web UI log viewer: create its buffer lock and sender task before the
+    // HTTP server (started by WiFi init) registers the /ws/log endpoint
+    web_log_init();
 
     // Initialize WiFi and provisioning
     ESP_LOGI(TAG, "Initializing WiFi and provisioning...");

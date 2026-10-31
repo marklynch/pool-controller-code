@@ -202,12 +202,27 @@ The device serves a small web UI and JSON API at `http://poolcontrol-AABBCC.loca
 | `/update` | Firmware update — check/install from GitHub, or upload a `.bin` manually |
 | `/unknown_msgs_view` | Bus messages the decoder has no handler for, with a button to clear the buffer |
 | `/unknown_msgs` | The same buffer as JSON |
+| `/log_view` | Live debug log with a Download button — see [Debug Log page](#debug-log-page) |
 | `/api/test_decode` | POST a hex frame to run it through the decoder — see [Testing message decoding](#testing-message-decoding) |
 | `/reboot`, `/ha-reset` | POST endpoints behind the Reboot and Reset entities buttons on the update page |
 
 `/wifi`, `/scan` and `/provision` are served only in provisioning mode, and are covered by [Setup step 2](#2-provision-wifi).
 
 ## Bus Debugging
+
+### Debug Log page
+
+The easiest way to capture a log, for example to attach to a bug report, is the **Debug Log** page in the web UI (`http://poolcontrol-A1B2C3.local/log_view`). It works in any browser, including on a phone, and needs no extra tools.
+
+The page shows the device's log live as it is written, including an `RX MSG` line for every bus message. It keeps everything received since it was opened, and **Download** saves that as a `.txt` file in the same format as the TCP port below. **Pause** freezes the view while capture carries on, **Clear** starts a fresh capture, and the filter box narrows what is shown without affecting the download.
+
+The downloaded file starts with a short summary, with each line beginning with `#`. It gives the capture period, the firmware version, uptime, free memory and WiFi signal strength (marked `(weak)` below -75 dBm, where dropouts become likely), and the system configuration: the number of heaters, whether solar is installed, and whether separate pool and spa modes are enabled. It also lists every device seen on the bus, with its firmware version and its decoded and unknown message counts, followed by the overall message and resync counters. It ends with every unknown-message signature from the Unknown Messages page except broken frames, most hits first, so each capture carries its own summary of the bus traffic the firmware doesn't decode yet. The WiFi network name, IP addresses and serial numbers are left out, so the file can be attached to a public issue.
+
+The capture lives only in the open browser tab: reloading or closing the page discards it, and nothing is stored on the device. The page keeps the most recent 50,000 lines. A gap in the log is marked with a `--- N lines dropped ---` or `--- reconnected ---` line.
+
+To send a message to the bus for testing, type it as hex (e.g. `02 00 50 FF FF 03`) in the **Send to bus** box and press **Send**. It goes out exactly as entered, with no checksum or framing checks, the same as the TCP port. The send and its result appear in the log, followed by the message's echo, decoded as an `RX MSG` line. The text stays in the box so you can send it again.
+
+The page only accepts connections opened by the device's own web UI, so a web page from another site open in your browser can't read the log or send to the bus through it.
 
 ### TCP debug port 7373
 
@@ -280,44 +295,47 @@ This allows you to quickly test message patterns and verify decoder behavior wit
 
 ### Message counters
 
-The device keeps global counters of all bus traffic, shown in the **Messages** row of the home page and in the `/status` JSON:
+The device counts all bus traffic. The totals are shown in the **Messages** and **Resyncs** rows of the home page, and in the `/status` JSON:
 
 ```json
 "message_counts": {
   "decoded": 12345,
-  "unknown": 67,
-  "errors": 3,
-  "error_detail": {
-    "no_start_byte": 0,
-    "bad_frame_type": 1,
-    "no_end": 2,
-    "bad_framing": 0,
-    "length_mismatch": 0,
-    "header_checksum": 0,
-    "data_checksum": 0
-  }
+  "unknown": 67
+},
+"resyncs": {
+  "total": 3,
+  "no_start": 1,
+  "header_checksum": 2,
+  "bad_frame_type": 0,
+  "bad_length": 0,
+  "bad_end": 0,
+  "data_checksum": 0,
+  "buffer_overflow": 0,
+  "unexpected": 0
 }
 ```
 
-- **decoded** — frames matched and handled by the decoder
-- **unknown** — well-formed frames the decoder has no handler for
-- **errors** — frames or byte stretches broken at the protocol level
+`message_counts` counts complete, valid frames that reached the decoder:
 
-The three buckets are exclusive: `decoded + unknown + errors` equals the total traffic seen. A frame with a validation error is still dispatched to the decoder, but counts only as an error.
+- **decoded**: frames the decoder recognised and handled
+- **unknown**: valid frames the decoder has no handler for. They are listed on the Unknown Messages page
 
-`error_detail` breaks errors down by type:
+Each device in the `/status` `devices` array has its own `message_counts` with the same two fields, counted by the frame's source address.
 
-| Type | Detected by | Meaning |
-|------|-------------|---------|
-| `no_start_byte` | frame reassembly | Buffer contained no START byte (`0x02`); all bytes discarded |
-| `bad_frame_type` | frame reassembly | START byte found but frame type bytes (5-6) weren't `80 00` or `00 00`; resynced by one byte |
-| `no_end` | frame reassembly | Buffer filled without a valid data checksum + END (`0x03`) match — an over-long message or a corrupted data checksum (indistinguishable, since the checksum is used to locate the end of frame) |
-| `bad_framing` | decoder | Frame shorter than 12 bytes or missing START/END markers |
-| `length_mismatch` | decoder | Length field (byte 8) didn't match the actual frame length |
-| `header_checksum` | decoder | Header checksum (byte 9) didn't match the sum of bytes 0–8 |
-| `data_checksum` | decoder | Data checksum didn't match (defensive — frame reassembly already validates it) |
+`resyncs` counts the times frame reassembly found bytes that didn't form a valid frame, discarded them and looked for the next frame. Those bytes never reach the decoder, so they don't appear in `message_counts`. `total` is the sum of the types below:
 
-The frame-reassembly counters count discard *events*, not messages: a single corrupt stretch can increment `bad_frame_type` once per stray `0x02` it contains, and `no_start_byte` counts whole-buffer discards. Treat them as bus-corruption indicators rather than exact message counts.
+| Type | Meaning |
+|------|---------|
+| `no_start` | No START byte (`0x02`) in the buffer; all buffered bytes discarded |
+| `header_checksum` | Header checksum (byte 9) didn't match the sum of bytes 0–8; resynced by one byte |
+| `bad_frame_type` | Frame type bytes (5–6) weren't `80 00` or `00 00`; resynced by one byte |
+| `bad_length` | Length field (byte 8) out of range: not 11 for a frame with no data, or not 12–256 for a frame with data; resynced by one byte |
+| `bad_end` | No END byte (`0x03`) at the position the length field gives; resynced by one byte |
+| `data_checksum` | Data checksum didn't match; resynced by one byte |
+| `buffer_overflow` | The reassembly buffer filled without a complete frame; buffer cleared |
+| `unexpected` | Any other reason. This shouldn't happen, so please report it |
+
+Resyncs count recovery *events*, not messages. One corrupt stretch of bytes can add one resync for each byte stepped over, while a single short glitch usually costs one. Treat them as signs of bus corruption rather than exact message counts. The discarded bytes are also captured on the Unknown Messages page, labelled with the resync type.
 
 ## Architecture
 
