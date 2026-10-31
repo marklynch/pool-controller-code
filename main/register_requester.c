@@ -17,7 +17,7 @@ static SemaphoreHandle_t s_mutex = NULL;
 // Wait this long at startup before checking — gives the gateway time to announce itself
 #define STARTUP_DELAY_MS     55000
 // Delay between individual requests in a sequence
-#define REQUEST_INTERVAL_MS  250
+#define REQUEST_INTERVAL_MS  500
 // How long to wait before re-checking if data is still missing
 #define RETRY_INTERVAL_MS    60000
 // The Pool/Spa mode is read soon after startup, since the Touchscreen only
@@ -36,6 +36,10 @@ static SemaphoreHandle_t s_mutex = NULL;
 // asked, but it can still go unanswered, e.g. a Genus heater selected with
 // none on the bus.
 #define HEATER_SETPOINT_MAX_ATTEMPTS 5
+// Timer/name/favourite data may be absent by design. Do not poll missing
+// registers forever: run a few discovery sweeps, then wait until a newly
+// configured device explicitly wakes the requester.
+#define BACKGROUND_MAX_SWEEPS 3
 
 // A unit of work posted to the task. `rescan` requests a fresh check for
 // missing data; otherwise the entry names a register to read back.
@@ -84,6 +88,7 @@ _Static_assert(MAX_HEATERS == 2,
 // HEATER_SETPOINT_REGS. Task-local state: only ever touched from
 // register_requester_task().
 static uint8_t s_heater_setpoint_attempts[HEATER_SETPOINT_REG_COUNT];
+static volatile uint8_t s_background_sweeps = 0;
 
 static bool mode_known(void)
 {
@@ -191,10 +196,20 @@ static void register_requester_task(void *arg)
         if (gateway_present) {
             ESP_LOGI(TAG, "Internet Gateway present, no other requests needed");
         } else {
+            uint8_t background_sweeps =
+                __atomic_load_n(&s_background_sweeps, __ATOMIC_RELAXED);
+            bool allow_background = background_sweeps < BACKGROUND_MAX_SWEEPS;
+
+            if (!allow_background) {
+                ESP_LOGD(TAG, "Background register discovery complete; suppressing repeated polls");
+            }
+
             // Request missing timers
             int missing_timers = 0;
-            for (int i = 0; i < MAX_TIMERS; i++) {
-                if (!timers_valid[i]) missing_timers++;
+            if (allow_background) {
+                for (int i = 0; i < MAX_TIMERS; i++) {
+                    if (!timers_valid[i]) missing_timers++;
+                }
             }
             if (missing_timers > 0) {
                 ESP_LOGI(TAG, "Requesting %d missing timer(s)", missing_timers);
@@ -208,7 +223,7 @@ static void register_requester_task(void *arg)
             }
 
             // Request missing light zone multicolor and name for configured zones
-            for (int i = 0; i < MAX_LIGHT_ZONES; i++) {
+            for (int i = 0; allow_background && i < MAX_LIGHT_ZONES; i++) {
                 if (!light_configured[i]) continue;
 
                 if (!light_multicolor_valid[i]) {
@@ -226,7 +241,7 @@ static void register_requester_task(void *arg)
             }
 
             // Request missing valve labels for configured valves
-            for (int i = 0; i < MAX_VALVE_SLOTS; i++) {
+            for (int i = 0; allow_background && i < MAX_VALVE_SLOTS; i++) {
                 if (!valve_configured[i]) continue;
                 if (!valve_label_valid[i]) {
                     ESP_LOGI(TAG, "Requesting missing valve %d label", i + 1);
@@ -237,7 +252,7 @@ static void register_requester_task(void *arg)
             }
 
             // Request missing favourite enable flags and labels (all 8 slots)
-            for (int i = 0; i < MAX_FAVOURITES; i++) {
+            for (int i = 0; allow_background && i < MAX_FAVOURITES; i++) {
                 if (!fav_enabled_valid[i]) {
                     char desc[32];
                     snprintf(desc, sizeof(desc), "favourite %d enable", i);
@@ -276,6 +291,10 @@ static void register_requester_task(void *arg)
                 send_request(HEATER_SETPOINT_REGS[i].reg_id, 0x00,
                              HEATER_SETPOINT_REGS[i].desc);
             }
+
+            if (allow_background) {
+                __atomic_add_fetch(&s_background_sweeps, 1, __ATOMIC_RELAXED);
+            }
         }
 
         // Serve queued read-backs until the retry interval elapses, then loop
@@ -307,6 +326,10 @@ static void register_requester_task(void *arg)
 void register_requester_notify(void)
 {
     if (!s_queue) return;
+
+    // A newly discovered light/valve can legitimately introduce new label
+    // registers after the initial bounded sweeps have finished.
+    __atomic_store_n(&s_background_sweeps, 0, __ATOMIC_RELAXED);
 
     reg_request_t req = { .rescan = true };
     xQueueSend(s_queue, &req, 0);
