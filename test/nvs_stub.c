@@ -15,11 +15,14 @@
 
 #define MAX_ENTRIES 16
 #define MAX_NAME    32
+#define MAX_BLOB    16
 
 typedef struct {
     char ns[MAX_NAME];
     char key[MAX_NAME];
     uint16_t value;
+    uint8_t blob[MAX_BLOB];
+    size_t blob_len;
     bool in_use;
 } entry_t;
 
@@ -36,7 +39,9 @@ void nvs_stub_reset(void)
 esp_err_t nvs_open(const char *namespace_name, nvs_open_mode_t open_mode, nvs_handle_t *out_handle)
 {
     (void)open_mode;
-    if (s_next_handle >= (int)(sizeof(s_handle_ns) / sizeof(s_handle_ns[0]))) return ESP_FAIL;
+    // Every caller closes its handle straight after use, so slots are reused
+    // in rotation rather than tracked.
+    if (s_next_handle >= (int)(sizeof(s_handle_ns) / sizeof(s_handle_ns[0]))) s_next_handle = 1;
     int h = s_next_handle++;
     snprintf(s_handle_ns[h], MAX_NAME, "%s", namespace_name);
     *out_handle = h;
@@ -93,6 +98,31 @@ esp_err_t nvs_set_u16(nvs_handle_t handle, const char *key, uint16_t value)
     entry_t *e = find(handle, key, true);
     if (!e) return ESP_FAIL;
     e->value = value;
+    return ESP_OK;
+}
+
+// Like the real API, a buffer too small for the stored blob is an error and
+// *length reports the stored size.
+esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key, void *out_value, size_t *length)
+{
+    entry_t *e = find(handle, key, false);
+    if (!e) return ESP_FAIL;
+    if (*length < e->blob_len) {
+        *length = e->blob_len;
+        return ESP_FAIL;
+    }
+    memcpy(out_value, e->blob, e->blob_len);
+    *length = e->blob_len;
+    return ESP_OK;
+}
+
+esp_err_t nvs_set_blob(nvs_handle_t handle, const char *key, const void *value, size_t length)
+{
+    if (length > MAX_BLOB) return ESP_FAIL;
+    entry_t *e = find(handle, key, true);
+    if (!e) return ESP_FAIL;
+    memcpy(e->blob, value, length);
+    e->blob_len = length;
     return ESP_OK;
 }
 

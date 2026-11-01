@@ -25,6 +25,8 @@ idf_component_register(
         "dns_server.c"
         "heap_monitor.c"
         "firmware_update.c"
+        "usage_report.c"
+        "nvs_settings.c"
     INCLUDE_DIRS
          "."
     EMBED_TXTFILES

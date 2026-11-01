@@ -22,6 +22,7 @@ An ESP32-C6 daisy-chains into the Connect 10's RJ12 bus, decodes the traffic, an
 - [Filter Pump Speed](#filter-pump-speed)
 - [Power and Energy Monitoring](#power-and-energy-monitoring)
 - [Web Interface](#web-interface)
+- [Usage Reporting](#usage-reporting) — what the anonymous daily report contains, and how to turn it off
 - [Bus Debugging](#bus-debugging) — TCP port, decoder testing, message counters
 - [Architecture](#architecture)
 - [Development](#development) — building, tests, releases, installer
@@ -205,8 +206,33 @@ The device serves a small web UI and JSON API at `http://poolcontrol-AABBCC.loca
 | `/log_view` | Live debug log with a Download button — see [Debug Log page](#debug-log-page) |
 | `/api/test_decode` | POST a hex frame to run it through the decoder — see [Testing message decoding](#testing-message-decoding) |
 | `/reboot`, `/ha-reset` | POST endpoints behind the Reboot and Reset entities buttons on the update page |
+| `/update/auto_check?enabled=0\|1` | POST endpoint behind the update page's **Automatically check for new releases** checkbox |
+| `/usage_report?enabled=0\|1` | POST endpoint behind the update page's usage reporting checkbox — see [Usage Reporting](#usage-reporting) |
 
 `/wifi`, `/scan` and `/provision` are served only in provisioning mode, and are covered by [Setup step 2](#2-provision-wifi).
+
+## Usage Reporting
+
+To see how many devices are in use and which firmware versions they run, each device sends a small anonymous report twice a day. It is **on by default** and takes one click to turn off.
+
+**What the device sends**, as an HTTPS `POST` to `https://api.poolcontrol.io/v1/usage`:
+
+```json
+{"id":"9f3a1c0b7e2d4a58","v":"1.8.2"}
+```
+
+- `id` — a random install ID, made before the first report and kept in flash. It is not derived from the MAC address, serial number or anything else about the hardware. It survives reboots and firmware updates; erasing the flash (a factory reset) makes a new one.
+- `v` — the running firmware version.
+
+**What the server adds:** the country and continent, which Cloudflare works out from the connection. Nothing finer.
+
+**What is not collected:** anything about the pool, the bus or the device's configuration; IP addresses, city or region, network names or ISP. The server doesn't keep request logs.
+
+**How often:** about 30 seconds after boot, then every 12 hours. A failed report is dropped, not retried, so an unreachable server never affects the device.
+
+**Turning it off:** untick **Participate in anonymous usage reporting** on the `/update` page. It takes effect immediately and is remembered across reboots and updates. The device then asks the server to delete everything it holds for this install, and keeps asking until the server confirms; if the device is offline, that happens once it's back. After that nothing is sent while reporting is off.
+
+The server code and the queries run against the data are in [`api/`](api/).
 
 ## Bus Debugging
 

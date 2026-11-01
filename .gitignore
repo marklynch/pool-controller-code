@@ -6,3 +6,5 @@ main/secrets.h
 .cache/
 .vscode/settings.json
 .installer-preview/
+api/.wrangler/
+api/node_modules/

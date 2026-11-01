@@ -48,15 +48,23 @@ void firmware_update_init(void);
 // Copy the current status snapshot into `out`.
 void firmware_update_get_status(fw_update_status_t *out);
 
-// Synchronously query GitHub for the latest release and update the cached
-// status (also publishes the MQTT update state). Returns ESP_OK on a
-// successful query. Safe to call from a web handler.
-esp_err_t firmware_update_check_now(void);
-
 // Ask the background check task to run a check as soon as possible instead
 // of waiting out its interval. Non-blocking, safe to call from any task
-// (e.g. the MQTT event handler) — the check runs in the check task.
+// (the MQTT event handler, a web handler) — the check runs in the check task.
+// The status reads FW_UPDATE_STATE_CHECKING from the moment this returns
+// until the check finishes, unless an install is in progress.
 void firmware_update_request_check(void);
+
+// Wake the check task to send a pending usage-report deletion now, without a
+// release check or a usage ping — so opting out of usage reporting deletes
+// the server record promptly. Non-blocking, safe to call from any task.
+void firmware_update_wake(void);
+
+// Whether the check task queries GitHub on its own schedule (shortly after
+// boot, then every FW_UPDATE_CHECK_INTERVAL_MS). Off, only requested checks
+// run; the task keeps its schedule for the usage ping. Stored in NVS.
+bool firmware_update_get_auto_check(void);
+void firmware_update_set_auto_check(bool enabled);
 
 // Kick off an OTA install in a background task. `tag` selects which release to
 // install and must be one of the known recent versions (see fw_update_status_t

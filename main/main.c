@@ -28,6 +28,7 @@
 #include "unknown_buffer.h"
 #include "heap_monitor.h"
 #include "firmware_update.h"
+#include "usage_report.h"
 
 // ==================== APPLICATION =====================
 // All configuration values are in config.h
@@ -230,6 +231,10 @@ void app_main(void)
     } else {
         ESP_LOGW(TAG, "MQTT initialization failed: %s", esp_err_to_name(mqtt_err));
     }
+
+    // Load the usage-reporting settings before the update checker, whose task
+    // sends the pings.
+    usage_report_init();
 
     // Initialize the GitHub firmware-update checker. Done before WiFi connects
     // so its state/locks exist by the time MQTT connects and publishes the HA
