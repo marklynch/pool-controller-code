@@ -224,8 +224,9 @@
 // Anonymous Usage Reporting
 // ======================================================
 
-// Sent from the firmware-update check task after each release check, so on
-// FW_UPDATE_CHECK_INTERVAL_MS's schedule. The host is a domain we control
+// Sent from the firmware-update check task on its fixed schedule only
+// (FW_UPDATE_STARTUP_DELAY_MS after boot, then every
+// FW_UPDATE_CHECK_INTERVAL_MS), never on a requested check. The host is a domain we control
 // rather than *.workers.dev, so the backend can move without stranding
 // devices already in the field.
 #define USAGE_REPORT_URL               "https://api.poolcontrol.io/v1/usage"

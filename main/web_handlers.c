@@ -1414,6 +1414,29 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
 // OTA Update Handlers
 // ======================================================
 
+// Send one settings checkbox with its description, a status box (<id>Status)
+// and the bindToggle() call that POSTs <url>?enabled=0|1 on change. Sent as
+// fixed chunks around the " checked" attribute, so there is no buffer to size
+// and nothing to truncate. The arguments are inserted unescaped, so pass only
+// fixed strings. Empty parts are skipped: a zero-length chunk would end the
+// response.
+static void send_settings_toggle(httpd_req_t *req, const char *id, const char *url,
+                                 const char *label, bool checked, const char *desc_html)
+{
+    const char *parts[] = {
+        "<div class='mt-2'><label><input type='checkbox' id='", id, "'",
+        checked ? " checked" : "", "> ", label, "</label></div>",
+        desc_html,
+        "<div id='", id, "Status' role='alert' hidden class='mt-2'></div>"
+        "<script>bindToggle('", id, "','", url, "');</script>",
+    };
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+        if (parts[i][0] != '\0') {
+            httpd_resp_send_chunk(req, parts[i], HTTPD_RESP_USE_STRLEN);
+        }
+    }
+}
+
 static esp_err_t update_get_handler(httpd_req_t *req)
 {
     // Get current firmware info
@@ -1550,34 +1573,16 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "})();"
         "</script>";
 
-    // ---- Settings checkboxes ------------------------------------------------
-    // Only the checkboxes are formatted, so they render with their current state.
-    char auto_check_checkbox[160];
-    snprintf(auto_check_checkbox, sizeof(auto_check_checkbox),
-        "<div class='mt-2'><label><input type='checkbox' id='autoCheck'%s> "
-        "Automatically check for new releases</label></div>",
-        firmware_update_get_auto_check() ? " checked" : "");
-
-    const char *auto_check_html =
+    const char *auto_check_desc =
         "<p class='mt-2'>Checks GitHub every 12 hours. You can still check by hand "
-        "when this is off.</p>"
-        "<div id='autoCheckStatus' role='alert' hidden class='mt-2'></div>"
-        "<script>bindToggle('autoCheck','/update/auto_check');</script>";
+        "when this is off.</p>";
 
-    char usage_checkbox[192];
-    snprintf(usage_checkbox, sizeof(usage_checkbox),
-        "<h2 class='mt-4'>Anonymous usage reporting</h2>"
-        "<label><input type='checkbox' id='usageReport'%s> "
-        "Participate in anonymous usage reporting</label>",
-        usage_report_get_enabled() ? " checked" : "");
-
-    const char *usage_html =
+    const char *usage_heading = "<h2 class='mt-4'>Anonymous usage reporting</h2>";
+    const char *usage_desc =
         "<p class='mt-2'>Help shape the project by showing how many devices run each "
         "release. Twice a day this device shares a random install ID and its "
         "firmware version, never anything about your pool, network or hardware. "
-        "<a href='" USAGE_REPORT_README_URL "' target='_blank'>What is shared</a></p>"
-        "<div id='usageReportStatus' role='alert' hidden class='mt-2'></div>"
-        "<script>bindToggle('usageReport','/usage_report');</script>";
+        "<a href='" USAGE_REPORT_README_URL "' target='_blank'>What is shared</a></p>";
 
     const char *html_tail =
         // ---- Manual upload -------------------------------------------------
@@ -1690,10 +1695,13 @@ static esp_err_t update_get_handler(httpd_req_t *req)
     httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, partition_info, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_mid, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, auto_check_checkbox, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, auto_check_html, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, usage_checkbox, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, usage_html, HTTPD_RESP_USE_STRLEN);
+    send_settings_toggle(req, "autoCheck", "/update/auto_check",
+                         "Automatically check for new releases",
+                         firmware_update_get_auto_check(), auto_check_desc);
+    httpd_resp_send_chunk(req, usage_heading, HTTPD_RESP_USE_STRLEN);
+    send_settings_toggle(req, "usageReport", "/usage_report",
+                         "Participate in anonymous usage reporting",
+                         usage_report_get_enabled(), usage_desc);
     httpd_resp_send_chunk(req, html_tail, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
@@ -1975,16 +1983,21 @@ static esp_err_t update_auto_check_post_handler(httpd_req_t *req)
     return toggle_post(req, firmware_update_set_auto_check, firmware_update_get_auto_check);
 }
 
-// POST /usage_report?enabled=0|1 — turn anonymous usage reporting on or off.
-// Turning it off also has the server delete this install's rows; waking the
-// check task sends that request now rather than at the next 12-hourly run.
-static esp_err_t usage_report_post_handler(httpd_req_t *req)
+// Turning usage reporting off also has the server delete this install's rows;
+// waking the check task sends that request now rather than at the next
+// 12-hourly run.
+static void set_usage_report(bool enabled)
 {
-    esp_err_t ret = toggle_post(req, usage_report_set_enabled, usage_report_get_enabled);
-    if (!usage_report_get_enabled()) {
+    usage_report_set_enabled(enabled);
+    if (!enabled) {
         firmware_update_wake();
     }
-    return ret;
+}
+
+// POST /usage_report?enabled=0|1 — turn anonymous usage reporting on or off.
+static esp_err_t usage_report_post_handler(httpd_req_t *req)
+{
+    return toggle_post(req, set_usage_report, usage_report_get_enabled);
 }
 
 // POST /reboot — restart the device.

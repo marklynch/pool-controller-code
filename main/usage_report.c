@@ -1,7 +1,7 @@
 #include "usage_report.h"
 #include "config.h"
 
-#include "nvs_flash.h"
+#include "nvs_settings.h"
 #include "nvs.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -53,24 +53,6 @@ static void id_to_hex(const uint8_t id[USAGE_REPORT_ID_BYTES])
     }
 }
 
-// Store a u8 setting, logging rather than failing: the value still applies
-// for this boot, only persistence is lost.
-static void store_u8(const char *key, uint8_t value)
-{
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(USAGE_REPORT_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
-    if (err == ESP_OK) {
-        err = nvs_set_u8(nvs_handle, key, value);
-        if (err == ESP_OK) {
-            err = nvs_commit(nvs_handle);
-        }
-        nvs_close(nvs_handle);
-    }
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to store %s: %s", key, esp_err_to_name(err));
-    }
-}
-
 // Make and store a new install ID. Leaves s_id_hex empty if it could not be
 // stored: an ID that the next boot would replace would count this device as a
 // new install every time it restarts, so no stored ID means no ping.
@@ -102,15 +84,16 @@ void usage_report_init(void)
     s_delete_pending = false;
     s_id_hex[0] = '\0';
 
+    uint8_t stored;
+    if (nvs_settings_get_u8(USAGE_REPORT_NVS_NAMESPACE, USAGE_REPORT_NVS_KEY_ENABLED, &stored)) {
+        s_enabled = (stored != 0);
+    }
+    if (nvs_settings_get_u8(USAGE_REPORT_NVS_NAMESPACE, USAGE_REPORT_NVS_KEY_DEL_PENDING, &stored)) {
+        s_delete_pending = (stored != 0);
+    }
+
     nvs_handle_t nvs_handle;
     if (nvs_open(USAGE_REPORT_NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
-        uint8_t stored;
-        if (nvs_get_u8(nvs_handle, USAGE_REPORT_NVS_KEY_ENABLED, &stored) == ESP_OK) {
-            s_enabled = (stored != 0);
-        }
-        if (nvs_get_u8(nvs_handle, USAGE_REPORT_NVS_KEY_DEL_PENDING, &stored) == ESP_OK) {
-            s_delete_pending = (stored != 0);
-        }
         uint8_t id[USAGE_REPORT_ID_BYTES];
         size_t len = sizeof(id);
         if (nvs_get_blob(nvs_handle, USAGE_REPORT_NVS_KEY_ID, id, &len) == ESP_OK &&
@@ -133,12 +116,12 @@ void usage_report_set_enabled(bool enabled)
 {
     s_enabled = enabled;
     ESP_LOGI(TAG, "Anonymous usage reporting %s", enabled ? "enabled" : "disabled");
-    store_u8(USAGE_REPORT_NVS_KEY_ENABLED, enabled ? 1 : 0);
+    nvs_settings_set_u8(USAGE_REPORT_NVS_NAMESPACE, USAGE_REPORT_NVS_KEY_ENABLED, enabled ? 1 : 0);
 
     // Opting out asks for this install's rows to be deleted; opting back in
     // before that has happened withdraws the request.
     s_delete_pending = !enabled;
-    store_u8(USAGE_REPORT_NVS_KEY_DEL_PENDING, enabled ? 0 : 1);
+    nvs_settings_set_u8(USAGE_REPORT_NVS_NAMESPACE, USAGE_REPORT_NVS_KEY_DEL_PENDING, enabled ? 0 : 1);
 }
 
 // One request, no retries. Returns true on a 2xx response.
@@ -192,7 +175,7 @@ static void delete_from_server(void)
     }
     // Done, or there was never an ID and so nothing on the server.
     s_delete_pending = false;
-    store_u8(USAGE_REPORT_NVS_KEY_DEL_PENDING, 0);
+    nvs_settings_set_u8(USAGE_REPORT_NVS_NAMESPACE, USAGE_REPORT_NVS_KEY_DEL_PENDING, 0);
 }
 
 static void ping(void)
@@ -212,11 +195,11 @@ static void ping(void)
     }
 }
 
-void usage_report_run(void)
+void usage_report_run(bool ping_due)
 {
     if (s_delete_pending) {
         delete_from_server();
-    } else if (s_enabled) {
+    } else if (ping_due && s_enabled) {
         ping();
     }
 }

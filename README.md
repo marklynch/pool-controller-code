@@ -228,7 +228,7 @@ To see how many devices are in use and which firmware versions they run, each de
 
 **What is not collected:** anything about the pool, the bus or the device's configuration; IP addresses, city or region, network names or ISP. The server doesn't keep request logs.
 
-**How often:** with every firmware update check — about 30 seconds after boot, then every 12 hours, plus whenever Home Assistant's update-check button is pressed. A failed report is dropped, not retried, so an unreachable server never affects the device.
+**How often:** about 30 seconds after boot, then every 12 hours. A failed report is dropped, not retried, so an unreachable server never affects the device.
 
 **Turning it off:** untick **Participate in anonymous usage reporting** on the `/update` page. It takes effect immediately and is remembered across reboots and updates. The device then asks the server to delete everything it holds for this install, and keeps asking until the server confirms; if the device is offline, that happens once it's back. After that nothing is sent while reporting is off.
 

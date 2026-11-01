@@ -6,8 +6,8 @@
 /**
  * Anonymous usage reporting.
  *
- * With every firmware-update check (shortly after boot, then every 12 hours)
- * the device POSTs a tiny JSON body to USAGE_REPORT_URL, carrying nothing but
+ * On the firmware-update check task's schedule (shortly after boot, then
+ * every 12 hours; not on requested checks) the device POSTs a tiny JSON body to USAGE_REPORT_URL, carrying nothing but
  * a random install ID and the running firmware version:
  * {"id":"9f3a1c0b7e2d4a58","v":"1.8.2"}. The backend adds the country and
  * continent from the request; nothing about the pool, the bus, the network or
@@ -34,10 +34,11 @@
 void usage_report_init(void);
 
 // Do whatever is due: ask the server to delete this install's rows if the
-// user opted out, otherwise send a ping if reporting is enabled. Blocks for
-// at most one HTTP request. Call only from the firmware-update check task,
-// after checking that the network is up and no OTA install is running.
-void usage_report_run(void);
+// user opted out, otherwise send a ping if `ping_due` (a scheduled run) and
+// reporting is enabled. Blocks for at most one HTTP request. Call only from
+// the firmware-update check task, after checking that the network is up and
+// no OTA install is running.
+void usage_report_run(bool ping_due);
 
 bool usage_report_get_enabled(void);
 
