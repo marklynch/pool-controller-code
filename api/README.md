@@ -23,7 +23,7 @@ user turns it off, is described in the main [README](../README.md#usage-reportin
 |---|---|
 | 204 | Stored |
 | 400 | Body isn't JSON, or `id` isn't 16 lowercase hex chars, or `v` isn't `[\w.\-+]{1,48}` |
-| 404 / 405 | Wrong path / wrong method |
+| 404 / 405 | Wrong path under `/v1/` / wrong method |
 | 413 | Body over 256 bytes |
 | 503 | Database write failed |
 
@@ -40,6 +40,11 @@ turned back on it reappears as a new row under the same ID.
 
 Like pings, deletes aren't authenticated, but an ID is never shown anywhere,
 so in practice only the device that made it can delete it.
+
+### Anything else
+
+Any path outside `/v1/`, such as the bare domain opened in a browser, gets a
+302 redirect to the project's GitHub repo.
 
 ### What's stored
 
