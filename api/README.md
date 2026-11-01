@@ -89,7 +89,8 @@ requests a minute per IP) to cap junk writes.
 
 ## Queries
 
-Run with `npx wrangler d1 execute pool-controller-usage --remote --command "<sql>"`.
+Run with `npx wrangler d1 execute pool-controller-usage --remote --command "<sql>"`,
+or save a longer query to a file and pass `--file <name>.sql` instead.
 
 Each row carries the version twice: `version` is the full string the device
 sent (`v1.20.1-7-gc410103-dirty`), kept for debugging, and `clean_version` is
@@ -134,6 +135,46 @@ WHERE NOT EXISTS (
   SELECT 1 FROM r c
   WHERE c.id = a.id AND c.first_seen > a.first_seen AND c.first_seen < b.first_seen)
 GROUP BY 1, 2 ORDER BY n DESC;
+
+-- Active and new installs per week (weeks start Monday, UTC). A device counts
+-- as active in every week between its first and latest ping, so an offline
+-- gap in the middle isn't visible, and opted-out devices drop out of past
+-- weeks too. The current week only covers pings so far.
+WITH RECURSIVE weeks(week_start) AS (
+  SELECT unixepoch((SELECT MIN(first_seen) FROM devices),
+                   'unixepoch', 'start of day', '-6 days', 'weekday 1')
+  UNION ALL
+  SELECT week_start + 7*86400 FROM weeks
+  WHERE week_start + 7*86400 <= unixepoch())
+SELECT date(w.week_start, 'unixepoch') AS week,
+       COUNT(d.id) AS active_devices,
+       COALESCE(SUM(d.first_seen >= w.week_start), 0) AS new_devices
+FROM weeks w
+LEFT JOIN devices d
+  ON d.first_seen < w.week_start + 7*86400
+ AND d.last_seen  >= w.week_start
+GROUP BY w.week_start ORDER BY w.week_start;
+
+-- Active installs per week by release. Same caveats as above; a device that
+-- upgrades during a week counts under both releases that week.
+WITH RECURSIVE weeks(week_start) AS (
+  SELECT unixepoch((SELECT MIN(first_seen) FROM device_versions),
+                   'unixepoch', 'start of day', '-6 days', 'weekday 1')
+  UNION ALL
+  SELECT week_start + 7*86400 FROM weeks
+  WHERE week_start + 7*86400 <= unixepoch()),
+r AS (
+  SELECT id, clean_version, MIN(first_seen) AS first_seen, MAX(last_seen) AS last_seen
+  FROM device_versions WHERE clean_version IS NOT NULL
+  GROUP BY id, clean_version)
+SELECT date(w.week_start, 'unixepoch') AS week, r.clean_version,
+       COUNT(*) AS active_devices
+FROM weeks w
+JOIN r
+  ON r.first_seen < w.week_start + 7*86400
+ AND r.last_seen  >= w.week_start
+GROUP BY w.week_start, r.clean_version
+ORDER BY w.week_start, active_devices DESC;
 
 -- Debugging: active installs not running a release build (dev builds, or
 -- versions that didn't parse), by full version string

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A static page: no scripts at all, and nothing loaded from another origin. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'">
+<title>PoolControl.io — Connect 10 to Home Assistant</title>
+<meta name="description" content="Open-source ESP32-C6 bridge that connects a Connect 10 pool controller to Home Assistant over MQTT.">
+<link rel="canonical" href="https://poolcontrol.io/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231565C0' d='M2,15C3.67,14.25 5.33,13.5 7,13.17V5A3,3 0 0,1 10,2C11.31,2 12.42,2.83 12.83,4H10A1,1 0 0,0 9,5V6H14V5A3,3 0 0,1 17,2C18.31,2 19.42,2.83 19.83,4H17A1,1 0 0,0 16,5V14.94C18,14.62 20,13 22,13V15C19.78,15 17.56,17 15.33,17C13.11,17 10.89,15 8.67,15C6.44,15 4.22,16 2,17V15M14,8H9V10H14V8M14,12H9V13C10.67,13.16 12.33,14.31 14,14.79V12M2,19C4.22,18 6.44,17 8.67,17C10.89,17 13.11,19 15.33,19C17.56,19 19.78,17 22,17V19C19.78,19 17.56,21 15.33,21C13.11,21 10.89,19 8.67,19C6.44,19 4.22,20 2,21V19Z'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="./"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1565C0" d="M2,15C3.67,14.25 5.33,13.5 7,13.17V5A3,3 0 0,1 10,2C11.31,2 12.42,2.83 12.83,4H10A1,1 0 0,0 9,5V6H14V5A3,3 0 0,1 17,2C18.31,2 19.42,2.83 19.83,4H17A1,1 0 0,0 16,5V14.94C18,14.62 20,13 22,13V15C19.78,15 17.56,17 15.33,17C13.11,17 10.89,15 8.67,15C6.44,15 4.22,16 2,17V15M14,8H9V10H14V8M14,12H9V13C10.67,13.16 12.33,14.31 14,14.79V12M2,19C4.22,18 6.44,17 8.67,17C10.89,17 13.11,19 15.33,19C17.56,19 19.78,17 22,17V19C19.78,19 17.56,21 15.33,21C13.11,21 10.89,19 8.67,19C6.44,19 4.22,20 2,21V19Z"/></svg>PoolControl.io</a>
+  <a href="./" aria-current="page">Overview</a>
+  <a href="install/">Install</a>
+  <a href="https://github.com/marklynch/pool-controller-code">GitHub</a>
+</nav>
+<main>
+  <header class="hero">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1565C0" d="M2,15C3.67,14.25 5.33,13.5 7,13.17V5A3,3 0 0,1 10,2C11.31,2 12.42,2.83 12.83,4H10A1,1 0 0,0 9,5V6H14V5A3,3 0 0,1 17,2C18.31,2 19.42,2.83 19.83,4H17A1,1 0 0,0 16,5V14.94C18,14.62 20,13 22,13V15C19.78,15 17.56,17 15.33,17C13.11,17 10.89,15 8.67,15C6.44,15 4.22,16 2,17V15M14,8H9V10H14V8M14,12H9V13C10.67,13.16 12.33,14.31 14,14.79V12M2,19C4.22,18 6.44,17 8.67,17C10.89,17 13.11,19 15.33,19C17.56,19 19.78,17 22,17V19C19.78,19 17.56,21 15.33,21C13.11,21 10.89,19 8.67,19C6.44,19 4.22,20 2,21V19Z"/></svg>
+    <h1>PoolControl.io</h1>
+    <p class="tagline">
+      An open-source bridge that plugs into your Connect&nbsp;10 pool system and brings its
+      state and controls into Home Assistant.
+    </p>
+    <div class="actions">
+      <a class="btn" href="install/">Install firmware</a>
+      <a class="btn secondary" href="https://github.com/marklynch/pool-controller-code#readme">Read the docs</a>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>How it works</h2>
+    <p>
+      A small ESP32-C6 board daisy-chains into the Connect&nbsp;10's RJ12 control bus, which
+      also powers it. It listens to the traffic between the touchscreen, controller and
+      accessories, decodes it, and publishes everything to your MQTT broker — where
+      Home Assistant discovers it automatically. Commands flow the other way.
+    </p>
+    <ol class="flow" aria-label="Data flow">
+      <li><span class="node">Connect&nbsp;10<small>RJ12 bus</small></span></li>
+      <li class="arrow" aria-hidden="true">⇄</li>
+      <li><span class="node">ESP32-C6<small>this firmware</small></span></li>
+      <li class="arrow" aria-hidden="true">⇄</li>
+      <li><span class="node">MQTT<small>over WiFi</small></span></li>
+      <li class="arrow" aria-hidden="true">⇄</li>
+      <li><span class="node">Home Assistant<small>auto-discovery</small></span></li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>What you get</h2>
+    <div class="features">
+      <div>
+        <h3>Monitor</h3>
+        <ul>
+          <li>Water temperature</li>
+          <li>Channel, light and heater state</li>
+          <li>Timers and favourites</li>
+          <li>Chlorinator pH and ORP</li>
+          <li>Variable-speed pump speed and power</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Control</h3>
+        <ul>
+          <li>Lights — on/off and colour</li>
+          <li>Channels — On / Auto / Off</li>
+          <li>Filter pump speed</li>
+          <li>Heaters and set points</li>
+          <li>Pool/Spa mode and valves</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Integrate</h3>
+        <ul>
+          <li>Home Assistant entities with no YAML</li>
+          <li>Per-channel power and energy for the Energy dashboard</li>
+          <li>Over-the-air updates from GitHub releases</li>
+          <li>Web UI and live bus log</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Getting started</h2>
+    <ol class="steps">
+      <li>
+        <h3>Build the hardware</h3>
+        <p>
+          A <a href="https://github.com/marklynch/pool-controller-pcb">small PCB</a> carrying a
+          Waveshare ESP32-C6 Mini, in a <a href="https://github.com/marklynch/pool-controller-case">3D-printed case</a>,
+          with two RJ12 sockets for the bus and USB-C for flashing.
+        </p>
+      </li>
+      <li>
+        <h3>Flash the firmware</h3>
+        <p>
+          Use the <a href="install/">web installer</a> from desktop Chrome or Edge — no toolchain
+          needed. After the first install, updates arrive over-the-air.
+        </p>
+      </li>
+      <li>
+        <h3>Connect to WiFi</h3>
+        <p>
+          Plug it into the pool bus. When the LED turns purple, join the <code>POOL_AABBCC</code>
+          network from your phone and pick your WiFi at <code>192.168.4.1</code>.
+        </p>
+      </li>
+      <li>
+        <h3>Point it at Home Assistant</h3>
+        <p>
+          Enter your MQTT broker at <code>http://poolcontrol-AABBCC.local/mqtt_config</code>.
+          The pool's entities appear in Home Assistant by themselves.
+        </p>
+      </li>
+    </ol>
+    <p class="hint">
+      Full setup notes, the LED colour reference and power monitoring are in the
+      <a href="https://github.com/marklynch/pool-controller-code#readme">README</a>.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>About the project</h2>
+    <p>
+      This started as a learning project. The Connect&nbsp;10 bus protocol isn't published, so
+      everything here was worked out by listening to the bus and decoding messages by trial
+      and error — the findings are written up in the
+      <a href="https://github.com/marklynch/pool-controller-code/blob/main/PROTOCOL.md">protocol notes</a>.
+      Contributions and captures from other installs are welcome.
+    </p>
+    <div class="links">
+      <a href="https://github.com/marklynch/pool-controller-code">Firmware</a>
+      <a href="https://github.com/marklynch/pool-controller-pcb">Circuit &amp; PCB</a>
+      <a href="https://github.com/marklynch/pool-controller-case">Case</a>
+      <a href="https://github.com/marklynch/pool-controller-code/blob/main/PROTOCOL.md">Protocol notes</a>
+      <a href="https://github.com/marklynch/pool-controller-code/releases">Releases</a>
+      <a href="https://github.com/marklynch/pool-controller-code/issues">Issues</a>
+    </div>
+  </section>
+
+  <footer>
+    Not an official product. No support or warranty, and not connected to or supported by Fluidra.<br>
+    MIT licensed.
+  </footer>
+</main>
+</body>
+</html>

@@ -5,6 +5,6 @@ sdkconfig.old
 main/secrets.h
 .cache/
 .vscode/settings.json
-.installer-preview/
+.site-preview/
 api/.wrangler/
 api/node_modules/

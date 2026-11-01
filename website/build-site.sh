@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 #
-# Assemble the web installer site: the page, one manifest and firmware binary
-# per offered release, and a versions.json index the page reads to build its
-# version picker.
+# Assemble the poolcontrol.io site: the home page at the root, and the web
+# installer under install/ — its page, one manifest and firmware binary per
+# offered release, and a versions.json index it reads to build its version
+# picker.
 #
-#   ./installer/build-site.sh --out site                 # latest 5 releases
-#   ./installer/build-site.sh --out site --limit 2
-#   ./installer/build-site.sh --out site --bin build/x.bin --version dev
+#   ./website/build-site.sh --out site                   # latest 5 releases
+#   ./website/build-site.sh --out site --limit 2
+#   ./website/build-site.sh --out site --bin build/x.bin --version dev
 #
-# Used by both .github/workflows/pages.yml and installer/preview.sh, so what
+# Used by both .github/workflows/pages.yml and website/preview.sh, so what
 # you preview locally is exactly what gets deployed.
 set -euo pipefail
 
@@ -41,7 +42,7 @@ while [ $# -gt 0 ]; do
     --limit) LIMIT="$2"; shift 2 ;;
     --bin) LOCAL_BIN="$2"; shift 2 ;;
     --version) LOCAL_VERSION="$2"; shift 2 ;;
-    -h|--help) sed -n '2,12p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -49,7 +50,10 @@ done
 [ -n "$OUT" ] || { echo "--out is required" >&2; exit 1; }
 
 rm -rf "$OUT"
-mkdir -p "$OUT"
+# Everything installer-related lives under install/; the home page and shared
+# stylesheet sit at the root.
+INSTALL="$OUT/install"
+mkdir -p "$INSTALL"
 
 # Collected as "tag<TAB>published" lines, newest first.
 SELECTED=""
@@ -57,7 +61,7 @@ SELECTED=""
 if [ -n "$LOCAL_BIN" ]; then
   [ -f "$LOCAL_BIN" ] || { echo "no such file: $LOCAL_BIN" >&2; exit 1; }
   VERSION="${LOCAL_VERSION:-local}"
-  cp "$LOCAL_BIN" "$OUT/pool-controller-full-${VERSION}.bin"
+  cp "$LOCAL_BIN" "$INSTALL/pool-controller-full-${VERSION}.bin"
   SELECTED="${VERSION}	"
 else
   command -v gh >/dev/null || {
@@ -77,10 +81,10 @@ else
     [ -n "$tag" ] || continue
     [ "$count" -lt "$LIMIT" ] || break
     binary="pool-controller-full-${tag}.bin"
-    if gh release download "$tag" --repo "$REPO" --pattern "$binary" --dir "$OUT" 2>/dev/null; then
+    if gh release download "$tag" --repo "$REPO" --pattern "$binary" --dir "$INSTALL" 2>/dev/null; then
       SELECTED="${SELECTED}${tag}	${published}"$'\n'
       count=$((count + 1))
-      echo "  + ${tag} ($(du -h "$OUT/$binary" | cut -f1))"
+      echo "  + ${tag} ($(du -h "$INSTALL/$binary" | cut -f1))"
     else
       echo "  - ${tag} skipped (no ${binary})" >&2
     fi
@@ -95,17 +99,17 @@ while IFS=$'\t' read -r tag published; do
   [ -n "$tag" ] || continue
   sed -e "s|__VERSION__|${tag}|g" \
       -e "s|__BINARY__|pool-controller-full-${tag}.bin|g" \
-      "$SRC/manifest.template.json" > "$OUT/manifest-${tag}.json"
-  if grep -q '__VERSION__\|__BINARY__' "$OUT/manifest-${tag}.json"; then
+      "$SRC/install/manifest.template.json" > "$INSTALL/manifest-${tag}.json"
+  if grep -q '__VERSION__\|__BINARY__' "$INSTALL/manifest-${tag}.json"; then
     echo "manifest-${tag}.json still contains unsubstituted placeholders" >&2
     exit 1
   fi
-  test -s "$OUT/pool-controller-full-${tag}.bin"
+  test -s "$INSTALL/pool-controller-full-${tag}.bin"
 done <<< "$SELECTED"
 
 LATEST=$(printf '%s' "$SELECTED" | head -n1 | cut -f1)
 
-REPO="$REPO" LATEST="$LATEST" SELECTED="$SELECTED" OUT="$OUT" python3 - <<'PY'
+REPO="$REPO" LATEST="$LATEST" SELECTED="$SELECTED" OUT="$INSTALL" python3 - <<'PY'
 import json, os
 
 repo = os.environ["REPO"]
@@ -127,10 +131,10 @@ with open(os.path.join(out, "versions.json"), "w") as f:
     f.write("\n")
 PY
 
-cp "$SRC/index.html" "$OUT/index.html"
-cp "$SRC/app.js" "$OUT/app.js"
+cp "$SRC/index.html" "$SRC/site.css" "$OUT/"
+cp "$SRC/install/index.html" "$SRC/install/app.js" "$INSTALL/"
 # Kept so a direct link to manifest.json still resolves to the current release.
-cp "$OUT/manifest-${LATEST}.json" "$OUT/manifest.json"
+cp "$INSTALL/manifest-${LATEST}.json" "$INSTALL/manifest.json"
 
 # --- Vendor ESP Web Tools ---------------------------------------------------
 TMP="$(mktemp -d)"
@@ -154,10 +158,10 @@ if [ "$ACTUAL" != "$EWT_INTEGRITY" ]; then
 fi
 
 tar xzf "$TMP/ewt.tgz" -C "$TMP" package/dist/web
-mkdir -p "$OUT/ewt"
-cp -R "$TMP/package/dist/web/." "$OUT/ewt/"
+mkdir -p "$INSTALL/ewt"
+cp -R "$TMP/package/dist/web/." "$INSTALL/ewt/"
 # The page loads this entry point; the rest are its lazily imported chunks.
-test -s "$OUT/ewt/install-button.js"
+test -s "$INSTALL/ewt/install-button.js"
 echo "  vendored esp-web-tools ${EWT_VERSION} (integrity verified)"
 
-echo "Built $OUT — latest ${LATEST}, $(grep -c '"version"' "$OUT/versions.json") version(s)."
+echo "Built $OUT — latest ${LATEST}, $(grep -c '"version"' "$INSTALL/versions.json") version(s)."

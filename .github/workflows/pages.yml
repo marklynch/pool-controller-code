@@ -1,9 +1,13 @@
-name: Deploy Web Installer
+name: Deploy Website
 
-# Publishes the ESP Web Tools installer page to GitHub Pages, serving the
-# merged full-flash binary from a release alongside it.
+# Publishes the project website to GitHub Pages at https://poolcontrol.io: a
+# home page at the root, and the ESP Web Tools installer under /install/,
+# serving the merged full-flash binaries from recent releases alongside it.
 #
-# The page source lives in installer/, deliberately NOT docs/ — GitHub Pages
+# The custom domain is set in Settings → Pages, not by a CNAME file — Pages
+# ignores CNAME files in Actions-deployed artifacts. See docs/website.md.
+#
+# The page source lives in website/, deliberately NOT docs/ — GitHub Pages
 # treats docs/ as a branch publishing directory, and pointing Pages at it
 # serves the raw sources, which have no manifest.json and no firmware binary
 # (both are produced here at deploy time). Keeping the sources out of docs/
@@ -25,7 +29,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'installer/**'
+      - 'website/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -72,7 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-        run: ./installer/build-site.sh --out site --limit "${INSTALLER_VERSIONS:-5}"
+        run: ./website/build-site.sh --out site --limit "${INSTALLER_VERSIONS:-5}"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

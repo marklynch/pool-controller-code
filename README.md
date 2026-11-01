@@ -25,7 +25,7 @@ An ESP32-C6 daisy-chains into the Connect 10's RJ12 bus, decodes the traffic, an
 - [Usage Reporting](#usage-reporting) — what the anonymous daily report contains, and how to turn it off
 - [Bus Debugging](#bus-debugging) — TCP port, decoder testing, message counters
 - [Architecture](#architecture)
-- [Development](#development) — building, tests, releases, installer
+- [Development](#development) — building, tests, releases, website
 - [Related Documentation](#related-documentation)
 
 ## What It Does
@@ -72,7 +72,7 @@ The assembled device has three connectors:
 
 ### 1. Connect and power the device
 
-If the device hasn't been flashed yet, the quickest route is the [web installer](https://marklynch.github.io/pool-controller-code/) — plug the board into a computer over USB-C and flash the latest release from Chrome or Edge, no toolchain needed. After that, updates arrive over-the-air.
+If the device hasn't been flashed yet, the quickest route is the [web installer](https://poolcontrol.io/install/) — plug the board into a computer over USB-C and flash the latest release from Chrome or Edge, no toolchain needed. After that, updates arrive over-the-air.
 
 Then plug a flat RJ12 cable from the Connect 10 into either RJ12 socket. This both connects the device to the pool bus and powers it. Wait for the LED to turn **purple**, which means it's in provisioning mode and ready for WiFi setup.
 
@@ -482,11 +482,11 @@ The published release appears at `https://github.com/marklynch/pool-controller-c
 
 To re-test the workflow without cutting a real release, run it manually from the Actions tab (Build & Release → Run workflow). Manual runs build the firmware and upload it as a workflow artifact but do not create a GitHub Release.
 
-### Web installer
+### Website and web installer
 
-<https://marklynch.github.io/pool-controller-code/> flashes the latest release onto an ESP32-C6 from desktop Chrome or Edge, with no toolchain. The page source is in `installer/`, but the published site is assembled by `installer/build-site.sh` rather than served as-is.
+<https://poolcontrol.io> is the project website, and <https://poolcontrol.io/install/> flashes the latest release onto an ESP32-C6 from desktop Chrome or Edge, with no toolchain. The source is in `website/`, but the published site is assembled by `website/build-site.sh` rather than served as-is.
 
-See [docs/installer.md](docs/installer.md) for how the site is built and deployed, why ESP Web Tools is vendored rather than loaded from a CDN, and how to preview it locally.
+See [docs/website.md](docs/website.md) for how the site is built and deployed, the custom domain setup, why ESP Web Tools is vendored rather than loaded from a CDN, and how to preview it locally.
 
 ## Related Documentation
 
@@ -516,5 +516,5 @@ Describes the OTA update system. Covers:
 ### Also in this repo
 
 - [docs/testing.md](docs/testing.md) — running and extending the host-based test suite
-- [docs/installer.md](docs/installer.md) — how the web installer is built, vendored and deployed
+- [docs/website.md](docs/website.md) — how the website and web installer are built, vendored and deployed
 - [CHANGELOG.md](CHANGELOG.md) — release history

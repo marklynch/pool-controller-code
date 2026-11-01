@@ -4,113 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- Everything the page needs is served from this origin: the flasher is
-     vendored into ewt/ by installer/build-site.sh, the page script is app.js,
+     vendored into ewt/ by website/build-site.sh, the page script is app.js,
      and the manifests and firmware binaries sit alongside them. No external
      origin can supply code to a page that writes firmware over Web Serial.
-     style-src allows inline because the page styles are in a <style> block and
-     ESP Web Tools falls back to injecting <style> where adoptedStyleSheets is
-     unavailable; blob: is allowed for connect because the flasher's dialog
+     style-src allows inline because ESP Web Tools falls back to injecting
+     <style> where adoptedStyleSheets is unavailable; blob: is allowed for connect because the flasher's dialog
      creates object URLs. frame-ancestors is omitted: it is ignored in a meta
      CSP and needs a real header. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' blob:; form-action 'self'; base-uri 'none'">
-<title>Pool Controller — Web Installer</title>
+<title>Install — Pool Controller</title>
 <meta name="description" content="Flash the Connect 10 pool controller firmware to an ESP32-C6 straight from your browser.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231565C0' d='M2,15C3.67,14.25 5.33,13.5 7,13.17V5A3,3 0 0,1 10,2C11.31,2 12.42,2.83 12.83,4H10A1,1 0 0,0 9,5V6H14V5A3,3 0 0,1 17,2C18.31,2 19.42,2.83 19.83,4H17A1,1 0 0,0 16,5V14.94C18,14.62 20,13 22,13V15C19.78,15 17.56,17 15.33,17C13.11,17 10.89,15 8.67,15C6.44,15 4.22,16 2,17V15M14,8H9V10H14V8M14,12H9V13C10.67,13.16 12.33,14.31 14,14.79V12M2,19C4.22,18 6.44,17 8.67,17C10.89,17 13.11,19 15.33,19C17.56,19 19.78,17 22,17V19C19.78,19 17.56,21 15.33,21C13.11,21 10.89,19 8.67,19C6.44,19 4.22,20 2,21V19Z'/%3E%3C/svg%3E">
-<style>
-  :root {
-    --bg: #f6f8fa;
-    --card: #ffffff;
-    --fg: #1f2328;
-    --muted: #59636e;
-    --line: #d8dee4;
-    --accent: #1565c0;
-    --accent-fg: #ffffff;
-    --warn-bg: #fff8e5;
-    --warn-line: #e8d8a8;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0d1117;
-      --card: #151b23;
-      --fg: #e6edf3;
-      --muted: #9198a1;
-      --line: #2f3742;
-      --accent: #4a9eff;
-      --accent-fg: #06121f;
-      --warn-bg: #1f1a0b;
-      --warn-line: #4a3c15;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    padding: 2rem 1rem 4rem;
-    background: var(--bg);
-    color: var(--fg);
-    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  }
-  main { max-width: 46rem; margin: 0 auto; }
-  header { text-align: center; margin-bottom: 2.5rem; }
-  header svg { width: 64px; height: 64px; }
-  h1 { font-size: 2rem; margin: .5rem 0 .25rem; letter-spacing: -.02em; }
-  h2 { font-size: 1.15rem; margin: 0 0 .75rem; letter-spacing: -.01em; }
-  .tagline { color: var(--muted); margin: 0; }
-  .card {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: 12px; padding: 1.5rem; margin-bottom: 1.25rem;
-  }
-  .install { text-align: center; }
-  .picker {
-    display: flex; flex-wrap: wrap; gap: .5rem .75rem;
-    align-items: center; justify-content: center;
-    margin-bottom: 1.25rem; font-size: .92rem;
-  }
-  .picker label { color: var(--muted); }
-  select {
-    font: inherit; color: var(--fg); background-color: var(--bg);
-    border: 1px solid var(--line); border-radius: 7px;
-    padding: .35rem 2rem .35rem .6rem; cursor: pointer;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%2359636e' d='M4 6l4 4 4-4z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right .5rem center;
-    background-size: 1rem;
-  }
-  select:disabled { opacity: .6; cursor: default; }
-  .btn {
-    appearance: none; border: 0; cursor: pointer;
-    background: var(--accent); color: var(--accent-fg);
-    font: inherit; font-weight: 600;
-    padding: .8rem 2rem; border-radius: 8px;
-  }
-  .btn:hover { filter: brightness(1.08); }
-  .notice {
-    display: block; padding: .9rem 1rem; border-radius: 8px;
-    background: var(--warn-bg); border: 1px solid var(--warn-line);
-    font-size: .92rem; text-align: left;
-  }
-  .notice[hidden] { display: none; }
-  #older { margin: 1.25rem 0 0; }
-  ol, ul { padding-left: 1.25rem; margin: 0; }
-  li + li { margin-top: .4rem; }
-  a { color: var(--accent); }
-  code {
-    background: var(--bg); border: 1px solid var(--line);
-    border-radius: 5px; padding: .1rem .35rem; font-size: .875em;
-  }
-  .links { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; }
-  .hint { margin: .9rem 0 0; color: var(--muted); font-size: .92rem; }
-  footer {
-    margin-top: 2rem; text-align: center;
-    color: var(--muted); font-size: .85rem;
-  }
-</style>
+<link rel="stylesheet" href="../site.css">
 </head>
 <body>
+<nav class="site-nav">
+  <a class="brand" href="../"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1565C0" d="M2,15C3.67,14.25 5.33,13.5 7,13.17V5A3,3 0 0,1 10,2C11.31,2 12.42,2.83 12.83,4H10A1,1 0 0,0 9,5V6H14V5A3,3 0 0,1 17,2C18.31,2 19.42,2.83 19.83,4H17A1,1 0 0,0 16,5V14.94C18,14.62 20,13 22,13V15C19.78,15 17.56,17 15.33,17C13.11,17 10.89,15 8.67,15C6.44,15 4.22,16 2,17V15M14,8H9V10H14V8M14,12H9V13C10.67,13.16 12.33,14.31 14,14.79V12M2,19C4.22,18 6.44,17 8.67,17C10.89,17 13.11,19 15.33,19C17.56,19 19.78,17 22,17V19C19.78,19 17.56,21 15.33,21C13.11,21 10.89,19 8.67,19C6.44,19 4.22,20 2,21V19Z"/></svg>Pool Controller</a>
+  <a href="../">Overview</a>
+  <a href="./" aria-current="page">Install</a>
+  <a href="https://github.com/marklynch/pool-controller-code">GitHub</a>
+</nav>
 <main>
   <header>
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1565C0" d="M2,15C3.67,14.25 5.33,13.5 7,13.17V5A3,3 0 0,1 10,2C11.31,2 12.42,2.83 12.83,4H10A1,1 0 0,0 9,5V6H14V5A3,3 0 0,1 17,2C18.31,2 19.42,2.83 19.83,4H17A1,1 0 0,0 16,5V14.94C18,14.62 20,13 22,13V15C19.78,15 17.56,17 15.33,17C13.11,17 10.89,15 8.67,15C6.44,15 4.22,16 2,17V15M14,8H9V10H14V8M14,12H9V13C10.67,13.16 12.33,14.31 14,14.79V12M2,19C4.22,18 6.44,17 8.67,17C10.89,17 13.11,19 15.33,19C17.56,19 19.78,17 22,17V19C19.78,19 17.56,21 15.33,21C13.11,21 10.89,19 8.67,19C6.44,19 4.22,20 2,21V19Z"/></svg>
-    <h1>Pool Controller</h1>
+    <h1>Web Installer</h1>
     <p class="tagline">Flash the Connect&nbsp;10 bridge firmware to your ESP32-C6, straight from this page.</p>
   </header>
 
