@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Changed
+### Fixed
+### Removed
+### Deprecated
+### Security
+
+## [1.21.0] - 2026-11-01
+### Added
 - Added a Debug Log page to the web UI (`/log_view`) that shows the device's log live in any browser, including the `RX MSG` line for every bus message, so a log can be captured without a TCP client on port 7373. Lines are coloured by log level, and the page has Pause, Clear, a view filter and a **Download** button that saves the capture as a `.txt` file in the port 7373 format. The capture is kept only in the open tab (up to 50,000 lines), and gaps from dropped lines or a reconnect are marked in it. The download starts with a summary for bug reports: firmware version, uptime, memory, WiFi signal (marked "weak" below -75 dBm), the number of heaters, solar and separate pool/spa modes, and each device seen on the bus with its firmware version and decoded/unknown message counts, and the signatures of all valid but undecoded frames, most hits first. Network names, IP addresses and serial numbers are left out. Hex frames can also be sent to the bus from the page for testing. Only pages served by the device itself can connect, so another website open in the browser can't read the log or send to the bus
 - Added `heaters_configured`, `has_solar` and `wifi_rssi` to the `/status` JSON. Each is `null` until it is known
 - Added an **Automatically check for new releases** checkbox to the `/update` page. Untick it to stop the 12-hourly check of GitHub for new releases; the **Check for updates** button and Home Assistant's check button still work while it's off
@@ -22,8 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The **Check for updates** button on the `/update` page now runs the check in the background, the same way Home Assistant's check button does, and the page shows "Checking…" until the result arrives. The rest of the web UI no longer stalls for up to 15 seconds while GitHub is queried. Like the Home Assistant button, it also restarts the 12-hour automatic check interval
 ### Fixed
 - Fixed log lines longer than 255 characters running into the next line on the port 7373 TCP output, because cutting them short dropped the line ending
-### Removed
-### Deprecated
 ### Security
 - Fixed the Internet Gateway's WiFi password appearing in the log when the Touchscreen sends it to the Gateway. The decoded line already hid it, but the raw hex `RX MSG` line showed every byte. The password bytes are now shown as `**` in the `RX MSG`, `TX` and loopback hex lines, so they no longer reach the serial console, port 7373 or the Debug Log page
 
