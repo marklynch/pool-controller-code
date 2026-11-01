@@ -11,6 +11,8 @@ user turns it off, is described in the main [README](../README.md#usage-reportin
 
 ## API
 
+### Report
+
 `POST https://api.poolcontrol.io/v1/usage`
 
 ```json
@@ -24,6 +26,22 @@ user turns it off, is described in the main [README](../README.md#usage-reportin
 | 404 / 405 | Wrong path / wrong method |
 | 413 | Body over 256 bytes |
 | 503 | Database write failed |
+
+### Delete
+
+`DELETE https://api.poolcontrol.io/v1/usage/<id>`
+
+Sent by a device when the user turns usage reporting off. Removes the
+install's row from `devices` and all its rows from `device_versions`. Returns
+204 whether or not anything was there, so a device retrying after a lost
+response still gets its confirmation; 503 if the delete failed, and the device
+tries again on its next run. The device keeps its ID, so if reporting is
+turned back on it reappears as a new row under the same ID.
+
+Like pings, deletes aren't authenticated, but an ID is never shown anywhere,
+so in practice only the device that made it can delete it.
+
+### What's stored
 
 The Worker adds `request.cf.country` and `request.cf.continent`. It does not
 store or log the client IP, city, region, postcode, coordinates, timezone, ASN
@@ -57,9 +75,8 @@ curl -i -X POST https://api.poolcontrol.io/v1/usage \
   -H 'Content-Type: application/json' \
   -d '{"id":"0000000000000000","v":"test"}'      # expect 204
 
-# then remove the test row
-npx wrangler d1 execute pool-controller-usage --remote --command \
-  "DELETE FROM devices WHERE id='0000000000000000'; DELETE FROM device_versions WHERE id='0000000000000000';"
+# then remove the test rows the same way a device does when it opts out
+curl -i -X DELETE https://api.poolcontrol.io/v1/usage/0000000000000000   # expect 204
 ```
 
 Optional: add a Cloudflare rate-limiting rule on `/v1/usage` (for example 10

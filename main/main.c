@@ -232,9 +232,8 @@ void app_main(void)
         ESP_LOGW(TAG, "MQTT initialization failed: %s", esp_err_to_name(mqtt_err));
     }
 
-    // Load (or create) the anonymous install ID. After WiFi init, which starts
-    // the radio: the hardware RNG only draws on RF noise once it is running,
-    // and before the update checker, whose task sends the pings.
+    // Load the usage-reporting settings before the update checker, whose task
+    // sends the pings.
     usage_report_init();
 
     // Initialize the GitHub firmware-update checker. Done before WiFi connects

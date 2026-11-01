@@ -55,6 +55,11 @@ void firmware_update_get_status(fw_update_status_t *out);
 // until the check finishes, unless an install is in progress.
 void firmware_update_request_check(void);
 
+// Wake the check task to do its other work (the usage report) now, without a
+// release check — e.g. so opting out of usage reporting deletes the server
+// record promptly. Non-blocking, safe to call from any task.
+void firmware_update_wake(void);
+
 // Whether the check task queries GitHub on its own schedule (shortly after
 // boot, then every FW_UPDATE_CHECK_INTERVAL_MS). Off, only requested checks
 // run; the task keeps its schedule for the usage ping. Stored in NVS.

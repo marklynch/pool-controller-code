@@ -221,7 +221,7 @@ To see how many devices are in use and which firmware versions they run, each de
 {"id":"9f3a1c0b7e2d4a58","v":"1.8.2"}
 ```
 
-- `id` — a random install ID, made the first time the firmware runs and kept in flash. It is not derived from the MAC address, serial number or anything else about the hardware. It survives reboots and firmware updates; erasing the flash (a factory reset) makes a new one.
+- `id` — a random install ID, made before the first report and kept in flash. It is not derived from the MAC address, serial number or anything else about the hardware. It survives reboots and firmware updates; erasing the flash (a factory reset) makes a new one.
 - `v` — the running firmware version.
 
 **What the server adds:** the country and continent, which Cloudflare works out from the connection. Nothing finer.
@@ -230,7 +230,7 @@ To see how many devices are in use and which firmware versions they run, each de
 
 **How often:** with every firmware update check — about 30 seconds after boot, then every 12 hours, plus whenever Home Assistant's update-check button is pressed. A failed report is dropped, not retried, so an unreachable server never affects the device.
 
-**Turning it off:** untick **Send anonymous usage reports** on the `/update` page. It takes effect immediately and is remembered across reboots and updates; nothing is sent while it's off.
+**Turning it off:** untick **Send anonymous usage reports** on the `/update` page. It takes effect immediately and is remembered across reboots and updates. The device then asks the server to delete everything it holds for this install, and keeps asking until the server confirms; if the device is offline, that happens once it's back. After that nothing is sent while reporting is off.
 
 The server code and the queries run against the data are in [`api/`](api/).
 

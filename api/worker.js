@@ -1,14 +1,16 @@
 // api.poolcontrol.io — backend for the pool controller firmware.
 //
-// Currently one endpoint, anonymous usage reporting:
-// POST /v1/usage  {"id":"<16 lowercase hex>","v":"<firmware version>"}
+// Anonymous usage reporting:
+//   POST   /v1/usage       {"id":"<16 lowercase hex>","v":"<firmware version>"}
+//   DELETE /v1/usage/<id>  sent when the user opts out: remove that install's rows
 //
 // Stores the install ID, the version (in full, and as vMAJOR.MINOR.PATCH for
-// aggregation), and the country/continent Cloudflare
-// derives from the request. Deliberately stores and logs nothing else: no IP
-// address, city, region, postcode, coordinates, timezone, ASN or ISP.
+// aggregation), and the country/continent Cloudflare derives from the
+// request. Deliberately stores and logs nothing else: no IP address, city,
+// region, postcode, coordinates, timezone, ASN or ISP.
 
 const PATH = "/v1/usage";
+const DELETE_PATH_RE = /^\/v1\/usage\/([0-9a-f]{16})$/;
 const MAX_BODY = 256;
 const ID_RE = /^[0-9a-f]{16}$/;
 const VERSION_RE = /^[\w.\-+]{1,48}$/;
@@ -26,50 +28,75 @@ const cleanVersion = (v) => {
   return m ? `v${m[1]}` : null;
 };
 
+async function ping(req, env) {
+  // Reject an oversized body from its header before reading it.
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (declared > MAX_BODY) return empty(413);
+  const text = await req.text();
+  if (text.length > MAX_BODY) return empty(413);
+
+  let b;
+  try { b = JSON.parse(text); } catch { return empty(400); }
+  if (b === null || typeof b !== "object" ||
+      typeof b.id !== "string" || !ID_RE.test(b.id) ||
+      typeof b.v  !== "string" || !VERSION_RE.test(b.v)) {
+    return empty(400);
+  }
+
+  const country   = req.cf?.country   ?? "";
+  const continent = req.cf?.continent ?? "";
+  const clean     = cleanVersion(b.v);
+
+  try {
+    // One transaction: both rows change together or not at all.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO devices (id, version, clean_version, country, continent, first_seen, last_seen)
+         VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), unixepoch())
+         ON CONFLICT(id) DO UPDATE SET
+           version=?2, clean_version=?3, country=?4, continent=?5, last_seen=unixepoch(),
+           ping_count=ping_count+1`
+      ).bind(b.id, b.v, clean, country, continent),
+      env.DB.prepare(
+        `INSERT INTO device_versions (id, version, clean_version, first_seen, last_seen)
+         VALUES (?1, ?2, ?3, unixepoch(), unixepoch())
+         ON CONFLICT(id, version) DO UPDATE SET last_seen=unixepoch()`
+      ).bind(b.id, b.v, clean),
+    ]);
+  } catch {
+    // Pings aren't retried, so there is nothing useful to say beyond "not stored".
+    return empty(503);
+  }
+  return empty(204);
+}
+
+// Idempotent: 204 whether or not the install had any rows, so a device that
+// retries after a lost response still gets its confirmation.
+async function forget(id, env) {
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM device_versions WHERE id = ?1`).bind(id),
+      env.DB.prepare(`DELETE FROM devices WHERE id = ?1`).bind(id),
+    ]);
+  } catch {
+    return empty(503);   // The device keeps the request pending and tries again
+  }
+  return empty(204);
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (url.pathname !== PATH) return empty(404);
-    if (req.method !== "POST") return empty(405);
 
-    // Reject an oversized body from its header before reading it.
-    const declared = Number(req.headers.get("content-length") ?? 0);
-    if (declared > MAX_BODY) return empty(413);
-    const text = await req.text();
-    if (text.length > MAX_BODY) return empty(413);
-
-    let b;
-    try { b = JSON.parse(text); } catch { return empty(400); }
-    if (b === null || typeof b !== "object" ||
-        typeof b.id !== "string" || !ID_RE.test(b.id) ||
-        typeof b.v  !== "string" || !VERSION_RE.test(b.v)) {
-      return empty(400);
+    if (url.pathname === PATH) {
+      return req.method === "POST" ? ping(req, env) : empty(405);
     }
 
-    const country   = req.cf?.country   ?? "";
-    const continent = req.cf?.continent ?? "";
-    const clean     = cleanVersion(b.v);
-
-    try {
-      // One transaction: both rows change together or not at all.
-      await env.DB.batch([
-        env.DB.prepare(
-          `INSERT INTO devices (id, version, clean_version, country, continent, first_seen, last_seen)
-           VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), unixepoch())
-           ON CONFLICT(id) DO UPDATE SET
-             version=?2, clean_version=?3, country=?4, continent=?5, last_seen=unixepoch(),
-             ping_count=ping_count+1`
-        ).bind(b.id, b.v, clean, country, continent),
-        env.DB.prepare(
-          `INSERT INTO device_versions (id, version, clean_version, first_seen, last_seen)
-           VALUES (?1, ?2, ?3, unixepoch(), unixepoch())
-           ON CONFLICT(id, version) DO UPDATE SET last_seen=unixepoch()`
-        ).bind(b.id, b.v, clean),
-      ]);
-    } catch {
-      // Devices don't retry, so there is nothing useful to say beyond "not stored".
-      return empty(503);
+    const m = DELETE_PATH_RE.exec(url.pathname);
+    if (m) {
+      return req.method === "DELETE" ? forget(m[1], env) : empty(405);
     }
-    return empty(204);
+
+    return empty(404);
   },
 };

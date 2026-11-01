@@ -1976,9 +1976,15 @@ static esp_err_t update_auto_check_post_handler(httpd_req_t *req)
 }
 
 // POST /usage_report?enabled=0|1 — turn anonymous usage reporting on or off.
+// Turning it off also has the server delete this install's rows; waking the
+// check task sends that request now rather than at the next 12-hourly run.
 static esp_err_t usage_report_post_handler(httpd_req_t *req)
 {
-    return toggle_post(req, usage_report_set_enabled, usage_report_get_enabled);
+    esp_err_t ret = toggle_post(req, usage_report_set_enabled, usage_report_get_enabled);
+    if (!usage_report_get_enabled()) {
+        firmware_update_wake();
+    }
+    return ret;
 }
 
 // POST /reboot — restart the device.

@@ -573,6 +573,12 @@ esp_err_t firmware_update_start_install(const char *tag)
 
 static TaskHandle_t s_check_task;
 
+// Notification bits for the check task. CHECK asks for a release check, even
+// with automatic checks off; WAKE only runs the task's other work (the usage
+// report) now instead of at the next interval.
+#define CHECK_TASK_NOTIFY_CHECK  (1u << 0)
+#define CHECK_TASK_NOTIFY_WAKE   (1u << 1)
+
 // The usage ping rides on this task's schedule and TLS-sized stack, but must
 // never compete with an install for heap or bandwidth.
 static bool install_in_progress(void)
@@ -584,19 +590,29 @@ static bool install_in_progress(void)
 
 static void check_task(void *arg)
 {
-    // Notification-based waits so firmware_update_request_check() can cut
-    // the interval short (the HA and web "check for updates" buttons). A
-    // non-zero count means a check was requested rather than the wait timing
-    // out, and a requested check runs even with automatic checks off.
-    uint32_t requested = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FW_UPDATE_STARTUP_DELAY_MS));
+    // Notification-based waits so firmware_update_request_check() and
+    // firmware_update_wake() can cut the interval short. A wait that times
+    // out returns no bits: the periodic run, which checks only if automatic
+    // checks are on. Any early wake restarts the interval.
+    uint32_t bits = 0;
+    xTaskNotifyWait(0, UINT32_MAX, &bits, pdMS_TO_TICKS(FW_UPDATE_STARTUP_DELAY_MS));
     while (1) {
-        if (requested || s_auto_check) {
+        bool timed_out = (bits == 0);
+        if ((bits & CHECK_TASK_NOTIFY_CHECK) || (timed_out && s_auto_check)) {
             run_check();
         }
         if (wifi_is_connected() && !install_in_progress()) {
-            usage_report_send();
+            usage_report_run();
         }
-        requested = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FW_UPDATE_CHECK_INTERVAL_MS));
+        bits = 0;
+        xTaskNotifyWait(0, UINT32_MAX, &bits, pdMS_TO_TICKS(FW_UPDATE_CHECK_INTERVAL_MS));
+    }
+}
+
+void firmware_update_wake(void)
+{
+    if (s_check_task) {
+        xTaskNotify(s_check_task, CHECK_TASK_NOTIFY_WAKE, eSetBits);
     }
 }
 
@@ -656,7 +672,7 @@ void firmware_update_request_check(void)
         }
         xSemaphoreGive(s_status_lock);
     }
-    xTaskNotifyGive(s_check_task);
+    xTaskNotify(s_check_task, CHECK_TASK_NOTIFY_CHECK, eSetBits);
 }
 
 void firmware_update_init(void)

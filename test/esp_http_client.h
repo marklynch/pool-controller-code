@@ -13,6 +13,9 @@
 typedef enum {
     HTTP_METHOD_GET = 0,
     HTTP_METHOD_POST,
+    HTTP_METHOD_PUT,
+    HTTP_METHOD_PATCH,
+    HTTP_METHOD_DELETE,
 } esp_http_client_method_t;
 
 typedef struct {

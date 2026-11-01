@@ -157,7 +157,7 @@ static void last_id(char out[17])
 void test_request_shape(void)
 {
     factory_fresh(0x10);
-    usage_report_send();
+    usage_report_run();
 
     TEST_ASSERT(s_http.requests == 1, "First call after boot sends one request");
     TEST_ASSERT(strcmp(s_http.url, USAGE_REPORT_URL) == 0, "Posts to USAGE_REPORT_URL");
@@ -182,7 +182,7 @@ void test_enabled_by_default(void)
 void test_id_is_random_hex(void)
 {
     factory_fresh(0xA0);
-    usage_report_send();
+    usage_report_run();
 
     char id[17];
     last_id(id);
@@ -194,12 +194,12 @@ void test_id_is_random_hex(void)
 void test_id_survives_reboot(void)
 {
     factory_fresh(0x20);
-    usage_report_send();
+    usage_report_run();
     char before[17];
     last_id(before);
 
     reboot();
-    usage_report_send();
+    usage_report_run();
     char after[17];
     last_id(after);
 
@@ -211,12 +211,12 @@ void test_id_survives_reboot(void)
 void test_factory_reset_makes_new_id(void)
 {
     factory_fresh(0x30);
-    usage_report_send();
+    usage_report_run();
     char before[17];
     last_id(before);
 
     factory_fresh(0x70);
-    usage_report_send();
+    usage_report_run();
     char after[17];
     last_id(after);
 
@@ -227,23 +227,24 @@ void test_factory_reset_makes_new_id(void)
 void test_every_call_sends(void)
 {
     factory_fresh(0x10);
-    usage_report_send();
-    usage_report_send();
-    usage_report_send();
+    usage_report_run();
+    usage_report_run();
+    usage_report_run();
     TEST_ASSERT(s_http.requests == 3, "Each call sends one request");
 }
 
-// Fire-and-forget: one attempt per call, whatever the outcome.
+// Pings are fire-and-forget: one attempt per call, and a failed one isn't
+// carried over to the next.
 void test_failure_is_not_retried(void)
 {
     factory_fresh(0x10);
     endpoint_down();
-    usage_report_send();
+    usage_report_run();
     TEST_ASSERT(s_http.requests == 1, "Unreachable endpoint: exactly one attempt");
     TEST_ASSERT(s_http.open_clients == 0, "HTTP client cleaned up after a failure");
 
     endpoint_5xx();
-    usage_report_send();
+    usage_report_run();
     TEST_ASSERT(s_http.requests == 2, "5xx: exactly one attempt");
     TEST_ASSERT(s_http.open_clients == 0, "HTTP client cleaned up after a 5xx");
 }
@@ -252,21 +253,114 @@ void test_disabled_sends_nothing(void)
 {
     factory_fresh(0x10);
     usage_report_set_enabled(false);
-    usage_report_send();
-    usage_report_send();
+    usage_report_run();
+    usage_report_run();
     TEST_ASSERT(s_http.requests == 0, "No request while disabled");
 
     reboot();
     TEST_ASSERT(usage_report_get_enabled() == false, "Disabled survives a reboot");
-    usage_report_send();
+    usage_report_run();
     TEST_ASSERT(s_http.requests == 0, "Still no request after the reboot");
 
     usage_report_set_enabled(true);
-    usage_report_send();
+    usage_report_run();
     TEST_ASSERT(s_http.requests == 1, "Sends as soon as it is re-enabled");
 
     reboot();
     TEST_ASSERT(usage_report_get_enabled() == true, "Re-enabled survives a reboot");
+}
+
+// Opting out of a device that has reported asks the server to delete its
+// rows, once, and then goes quiet.
+void test_opt_out_deletes_server_record(void)
+{
+    factory_fresh(0x10);
+    usage_report_run();                        // ping creates the ID
+    char id[17];
+    last_id(id);
+
+    usage_report_set_enabled(false);
+    usage_report_run();
+
+    char expected_url[128];
+    snprintf(expected_url, sizeof(expected_url), USAGE_REPORT_URL "/%s", id);
+    TEST_ASSERT(s_http.requests == 2, "Opting out sends one request");
+    TEST_ASSERT(s_http.method == HTTP_METHOD_DELETE, "That request is a DELETE");
+    TEST_ASSERT(strcmp(s_http.url, expected_url) == 0, "It names the install ID in the path");
+    TEST_ASSERT(s_http.body[0] == '\0', "It carries no body");
+    TEST_ASSERT(s_http.open_clients == 0, "HTTP client is cleaned up");
+
+    usage_report_run();
+    reboot();
+    usage_report_run();
+    TEST_ASSERT(s_http.requests == 2, "Nothing more is sent once the deletion is confirmed");
+}
+
+// The ID survives the deletion, so opting back in carries on with it.
+void test_opt_in_after_delete_keeps_id(void)
+{
+    factory_fresh(0x10);
+    usage_report_run();
+    char before[17];
+    last_id(before);
+
+    usage_report_set_enabled(false);
+    usage_report_run();                        // DELETE
+    usage_report_set_enabled(true);
+    usage_report_run();                        // ping
+    char after[17];
+    last_id(after);
+
+    TEST_ASSERT(s_http.method == HTTP_METHOD_POST, "Re-enabling pings again");
+    TEST_ASSERT(strcmp(before, after) == 0, "With the same install ID");
+}
+
+// The deletion is the one request that is retried, on each run and across a
+// reboot, until the server confirms it.
+void test_delete_retried_until_confirmed(void)
+{
+    factory_fresh(0x10);
+    usage_report_run();
+
+    usage_report_set_enabled(false);
+    endpoint_down();
+    usage_report_run();
+    TEST_ASSERT(s_http.requests == 2, "Unreachable: one attempt per run");
+
+    endpoint_5xx();
+    usage_report_run();
+    TEST_ASSERT(s_http.requests == 3, "5xx: tried again on the next run");
+
+    reboot();
+    endpoint_ok();
+    usage_report_run();
+    TEST_ASSERT(s_http.requests == 4 && s_http.method == HTTP_METHOD_DELETE,
+                "Still pending after a reboot, and sent");
+
+    usage_report_run();
+    TEST_ASSERT(s_http.requests == 4, "Confirmed: no more attempts");
+}
+
+// A device that never reported has nothing on the server to delete.
+void test_opt_out_before_first_ping_sends_nothing(void)
+{
+    factory_fresh(0x10);
+    usage_report_set_enabled(false);
+    usage_report_run();
+    usage_report_run();
+    TEST_ASSERT(s_http.requests == 0, "No ID yet: no DELETE");
+}
+
+// Changing your mind before the deletion goes out withdraws it.
+void test_opt_in_before_delete_cancels_it(void)
+{
+    factory_fresh(0x10);
+    usage_report_run();
+    usage_report_set_enabled(false);
+    usage_report_set_enabled(true);
+    usage_report_run();
+    TEST_ASSERT(s_http.requests == 2 && s_http.method == HTTP_METHOD_POST,
+                "Re-enabled before the next run: a ping, not a DELETE");
 }
 
 int main(void)
@@ -281,6 +375,11 @@ int main(void)
     test_every_call_sends();
     test_failure_is_not_retried();
     test_disabled_sends_nothing();
+    test_opt_out_deletes_server_record();
+    test_opt_in_after_delete_keeps_id();
+    test_delete_retried_until_confirmed();
+    test_opt_out_before_first_ping_sends_nothing();
+    test_opt_in_before_delete_cancels_it();
 
     printf("\n=== Results: %d passed, %d failed ===\n", tests_passed, tests_failed);
     return tests_failed > 0 ? 1 : 0;
