@@ -1,0 +1,20 @@
+name = "poolcontrol-api"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# Served only from our own domain, so the backend can move without breaking
+# devices already in the field. The firmware's USAGE_REPORT_URL points here.
+workers_dev = false
+preview_urls = false
+routes = [
+  { pattern = "api.poolcontrol.io", custom_domain = true },
+]
+
+# No request logs: they would record client IP addresses.
+[observability]
+enabled = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pool-controller-usage"
+database_id = "6ecddc16-6567-43f0-8a92-ee136305d86f"

@@ -38,6 +38,7 @@ Requires ESP-IDF v5.5+ with environment sourced (`. $IDF_PATH/export.sh`).
 - **mqtt_discovery.c/.h**: Home Assistant MQTT discovery integration
 - **mqtt_commands.c/.h**: MQTT command subscription and handling
 - **firmware_update.c/.h**: GitHub release checker + pull-based OTA. Periodically reads the repo's recent release tags from the streamed `releases.atom` feed (latest + prior versions), compares the newest against the running build, and can install any tracked release's update binary over HTTPS (`esp_https_ota`). Exposes status + the version list to the web UI and the Home Assistant `update` entity
+- **usage_report.c/.h**: Anonymous usage ping (`POST {"id","v"}` to `USAGE_REPORT_URL`), sent from the `firmware_update` check task after each release check (shortly after boot, then every 12 h), with no rate limit of its own. The install ID is 8 random bytes in NVS (`usage/id`), never derived from the MAC or serial. On by default; the enabled flag (`usage/enabled`) is set from the update page. Fire-and-forget: no retries, failures logged at debug level. The Cloudflare Worker + D1 backend (serving `api.poolcontrol.io`) lives in `api/`
 - **web_handlers.c/.h**: HTTP server endpoints (status, provisioning, MQTT config)
 - **web_log.c/.h**: Live log feed for the web UI's Debug Log page (`/log_view`). The log vprintf hook (in `tcp_bridge.c`) copies each formatted line into a fixed ring buffer, without blocking, while a viewer is connected. A sender task batches the lines to the `/ws/log` WebSocket clients via `httpd_queue_work`, and also transmits `TX <hex>` frames the page sends (queued from the WS handler so a slow bus send never stalls httpd). Connections from a foreign `Origin` are rejected. The capture itself lives only in the browser
 - **led_helper.c/.h**: WS2812 LED control for status indication
@@ -96,10 +97,13 @@ main.c
   │     ├─> mqtt_commands (handle MQTT commands)
   │     │     └─> register_requester (read a register back after writing it)
   │     └─> firmware_update (publish update state, handle install command)
+  ├─> usage_report (load/create the anonymous install ID)
   ├─> firmware_update (GitHub release check + pull OTA)
-  │     └─> mqtt_poolclient (publish HA update entity state)
+  │     ├─> mqtt_poolclient (publish HA update entity state)
+  │     └─> usage_report (anonymous ping after each release check)
   ├─> web_handlers (HTTP API)
   │     ├─> firmware_update (check/install from GitHub)
+  │     ├─> usage_report (enable/disable from the update page)
   │     └─> web_log (/ws/log WebSocket endpoint)
   │           └─> bus (send hex frames typed into the Debug Log page)
   ├─> led_helper (status LED)

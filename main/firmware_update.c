@@ -1,6 +1,8 @@
 #include "firmware_update.h"
 #include "config.h"
 #include "mqtt_poolclient.h"
+#include "usage_report.h"
+#include "wifi_provisioning.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -559,6 +561,15 @@ esp_err_t firmware_update_start_install(const char *tag)
 
 static TaskHandle_t s_check_task;
 
+// The usage ping rides on this task's schedule and TLS-sized stack, but must
+// never compete with an install for heap or bandwidth.
+static bool install_in_progress(void)
+{
+    fw_update_status_t st;
+    firmware_update_get_status(&st);
+    return st.state == FW_UPDATE_STATE_DOWNLOADING || st.state == FW_UPDATE_STATE_SUCCESS;
+}
+
 static void check_task(void *arg)
 {
     // Notification-based waits so firmware_update_request_check() can cut
@@ -566,6 +577,9 @@ static void check_task(void *arg)
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FW_UPDATE_STARTUP_DELAY_MS));
     while (1) {
         firmware_update_check_now();
+        if (wifi_is_connected() && !install_in_progress()) {
+            usage_report_send();
+        }
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FW_UPDATE_CHECK_INTERVAL_MS));
     }
 }

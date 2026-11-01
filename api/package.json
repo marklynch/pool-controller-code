@@ -1,0 +1,16 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "The Cloudflare Worker behind `api.poolcontrol.io`. For now it serves one endpoint, anonymous usage reporting: a D1 database that counts active pool controller installs by firmware version and coarse location (country and continent). It runs on the Workers free tier, with no servers or dashboards to look after.",
+  "main": "worker.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "wrangler": "^4.156.0"
+  }
+}

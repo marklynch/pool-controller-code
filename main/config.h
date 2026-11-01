@@ -19,7 +19,7 @@
 
 // HTTP Server
 #define HTTP_SERVER_PORT               80
-#define HTTP_MAX_URI_HANDLERS          28      // Number of endpoint handlers (23 registered; spare for growth)
+#define HTTP_MAX_URI_HANDLERS          28      // Number of endpoint handlers (24 registered; spare for growth)
 #define HTTP_RECV_TIMEOUT_SEC          10      // Timeout for receiving requests
 #define HTTP_SEND_TIMEOUT_SEC          10      // Timeout for sending responses
 #define HTTP_STACK_SIZE                8192    // Stack size for HTTP server task
@@ -218,5 +218,18 @@
 // can offer installing/rolling back to a specific version.
 #define FW_UPDATE_MAX_VERSIONS         5
 #define FW_UPDATE_VERSION_LEN          48       // Max length of a version tag string
+
+// ======================================================
+// Anonymous Usage Reporting
+// ======================================================
+
+// Sent from the firmware-update check task after each release check, so on
+// FW_UPDATE_CHECK_INTERVAL_MS's schedule. The host is a domain we control
+// rather than *.workers.dev, so the backend can move without stranding
+// devices already in the field.
+#define USAGE_REPORT_URL               "https://api.poolcontrol.io/v1/usage"
+#define USAGE_REPORT_TIMEOUT_MS        5000     // Per-request timeout; a slow endpoint must not hold up the check task
+#define USAGE_REPORT_DEFAULT_ON        1        // Opt-out: enabled until the user turns it off
+#define USAGE_REPORT_README_URL        "https://github.com/" FW_UPDATE_GITHUB_OWNER "/" FW_UPDATE_GITHUB_REPO "#usage-reporting"
 
 #endif // CONFIG_H

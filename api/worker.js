@@ -1,0 +1,75 @@
+// api.poolcontrol.io — backend for the pool controller firmware.
+//
+// Currently one endpoint, anonymous usage reporting:
+// POST /v1/usage  {"id":"<16 lowercase hex>","v":"<firmware version>"}
+//
+// Stores the install ID, the version (in full, and as vMAJOR.MINOR.PATCH for
+// aggregation), and the country/continent Cloudflare
+// derives from the request. Deliberately stores and logs nothing else: no IP
+// address, city, region, postcode, coordinates, timezone, ASN or ISP.
+
+const PATH = "/v1/usage";
+const MAX_BODY = 256;
+const ID_RE = /^[0-9a-f]{16}$/;
+const VERSION_RE = /^[\w.\-+]{1,48}$/;
+// The release a build is based on: "v1.20.1-7-gc410103-dirty" -> "v1.20.1".
+const CLEAN_VERSION_RE = /^v?(\d+\.\d+\.\d+)(?:[-+].*)?$/i;
+
+const empty = (status) => new Response(null, { status });
+
+// vMAJOR.MINOR.PATCH, matching the release tags, for aggregation; null when
+// the version doesn't parse. The "v" is always added, so a version sent
+// without one still groups with the tagged release. The full string is
+// stored alongside it for debugging.
+const cleanVersion = (v) => {
+  const m = CLEAN_VERSION_RE.exec(v);
+  return m ? `v${m[1]}` : null;
+};
+
+export default {
+  async fetch(req, env) {
+    const url = new URL(req.url);
+    if (url.pathname !== PATH) return empty(404);
+    if (req.method !== "POST") return empty(405);
+
+    // Reject an oversized body from its header before reading it.
+    const declared = Number(req.headers.get("content-length") ?? 0);
+    if (declared > MAX_BODY) return empty(413);
+    const text = await req.text();
+    if (text.length > MAX_BODY) return empty(413);
+
+    let b;
+    try { b = JSON.parse(text); } catch { return empty(400); }
+    if (b === null || typeof b !== "object" ||
+        typeof b.id !== "string" || !ID_RE.test(b.id) ||
+        typeof b.v  !== "string" || !VERSION_RE.test(b.v)) {
+      return empty(400);
+    }
+
+    const country   = req.cf?.country   ?? "";
+    const continent = req.cf?.continent ?? "";
+    const clean     = cleanVersion(b.v);
+
+    try {
+      // One transaction: both rows change together or not at all.
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO devices (id, version, clean_version, country, continent, first_seen, last_seen)
+           VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), unixepoch())
+           ON CONFLICT(id) DO UPDATE SET
+             version=?2, clean_version=?3, country=?4, continent=?5, last_seen=unixepoch(),
+             ping_count=ping_count+1`
+        ).bind(b.id, b.v, clean, country, continent),
+        env.DB.prepare(
+          `INSERT INTO device_versions (id, version, clean_version, first_seen, last_seen)
+           VALUES (?1, ?2, ?3, unixepoch(), unixepoch())
+           ON CONFLICT(id, version) DO UPDATE SET last_seen=unixepoch()`
+        ).bind(b.id, b.v, clean),
+      ]);
+    } catch {
+      // Devices don't retry, so there is nothing useful to say beyond "not stored".
+      return empty(503);
+    }
+    return empty(204);
+  },
+};

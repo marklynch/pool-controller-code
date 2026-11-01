@@ -8,6 +8,7 @@
 #include "unknown_buffer.h"
 #include "device_serial.h"
 #include "firmware_update.h"
+#include "usage_report.h"
 #include "web_log.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -1527,8 +1528,38 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "else{s.setAttribute('data-variant','danger');s.textContent='Error: '+(d.message||'could not start');}});});"
         "poll();"
         "})();"
-        "</script>"
+        "</script>";
 
+    // ---- Anonymous usage reporting -----------------------------------------
+    // Only the checkbox is formatted, so it renders with its current state.
+    char usage_checkbox[160];
+    snprintf(usage_checkbox, sizeof(usage_checkbox),
+        "<h2 class='mt-4'>Anonymous usage reporting</h2>"
+        "<label><input type='checkbox' id='usageReport'%s> "
+        "Send anonymous usage reports</label>",
+        usage_report_get_enabled() ? " checked" : "");
+
+    const char *usage_html =
+        "<p class='mt-2'>Twice a day this device sends a random install ID and its "
+        "firmware version, so the project can see how many devices run each release. "
+        "No pool, network or hardware details are sent. "
+        "<a href='" USAGE_REPORT_README_URL "' target='_blank'>What is sent</a></p>"
+        "<div id='usageStatus' role='alert' hidden class='mt-2'></div>"
+        "<script>"
+        "(function(){"
+        "const c=document.getElementById('usageReport');"
+        "const s=document.getElementById('usageStatus');"
+        "c.addEventListener('change',function(){"
+        "const want=c.checked;c.disabled=true;s.setAttribute('hidden','');"
+        "fetch('/usage_report?enabled='+(want?1:0),{method:'POST'}).then(r=>r.json()).then(function(d){"
+        "c.checked=d.enabled;"
+        "}).catch(function(){c.checked=!want;s.removeAttribute('hidden');"
+        "s.setAttribute('data-variant','danger');s.textContent='Could not save the setting.';"
+        "}).finally(function(){c.disabled=false;});});"
+        "})();"
+        "</script>";
+
+    const char *html_tail =
         // ---- Manual upload -------------------------------------------------
         "<h2 class='mt-4'>Manual upload</h2>"
         "<form id='updateForm' class='mt-2'>"
@@ -1639,6 +1670,9 @@ static esp_err_t update_get_handler(httpd_req_t *req)
     httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, partition_info, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_mid, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, usage_checkbox, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, usage_html, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, html_tail, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
     free(footer);
@@ -1882,6 +1916,30 @@ static esp_err_t update_github_post_handler(httpd_req_t *req)
             "{\"success\":false,\"message\":\"No release available or an update is already running\"}",
             HTTPD_RESP_USE_STRLEN);
     }
+    return ESP_OK;
+}
+
+// POST /usage_report?enabled=0|1 — turn anonymous usage reporting on or off.
+// Replies with the setting now in force, so the page can show what stuck.
+static esp_err_t usage_report_post_handler(httpd_req_t *req)
+{
+    char query[32];
+    char val[4];
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "enabled", val, sizeof(val)) != ESP_OK ||
+        (strcmp(val, "0") != 0 && strcmp(val, "1") != 0)) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_send(req, "{\"success\":false,\"message\":\"enabled must be 0 or 1\"}",
+                        HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    usage_report_set_enabled(val[0] == '1');
+    httpd_resp_send(req, usage_report_get_enabled()
+                             ? "{\"success\":true,\"enabled\":true}"
+                             : "{\"success\":true,\"enabled\":false}",
+                    HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -2512,6 +2570,12 @@ static const httpd_uri_t update_github_uri = {
     .handler = update_github_post_handler
 };
 
+static const httpd_uri_t usage_report_post_uri = {
+    .uri = "/usage_report",
+    .method = HTTP_POST,
+    .handler = usage_report_post_handler
+};
+
 static const httpd_uri_t reboot_post_uri = {
     .uri = "/reboot",
     .method = HTTP_POST,
@@ -2717,6 +2781,7 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &update_post_uri);
     httpd_register_uri_handler(server, &update_check_uri);
     httpd_register_uri_handler(server, &update_github_uri);
+    httpd_register_uri_handler(server, &usage_report_post_uri);
     httpd_register_uri_handler(server, &reboot_post_uri);
     httpd_register_uri_handler(server, &ha_reset_post_uri);
     httpd_register_uri_handler(server, &test_decode_uri);
