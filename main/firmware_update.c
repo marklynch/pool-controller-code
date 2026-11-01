@@ -582,6 +582,13 @@ static TaskHandle_t s_check_task;
 #define CHECK_TASK_NOTIFY_CHECK  (1u << 0)
 #define CHECK_TASK_NOTIFY_WAKE   (1u << 1)
 
+// Converted without pdMS_TO_TICKS, whose 32-bit multiply overflows past
+// ~11.9 h at 100 Hz. The limit is INT32_MAX because check_task compares
+// deadlines by signed tick difference.
+#define CHECK_INTERVAL_TICKS ((TickType_t)FW_UPDATE_CHECK_INTERVAL_S * configTICK_RATE_HZ)
+_Static_assert((uint64_t)FW_UPDATE_CHECK_INTERVAL_S * configTICK_RATE_HZ <= INT32_MAX,
+               "FW_UPDATE_CHECK_INTERVAL_S too long for the check task's tick arithmetic");
+
 // The usage ping rides on this task's schedule and TLS-sized stack, but must
 // never compete with an install for heap or bandwidth.
 static bool install_in_progress(void)
@@ -598,18 +605,25 @@ static void check_task(void *arg)
     // and firmware_update_wake() notifications — neither adds usage pings nor
     // pushes the schedule back. A scheduled run checks for releases only if
     // automatic checks are on, and is the only run that pings.
+    //
+    // A due run waits for WiFi (re-checked every FW_UPDATE_WIFI_POLL_MS)
+    // rather than failing and leaving an error and no ping for a whole
+    // interval, e.g. when the network is still coming up at boot.
     TickType_t next_run = xTaskGetTickCount() + pdMS_TO_TICKS(FW_UPDATE_STARTUP_DELAY_MS);
     while (1) {
         TickType_t remaining = next_run - xTaskGetTickCount();
-        if ((int32_t)remaining < 0) {
-            remaining = 0;
+        if ((int32_t)remaining <= 0) {
+            remaining = pdMS_TO_TICKS(FW_UPDATE_WIFI_POLL_MS);
         }
         uint32_t bits = 0;
         xTaskNotifyWait(0, UINT32_MAX, &bits, remaining);
 
-        bool scheduled = (int32_t)(xTaskGetTickCount() - next_run) >= 0;
+        TickType_t now = xTaskGetTickCount();
+        bool scheduled = (int32_t)(now - next_run) >= 0 && wifi_is_connected();
         if (scheduled) {
-            next_run += pdMS_TO_TICKS(FW_UPDATE_CHECK_INTERVAL_MS);
+            // From now, not from the old deadline, so a run held back by a
+            // long outage isn't followed by back-to-back catch-up runs.
+            next_run = now + CHECK_INTERVAL_TICKS;
         }
         if ((bits & CHECK_TASK_NOTIFY_CHECK) || (scheduled && s_auto_check)) {
             run_check();

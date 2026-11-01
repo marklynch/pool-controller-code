@@ -16,7 +16,7 @@ There are three ways to update:
 
 ### How it works
 
-- On boot (after a short delay) and every `FW_UPDATE_CHECK_INTERVAL_MS` (default 12 h), the firmware fetches the releases Atom feed `https://github.com/<owner>/<repo>/releases.atom` and reads the tags of the most recent releases (newest first) — the latest plus up to `FW_UPDATE_MAX_VERSIONS - 1` prior versions (default: latest + 4). This uses no GitHub API token and no rate-limited JSON call. The feed is parsed as it streams, so a repo with large release notes doesn't need a big buffer.
+- On boot (after a short delay) and every `FW_UPDATE_CHECK_INTERVAL_S` (default 12 h), the firmware fetches the releases Atom feed `https://github.com/<owner>/<repo>/releases.atom` and reads the tags of the most recent releases (newest first) — the latest plus up to `FW_UPDATE_MAX_VERSIONS - 1` prior versions (default: latest + 4). This uses no GitHub API token and no rate-limited JSON call. The feed is parsed as it streams, so a repo with large release notes doesn't need a big buffer.
 - The newest tag is compared against the running build's version (`major.minor.patch`, ignoring any `git describe` suffix). If it is newer, an update is flagged as available.
 - Installing pulls the chosen release's asset `pool-controller-update-<tag>.bin` (the artifact the build workflow uploads) directly over HTTPS via `esp_https_ota`, writing to the inactive OTA partition, then reboots. The requested version must be one of the recently discovered releases, so the download URL can't be pointed at an arbitrary target.
 

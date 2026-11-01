@@ -61,7 +61,7 @@ void firmware_update_request_check(void);
 void firmware_update_wake(void);
 
 // Whether the check task queries GitHub on its own schedule (shortly after
-// boot, then every FW_UPDATE_CHECK_INTERVAL_MS). Off, only requested checks
+// boot, then every FW_UPDATE_CHECK_INTERVAL_S). Off, only requested checks
 // run; the task keeps its schedule for the usage ping. Stored in NVS.
 bool firmware_update_get_auto_check(void);
 void firmware_update_set_auto_check(bool enabled);

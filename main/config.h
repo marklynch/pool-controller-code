@@ -204,7 +204,9 @@
 #define FW_UPDATE_GITHUB_REPO          "pool-controller-code"
 #define FW_UPDATE_ASSET_PREFIX         "pool-controller-update-"  // + <tag> + ".bin"
 
-#define FW_UPDATE_CHECK_INTERVAL_MS    (12 * 60 * 60 * 1000)  // Re-check GitHub every 12 hours
+#define FW_UPDATE_CHECK_INTERVAL_S     (12 * 60 * 60)  // Re-check GitHub every 12 hours. In seconds:
+                                                // as ms, pdMS_TO_TICKS overflows its 32-bit maths
+#define FW_UPDATE_WIFI_POLL_MS         10000    // While a scheduled run waits for WiFi, re-check this often
 #define FW_UPDATE_AUTO_CHECK_DEFAULT_ON 1       // Periodic checks run until the user turns them off
 #define FW_UPDATE_STARTUP_DELAY_MS     30000    // Wait after boot before the first check
 #define FW_UPDATE_HTTP_TIMEOUT_MS      15000    // Per-request timeout for the version check
@@ -226,7 +228,7 @@
 
 // Sent from the firmware-update check task on its fixed schedule only
 // (FW_UPDATE_STARTUP_DELAY_MS after boot, then every
-// FW_UPDATE_CHECK_INTERVAL_MS), never on a requested check. The host is a domain we control
+// FW_UPDATE_CHECK_INTERVAL_S), never on a requested check. The host is a domain we control
 // rather than *.workers.dev, so the backend can move without stranding
 // devices already in the field.
 #define USAGE_REPORT_URL               "https://api.poolcontrol.io/v1/usage"
