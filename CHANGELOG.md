@@ -16,10 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 ### Changed
 ### Fixed
-- The Debug Log download header now gives the capture times' UTC offset (e.g. `UTC+11:00`) instead of the browser's timezone name (e.g. `Australia/Melbourne`), which named a city and showed roughly where the user is in a file meant for public bug reports
 ### Removed
 ### Deprecated
 ### Security
+
+## [1.21.1] - 2026-11-01
+### Fixed
+- The Debug Log download header now gives the capture times' UTC offset (e.g. `UTC+11:00`) instead of the browser's timezone name (e.g. `Australia/Melbourne`), which named a city and showed roughly where the user is in a file meant for public bug reports
 
 ## [1.21.0] - 2026-11-01
 ### Added
