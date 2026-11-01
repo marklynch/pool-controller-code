@@ -19,7 +19,7 @@
 
 // HTTP Server
 #define HTTP_SERVER_PORT               80
-#define HTTP_MAX_URI_HANDLERS          28      // Number of endpoint handlers (24 registered; spare for growth)
+#define HTTP_MAX_URI_HANDLERS          28      // Number of endpoint handlers (25 registered; spare for growth)
 #define HTTP_RECV_TIMEOUT_SEC          10      // Timeout for receiving requests
 #define HTTP_SEND_TIMEOUT_SEC          10      // Timeout for sending responses
 #define HTTP_STACK_SIZE                8192    // Stack size for HTTP server task
@@ -205,6 +205,7 @@
 #define FW_UPDATE_ASSET_PREFIX         "pool-controller-update-"  // + <tag> + ".bin"
 
 #define FW_UPDATE_CHECK_INTERVAL_MS    (12 * 60 * 60 * 1000)  // Re-check GitHub every 12 hours
+#define FW_UPDATE_AUTO_CHECK_DEFAULT_ON 1       // Periodic checks run until the user turns them off
 #define FW_UPDATE_STARTUP_DELAY_MS     30000    // Wait after boot before the first check
 #define FW_UPDATE_HTTP_TIMEOUT_MS      15000    // Per-request timeout for the version check
 #define FW_UPDATE_OTA_TIMEOUT_MS       60000    // Socket timeout while downloading the image

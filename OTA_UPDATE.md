@@ -27,6 +27,7 @@ The GitHub owner/repo, asset name prefix, number of versions tracked, check inte
 1. Open `http://<device-ip>/update`.
 2. The **Update from GitHub** section shows whether you are up to date or a newer release is available (with a link to the release notes).
 3. Choose a version from the dropdown — the latest plus the previous few releases, so you can update or **roll back** to a specific version — then click **Install selected version**. Click **Check for updates** to re-query GitHub immediately. Progress is shown; the device reboots when finished.
+4. Untick **Automatically check for new releases** to stop the 12-hourly check. **Check for updates** (and Home Assistant's check button) still work while it's off. The setting is remembered across reboots and updates.
 
 > Rolling back requires that the older release still has a `pool-controller-update-<tag>.bin` asset attached; releases published before this asset naming was in place cannot be installed this way.
 

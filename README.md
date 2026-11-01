@@ -206,6 +206,7 @@ The device serves a small web UI and JSON API at `http://poolcontrol-AABBCC.loca
 | `/log_view` | Live debug log with a Download button — see [Debug Log page](#debug-log-page) |
 | `/api/test_decode` | POST a hex frame to run it through the decoder — see [Testing message decoding](#testing-message-decoding) |
 | `/reboot`, `/ha-reset` | POST endpoints behind the Reboot and Reset entities buttons on the update page |
+| `/update/auto_check?enabled=0\|1` | POST endpoint behind the update page's **Automatically check for new releases** checkbox |
 | `/usage_report?enabled=0\|1` | POST endpoint behind the update page's usage reporting checkbox — see [Usage Reporting](#usage-reporting) |
 
 `/wifi`, `/scan` and `/provision` are served only in provisioning mode, and are covered by [Setup step 2](#2-provision-wifi).

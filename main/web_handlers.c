@@ -1467,6 +1467,19 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "el.textContent=msg+' Rebooting... reloading now...';"
         "window.location.reload();"
         "}},1000);}"
+        // Shared by the settings checkboxes: POST <url>?enabled=0|1 on change,
+        // then show the setting the device reports, or revert on failure.
+        // The status box is the element with id <id>Status.
+        "function bindToggle(id,url){"
+        "const c=document.getElementById(id);"
+        "const s=document.getElementById(id+'Status');"
+        "c.addEventListener('change',function(){"
+        "const want=c.checked;c.disabled=true;s.setAttribute('hidden','');"
+        "fetch(url+'?enabled='+(want?1:0),{method:'POST'}).then(r=>r.json()).then(function(d){"
+        "if(!d.success)throw new Error();c.checked=d.enabled;"
+        "}).catch(function(){c.checked=!want;s.removeAttribute('hidden');"
+        "s.setAttribute('data-variant','danger');s.textContent='Could not save the setting.';"
+        "}).finally(function(){c.disabled=false;});});}"
         "(function(){"
         "const s=document.getElementById('ghStatus');"
         "const p=document.getElementById('ghProgress');"
@@ -1493,11 +1506,15 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "if(d.state==='success'){p.removeAttribute('hidden');p.value=100;"
         "vw.setAttribute('hidden','');bC.setAttribute('hidden','');bI.setAttribute('hidden','');"
         "if(!rebooting){rebooting=true;rebootReload(s);}return;}"
-        "p.setAttribute('hidden','');bC.removeAttribute('hidden');"
+        "p.setAttribute('hidden','');"
+        // Hidden while a check runs, so a second click can't start a second poll loop.
+        "if(d.state==='checking')bC.setAttribute('hidden','');else bC.removeAttribute('hidden');"
         "const have=d.versions&&d.versions.length;"
         "if(have){fill(d.versions);vw.removeAttribute('hidden');bI.removeAttribute('hidden');}"
         "else{vw.setAttribute('hidden','');bI.setAttribute('hidden','');}"
-        "if(d.state==='error'&&d.error){s.setAttribute('data-variant','danger');"
+        "if(d.state==='checking'){s.removeAttribute('data-variant');"
+        "s.textContent='Checking for the latest release…';}"
+        "else if(d.state==='error'&&d.error){s.setAttribute('data-variant','danger');"
         "s.textContent='Error: '+d.error;}"
         "else if(d.update_available){s.setAttribute('data-variant','warning');"
         "let msg='Update available: '+d.latest+' (installed '+d.installed+').';"
@@ -1508,18 +1525,21 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "s.textContent='Up to date ('+d.installed+'). You can reinstall or roll back below.';}"
         "else{s.removeAttribute('data-variant');"
         "s.textContent='Latest release not yet checked.';}}"
-        "function poll(){fetch('/update/check').then(r=>r.json()).then(function(d){"
+        // q='?refresh=1' asks the device to start a check; the reply then reads
+        // 'checking' and polling carries on until the result arrives.
+        "function poll(q){fetch('/update/check'+(q||'')).then(r=>r.json()).then(function(d){"
         "last=d.state;render(d);"
-        "if(d.state==='downloading'||d.state==='checking'){polling=true;setTimeout(poll,2000);}"
+        "if(d.state==='downloading'||d.state==='checking'){polling=true;setTimeout(function(){poll();},2000);}"
         "else{polling=false;}"
         // A failed poll right after a download means the device rebooted
         // before we saw the 'success' state — treat it as success.
         "}).catch(function(){polling=false;"
-        "if(last==='downloading')render({state:'success'});});}"
+        "if(last==='downloading')render({state:'success'});"
+        "else if(q){s.setAttribute('data-variant','danger');s.textContent='Check failed.';}});}"
         "bC.addEventListener('click',function(){"
+        "if(polling)return;polling=true;"
         "s.removeAttribute('data-variant');s.textContent='Checking for the latest release…';"
-        "fetch('/update/check?refresh=1').then(r=>r.json()).then(render)"
-        ".catch(function(){s.setAttribute('data-variant','danger');s.textContent='Check failed.';});});"
+        "poll('?refresh=1');});"
         "bI.addEventListener('click',function(){"
         "const v=vs.value;if(!v)return;"
         "if(!confirm('Download and install firmware '+v+' from GitHub?'))return;"
@@ -1530,8 +1550,20 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "})();"
         "</script>";
 
-    // ---- Anonymous usage reporting -----------------------------------------
-    // Only the checkbox is formatted, so it renders with its current state.
+    // ---- Settings checkboxes ------------------------------------------------
+    // Only the checkboxes are formatted, so they render with their current state.
+    char auto_check_checkbox[160];
+    snprintf(auto_check_checkbox, sizeof(auto_check_checkbox),
+        "<div class='mt-2'><label><input type='checkbox' id='autoCheck'%s> "
+        "Automatically check for new releases</label></div>",
+        firmware_update_get_auto_check() ? " checked" : "");
+
+    const char *auto_check_html =
+        "<p class='mt-2'>Checks GitHub every 12 hours. You can still check by hand "
+        "when this is off.</p>"
+        "<div id='autoCheckStatus' role='alert' hidden class='mt-2'></div>"
+        "<script>bindToggle('autoCheck','/update/auto_check');</script>";
+
     char usage_checkbox[160];
     snprintf(usage_checkbox, sizeof(usage_checkbox),
         "<h2 class='mt-4'>Anonymous usage reporting</h2>"
@@ -1544,20 +1576,8 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "firmware version, so the project can see how many devices run each release. "
         "No pool, network or hardware details are sent. "
         "<a href='" USAGE_REPORT_README_URL "' target='_blank'>What is sent</a></p>"
-        "<div id='usageStatus' role='alert' hidden class='mt-2'></div>"
-        "<script>"
-        "(function(){"
-        "const c=document.getElementById('usageReport');"
-        "const s=document.getElementById('usageStatus');"
-        "c.addEventListener('change',function(){"
-        "const want=c.checked;c.disabled=true;s.setAttribute('hidden','');"
-        "fetch('/usage_report?enabled='+(want?1:0),{method:'POST'}).then(r=>r.json()).then(function(d){"
-        "c.checked=d.enabled;"
-        "}).catch(function(){c.checked=!want;s.removeAttribute('hidden');"
-        "s.setAttribute('data-variant','danger');s.textContent='Could not save the setting.';"
-        "}).finally(function(){c.disabled=false;});});"
-        "})();"
-        "</script>";
+        "<div id='usageReportStatus' role='alert' hidden class='mt-2'></div>"
+        "<script>bindToggle('usageReport','/usage_report');</script>";
 
     const char *html_tail =
         // ---- Manual upload -------------------------------------------------
@@ -1670,6 +1690,8 @@ static esp_err_t update_get_handler(httpd_req_t *req)
     httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, partition_info, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_mid, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, auto_check_checkbox, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, auto_check_html, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, usage_checkbox, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, usage_html, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, html_tail, HTTPD_RESP_USE_STRLEN);
@@ -1847,7 +1869,10 @@ static const char *fw_state_str(fw_update_state_t state)
 }
 
 // GET /update/check[?refresh=1] — return current GitHub update status as JSON.
-// With ?refresh=1, synchronously re-query GitHub before responding.
+// With ?refresh=1, first ask the background task to re-query GitHub, the same
+// path the HA button takes. The reply then reads "checking", and the page
+// polls until the result arrives, so the GitHub request never holds up the
+// web server.
 static esp_err_t update_check_handler(httpd_req_t *req)
 {
     char query[32];
@@ -1855,7 +1880,7 @@ static esp_err_t update_check_handler(httpd_req_t *req)
         char val[8];
         if (httpd_query_key_value(query, "refresh", val, sizeof(val)) == ESP_OK &&
             strcmp(val, "1") == 0) {
-            firmware_update_check_now();
+            firmware_update_request_check();
         }
     }
 
@@ -1919,9 +1944,10 @@ static esp_err_t update_github_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// POST /usage_report?enabled=0|1 — turn anonymous usage reporting on or off.
-// Replies with the setting now in force, so the page can show what stuck.
-static esp_err_t usage_report_post_handler(httpd_req_t *req)
+// Shared by the update page's settings checkboxes: POST <uri>?enabled=0|1.
+// Applies the value with `set`, then replies with what `get` reports, so the
+// page can show the setting now in force.
+static esp_err_t toggle_post(httpd_req_t *req, void (*set)(bool), bool (*get)(void))
 {
     char query[32];
     char val[4];
@@ -1935,12 +1961,24 @@ static esp_err_t usage_report_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    usage_report_set_enabled(val[0] == '1');
-    httpd_resp_send(req, usage_report_get_enabled()
+    set(val[0] == '1');
+    httpd_resp_send(req, get()
                              ? "{\"success\":true,\"enabled\":true}"
                              : "{\"success\":true,\"enabled\":false}",
                     HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
+}
+
+// POST /update/auto_check?enabled=0|1 — turn the 12-hourly release check on or off.
+static esp_err_t update_auto_check_post_handler(httpd_req_t *req)
+{
+    return toggle_post(req, firmware_update_set_auto_check, firmware_update_get_auto_check);
+}
+
+// POST /usage_report?enabled=0|1 — turn anonymous usage reporting on or off.
+static esp_err_t usage_report_post_handler(httpd_req_t *req)
+{
+    return toggle_post(req, usage_report_set_enabled, usage_report_get_enabled);
 }
 
 // POST /reboot — restart the device.
@@ -2570,6 +2608,12 @@ static const httpd_uri_t update_github_uri = {
     .handler = update_github_post_handler
 };
 
+static const httpd_uri_t update_auto_check_uri = {
+    .uri = "/update/auto_check",
+    .method = HTTP_POST,
+    .handler = update_auto_check_post_handler
+};
+
 static const httpd_uri_t usage_report_post_uri = {
     .uri = "/usage_report",
     .method = HTTP_POST,
@@ -2781,6 +2825,7 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &update_post_uri);
     httpd_register_uri_handler(server, &update_check_uri);
     httpd_register_uri_handler(server, &update_github_uri);
+    httpd_register_uri_handler(server, &update_auto_check_uri);
     httpd_register_uri_handler(server, &usage_report_post_uri);
     httpd_register_uri_handler(server, &reboot_post_uri);
     httpd_register_uri_handler(server, &ha_reset_post_uri);

@@ -14,6 +14,8 @@
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
 #include "esp_crt_bundle.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 #include "cJSON.h"
 
@@ -37,6 +39,15 @@ static SemaphoreHandle_t s_op_lock;
 // Release tag the pending install should fetch. Written by
 // firmware_update_start_install while it holds s_op_lock, read by install_task.
 static char s_install_tag[FW_UPDATE_VERSION_LEN];
+
+#define FW_UPDATE_NVS_NAMESPACE      "fw_update"
+#define FW_UPDATE_NVS_KEY_AUTO_CHECK "auto_check"
+
+// Written from the httpd task (firmware_update_set_auto_check) and read from
+// the check task. Unsynchronised: an aligned bool is read and written
+// atomically on this core, and a check that catches the old value is at most
+// one check either side of the switch.
+static bool s_auto_check = FW_UPDATE_AUTO_CHECK_DEFAULT_ON;
 
 // ======================================================
 // Status helpers
@@ -359,11 +370,13 @@ static esp_err_t query_recent_releases(char tags[][FW_UPDATE_VERSION_LEN],
     return (*count > 0) ? ESP_OK : ESP_FAIL;
 }
 
-esp_err_t firmware_update_check_now(void)
+// Query GitHub for the recent releases and update the cached status (also
+// publishes the MQTT update state). Runs only in the check task.
+static void run_check(void)
 {
     if (xSemaphoreTake(s_op_lock, 0) != pdTRUE) {
         ESP_LOGW(TAG, "check skipped: an update operation is already running");
-        return ESP_ERR_INVALID_STATE;
+        return;
     }
 
     status_set_state(FW_UPDATE_STATE_CHECKING);
@@ -376,7 +389,7 @@ esp_err_t firmware_update_check_now(void)
         status_set_error("GitHub release check failed");
         xSemaphoreGive(s_op_lock);
         firmware_update_publish_mqtt_state();
-        return err;
+        return;
     }
 
     if (xSemaphoreTake(s_status_lock, portMAX_DELAY) == pdTRUE) {
@@ -404,7 +417,6 @@ esp_err_t firmware_update_check_now(void)
 
     xSemaphoreGive(s_op_lock);
     firmware_update_publish_mqtt_state();
-    return ESP_OK;
 }
 
 // ======================================================
@@ -573,22 +585,78 @@ static bool install_in_progress(void)
 static void check_task(void *arg)
 {
     // Notification-based waits so firmware_update_request_check() can cut
-    // the interval short (e.g. the HA "check for firmware update" button).
-    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FW_UPDATE_STARTUP_DELAY_MS));
+    // the interval short (the HA and web "check for updates" buttons). A
+    // non-zero count means a check was requested rather than the wait timing
+    // out, and a requested check runs even with automatic checks off.
+    uint32_t requested = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FW_UPDATE_STARTUP_DELAY_MS));
     while (1) {
-        firmware_update_check_now();
+        if (requested || s_auto_check) {
+            run_check();
+        }
         if (wifi_is_connected() && !install_in_progress()) {
             usage_report_send();
         }
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FW_UPDATE_CHECK_INTERVAL_MS));
+        requested = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FW_UPDATE_CHECK_INTERVAL_MS));
     }
+}
+
+bool firmware_update_get_auto_check(void)
+{
+    return s_auto_check;
+}
+
+void firmware_update_set_auto_check(bool enabled)
+{
+    s_auto_check = enabled;
+    ESP_LOGI(TAG, "Automatic release checks %s", enabled ? "enabled" : "disabled");
+
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(FW_UPDATE_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        // The setting still applies for this boot; only persistence is lost.
+        ESP_LOGE(TAG, "Failed to open NVS for writing: %s", esp_err_to_name(err));
+        return;
+    }
+    err = nvs_set_u8(nvs_handle, FW_UPDATE_NVS_KEY_AUTO_CHECK, enabled ? 1 : 0);
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs_handle);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to store automatic check setting: %s", esp_err_to_name(err));
+    }
+    nvs_close(nvs_handle);
+}
+
+static void load_auto_check(void)
+{
+    nvs_handle_t nvs_handle;
+    if (nvs_open(FW_UPDATE_NVS_NAMESPACE, NVS_READONLY, &nvs_handle) != ESP_OK) {
+        return;   // Nothing stored yet: keep the default
+    }
+    uint8_t stored;
+    if (nvs_get_u8(nvs_handle, FW_UPDATE_NVS_KEY_AUTO_CHECK, &stored) == ESP_OK) {
+        s_auto_check = (stored != 0);
+    }
+    nvs_close(nvs_handle);
 }
 
 void firmware_update_request_check(void)
 {
-    if (s_check_task) {
-        xTaskNotifyGive(s_check_task);
+    if (!s_check_task) {
+        return;
     }
+    // Report "checking" straight away rather than when the task wakes, so a
+    // caller polling the status (the web page) never reads the previous
+    // result, takes it as the answer and stops polling. Never over an
+    // install: its state drives the progress display, and the check it would
+    // announce is skipped while the install holds s_op_lock.
+    if (xSemaphoreTake(s_status_lock, portMAX_DELAY) == pdTRUE) {
+        if (s_status.state == FW_UPDATE_STATE_IDLE || s_status.state == FW_UPDATE_STATE_ERROR) {
+            s_status.state = FW_UPDATE_STATE_CHECKING;
+        }
+        xSemaphoreGive(s_status_lock);
+    }
+    xTaskNotifyGive(s_check_task);
 }
 
 void firmware_update_init(void)
@@ -601,11 +669,12 @@ void firmware_update_init(void)
     }
     xSemaphoreGive(s_op_lock);   // binary semaphores start empty; mark available
     status_init();
+    load_auto_check();
 
     if (xTaskCreate(check_task, "fw_check", FW_UPDATE_TASK_STACK, NULL, 3, &s_check_task) != pdPASS) {
         ESP_LOGE(TAG, "Failed to start firmware check task");
     } else {
-        ESP_LOGI(TAG, "Firmware update checker started (installed %s)",
-                 s_status.installed_version);
+        ESP_LOGI(TAG, "Firmware update checker started (installed %s, automatic checks %s)",
+                 s_status.installed_version, s_auto_check ? "on" : "off");
     }
 }
