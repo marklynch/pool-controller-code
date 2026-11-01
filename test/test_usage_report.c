@@ -5,7 +5,7 @@
  * can see every request the module makes.
  *
  * To run:
- *   cd test && gcc -I. -I.. -o run_usage_report test_usage_report.c ../main/usage_report.c log_capture.c nvs_stub.c && ./run_usage_report
+ *   cd test && gcc -I. -I.. -o run_usage_report test_usage_report.c ../main/usage_report.c ../main/nvs_settings.c log_capture.c nvs_stub.c && ./run_usage_report
  */
 
 #include <stdio.h>
@@ -157,7 +157,7 @@ static void last_id(char out[17])
 void test_request_shape(void)
 {
     factory_fresh(0x10);
-    usage_report_run();
+    usage_report_run(true);
 
     TEST_ASSERT(s_http.requests == 1, "First call after boot sends one request");
     TEST_ASSERT(strcmp(s_http.url, USAGE_REPORT_URL) == 0, "Posts to USAGE_REPORT_URL");
@@ -182,7 +182,7 @@ void test_enabled_by_default(void)
 void test_id_is_random_hex(void)
 {
     factory_fresh(0xA0);
-    usage_report_run();
+    usage_report_run(true);
 
     char id[17];
     last_id(id);
@@ -194,12 +194,12 @@ void test_id_is_random_hex(void)
 void test_id_survives_reboot(void)
 {
     factory_fresh(0x20);
-    usage_report_run();
+    usage_report_run(true);
     char before[17];
     last_id(before);
 
     reboot();
-    usage_report_run();
+    usage_report_run(true);
     char after[17];
     last_id(after);
 
@@ -211,26 +211,64 @@ void test_id_survives_reboot(void)
 void test_factory_reset_makes_new_id(void)
 {
     factory_fresh(0x30);
-    usage_report_run();
+    usage_report_run(true);
     char before[17];
     last_id(before);
 
     factory_fresh(0x70);
-    usage_report_run();
+    usage_report_run(true);
     char after[17];
     last_id(after);
 
     TEST_ASSERT(strcmp(before, after) != 0, "Erased flash gives a new ID");
 }
 
-// No rate limit of its own: the caller's schedule decides, so every call sends.
-void test_every_call_sends(void)
+// No rate limit of its own: the caller's schedule decides, so every
+// scheduled run sends.
+void test_every_scheduled_run_sends(void)
 {
     factory_fresh(0x10);
-    usage_report_run();
-    usage_report_run();
-    usage_report_run();
-    TEST_ASSERT(s_http.requests == 3, "Each call sends one request");
+    usage_report_run(true);
+    usage_report_run(true);
+    usage_report_run(true);
+    TEST_ASSERT(s_http.requests == 3, "Each scheduled run sends one request");
+}
+
+// Runs off the schedule (a requested check, the opt-out wake) never ping.
+void test_unscheduled_run_does_not_ping(void)
+{
+    factory_fresh(0x10);
+    usage_report_run(false);
+    usage_report_run(false);
+    TEST_ASSERT(s_http.requests == 0, "No ping from an unscheduled run");
+
+    usage_report_run(true);
+    usage_report_run(false);
+    TEST_ASSERT(s_http.requests == 1, "Still none once an ID exists");
+}
+
+// The opt-out wake is an unscheduled run, and must still send the deletion.
+void test_unscheduled_run_sends_pending_delete(void)
+{
+    factory_fresh(0x10);
+    usage_report_run(true);                    // ping creates the ID
+
+    usage_report_set_enabled(false);
+    usage_report_run(false);
+    TEST_ASSERT(s_http.requests == 2 && s_http.method == HTTP_METHOD_DELETE,
+                "Unscheduled run sends the pending DELETE");
+}
+
+// Opting out and straight back in before the wake runs: nothing is pending,
+// and the wake must not turn into an extra ping.
+void test_opt_out_then_in_wake_sends_nothing(void)
+{
+    factory_fresh(0x10);
+    usage_report_run(true);
+    usage_report_set_enabled(false);
+    usage_report_set_enabled(true);
+    usage_report_run(false);
+    TEST_ASSERT(s_http.requests == 1, "Wake after opting back in sends nothing");
 }
 
 // Pings are fire-and-forget: one attempt per call, and a failed one isn't
@@ -239,12 +277,12 @@ void test_failure_is_not_retried(void)
 {
     factory_fresh(0x10);
     endpoint_down();
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 1, "Unreachable endpoint: exactly one attempt");
     TEST_ASSERT(s_http.open_clients == 0, "HTTP client cleaned up after a failure");
 
     endpoint_5xx();
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 2, "5xx: exactly one attempt");
     TEST_ASSERT(s_http.open_clients == 0, "HTTP client cleaned up after a 5xx");
 }
@@ -253,17 +291,17 @@ void test_disabled_sends_nothing(void)
 {
     factory_fresh(0x10);
     usage_report_set_enabled(false);
-    usage_report_run();
-    usage_report_run();
+    usage_report_run(true);
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 0, "No request while disabled");
 
     reboot();
     TEST_ASSERT(usage_report_get_enabled() == false, "Disabled survives a reboot");
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 0, "Still no request after the reboot");
 
     usage_report_set_enabled(true);
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 1, "Sends as soon as it is re-enabled");
 
     reboot();
@@ -275,12 +313,12 @@ void test_disabled_sends_nothing(void)
 void test_opt_out_deletes_server_record(void)
 {
     factory_fresh(0x10);
-    usage_report_run();                        // ping creates the ID
+    usage_report_run(true);                        // ping creates the ID
     char id[17];
     last_id(id);
 
     usage_report_set_enabled(false);
-    usage_report_run();
+    usage_report_run(true);
 
     char expected_url[128];
     snprintf(expected_url, sizeof(expected_url), USAGE_REPORT_URL "/%s", id);
@@ -290,9 +328,9 @@ void test_opt_out_deletes_server_record(void)
     TEST_ASSERT(s_http.body[0] == '\0', "It carries no body");
     TEST_ASSERT(s_http.open_clients == 0, "HTTP client is cleaned up");
 
-    usage_report_run();
+    usage_report_run(true);
     reboot();
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 2, "Nothing more is sent once the deletion is confirmed");
 }
 
@@ -300,14 +338,14 @@ void test_opt_out_deletes_server_record(void)
 void test_opt_in_after_delete_keeps_id(void)
 {
     factory_fresh(0x10);
-    usage_report_run();
+    usage_report_run(true);
     char before[17];
     last_id(before);
 
     usage_report_set_enabled(false);
-    usage_report_run();                        // DELETE
+    usage_report_run(true);                        // DELETE
     usage_report_set_enabled(true);
-    usage_report_run();                        // ping
+    usage_report_run(true);                        // ping
     char after[17];
     last_id(after);
 
@@ -320,24 +358,24 @@ void test_opt_in_after_delete_keeps_id(void)
 void test_delete_retried_until_confirmed(void)
 {
     factory_fresh(0x10);
-    usage_report_run();
+    usage_report_run(true);
 
     usage_report_set_enabled(false);
     endpoint_down();
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 2, "Unreachable: one attempt per run");
 
     endpoint_5xx();
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 3, "5xx: tried again on the next run");
 
     reboot();
     endpoint_ok();
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 4 && s_http.method == HTTP_METHOD_DELETE,
                 "Still pending after a reboot, and sent");
 
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 4, "Confirmed: no more attempts");
 }
 
@@ -346,8 +384,8 @@ void test_opt_out_before_first_ping_sends_nothing(void)
 {
     factory_fresh(0x10);
     usage_report_set_enabled(false);
-    usage_report_run();
-    usage_report_run();
+    usage_report_run(true);
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 0, "No ID yet: no DELETE");
 }
 
@@ -355,10 +393,10 @@ void test_opt_out_before_first_ping_sends_nothing(void)
 void test_opt_in_before_delete_cancels_it(void)
 {
     factory_fresh(0x10);
-    usage_report_run();
+    usage_report_run(true);
     usage_report_set_enabled(false);
     usage_report_set_enabled(true);
-    usage_report_run();
+    usage_report_run(true);
     TEST_ASSERT(s_http.requests == 2 && s_http.method == HTTP_METHOD_POST,
                 "Re-enabled before the next run: a ping, not a DELETE");
 }
@@ -372,7 +410,10 @@ int main(void)
     test_id_is_random_hex();
     test_id_survives_reboot();
     test_factory_reset_makes_new_id();
-    test_every_call_sends();
+    test_every_scheduled_run_sends();
+    test_unscheduled_run_does_not_ping();
+    test_unscheduled_run_sends_pending_delete();
+    test_opt_out_then_in_wake_sends_nothing();
     test_failure_is_not_retried();
     test_disabled_sends_nothing();
     test_opt_out_deletes_server_record();

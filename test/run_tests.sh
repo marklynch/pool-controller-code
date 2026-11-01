@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SHARED=(log_capture.c unknown_buffer_stub.c nvs_stub.c)
+SHARED=(log_capture.c unknown_buffer_stub.c nvs_stub.c ../main/nvs_settings.c)
 PASS=0
 FAIL=0
 ERRORS=()
