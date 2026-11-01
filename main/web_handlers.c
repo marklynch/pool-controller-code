@@ -1564,18 +1564,18 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "<div id='autoCheckStatus' role='alert' hidden class='mt-2'></div>"
         "<script>bindToggle('autoCheck','/update/auto_check');</script>";
 
-    char usage_checkbox[160];
+    char usage_checkbox[192];
     snprintf(usage_checkbox, sizeof(usage_checkbox),
         "<h2 class='mt-4'>Anonymous usage reporting</h2>"
         "<label><input type='checkbox' id='usageReport'%s> "
-        "Send anonymous usage reports</label>",
+        "Participate in anonymous usage reporting</label>",
         usage_report_get_enabled() ? " checked" : "");
 
     const char *usage_html =
-        "<p class='mt-2'>Twice a day this device sends a random install ID and its "
-        "firmware version, so the project can see how many devices run each release. "
-        "No pool, network or hardware details are sent. "
-        "<a href='" USAGE_REPORT_README_URL "' target='_blank'>What is sent</a></p>"
+        "<p class='mt-2'>Help shape the project by showing how many devices run each "
+        "release. Twice a day this device shares a random install ID and its "
+        "firmware version, never anything about your pool, network or hardware. "
+        "<a href='" USAGE_REPORT_README_URL "' target='_blank'>What is shared</a></p>"
         "<div id='usageReportStatus' role='alert' hidden class='mt-2'></div>"
         "<script>bindToggle('usageReport','/usage_report');</script>";
 
