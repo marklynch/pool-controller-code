@@ -19,6 +19,7 @@ idf_component_register(
         "version_broadcast.c"
         "channel_power.c"
         "filter_pump_type.c"
+        "pump_telemetry.c"
         "channel_states.c"
         "channel_energy.c"
         "unknown_buffer.c"

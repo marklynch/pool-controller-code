@@ -5,6 +5,7 @@
 #include "register_requester.h"
 #include "unknown_buffer.h"
 #include "filter_pump_type.h"
+#include "pump_telemetry.h"
 #include "esp_log.h"
 #include <stdlib.h>
 #include <string.h>
@@ -4409,6 +4410,7 @@ static bool handle_pump_speed(
     if (!state_lock(ctx, "pump speed")) return true;
     ctx->pool_state->pump_speed = speed_rpm;
     ctx->pool_state->pump_speed_valid = true;
+    bool first_pump_telemetry = !ctx->pool_state->pump_telemetry_seen;
     ctx->pool_state->pump_telemetry_seen = true;
     ctx->pool_state->pump_reading_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
@@ -4418,6 +4420,15 @@ static bool handle_pump_speed(
     }
 
     state_unlock(ctx, true, &snapshot);
+
+    // Remember across reboots that this install has a telemetry pump, so the
+    // Filter-off zeroing works before the first broadcast of the next boot.
+    // This only runs on the first pump broadcast ever: once it is stored, it
+    // is restored at boot and NVS is never touched again. Outside the state
+    // lock, because it writes flash.
+    if (first_pump_telemetry) {
+        pump_telemetry_save_seen();
+    }
 
     if (ctx->enable_mqtt) {
         mqtt_publish_pump(&snapshot);

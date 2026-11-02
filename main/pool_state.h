@@ -335,6 +335,8 @@ typedef struct {
     // which is precisely what gates that workaround: on a plain single-speed
     // pump, which never sends CMD 0x3B, zeroing would invent readings from
     // nothing and publish pump entities for a pump that reports nothing.
+    // Persisted in NVS and restored at boot, so it holds before the first
+    // broadcast (~60 s) of a new boot.
     bool pump_telemetry_seen;
 
     // Chlorinator

@@ -24,6 +24,7 @@
 #include "version_broadcast.h"
 #include "channel_power.h"
 #include "filter_pump_type.h"
+#include "pump_telemetry.h"
 #include "channel_energy.h"
 #include "unknown_buffer.h"
 #include "heap_monitor.h"
@@ -207,6 +208,7 @@ void app_main(void)
     // can run and needs to resolve effective channel power
     channel_power_init();
     filter_pump_type_init();
+    s_pool_state.pump_telemetry_seen = pump_telemetry_load_seen();
 
     // Initialize hardware
     unknown_buffer_init();
