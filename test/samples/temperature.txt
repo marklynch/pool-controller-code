@@ -1,17 +1,17 @@
 My Capture
 I (08:56:06.526) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 16 00 16 03
-I (08:56:06.526) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 22°C (temp2: 0°C)
+I (08:56:06.526) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 22°C (temp2: not connected)
 02 00 62 FF FF 80 00 16 0E 06 16 00 16 03
 I (08:56:06.596) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 16 A6 BC 03
-W (08:56:06.596) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 22°C, temp2: INVALID (raw 0xA6)
+I (08:56:06.596) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 22°C (temp2: not connected)
 02 00 62 FF FF 80 00 31 0E 21 16 A6 BC 03
 
 Alternate Skymuster
 I (12:58:59.419) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 00 00 00 03
-I (12:58:59.419) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 0°C (temp2: 0°C)
+I (12:58:59.419) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - not connected (temp2: not connected)
 02 00 62 FF FF 80 00 16 0E 06 00 00 00 03
 I (12:58:59.489) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 AF AF 5E 03
-W (12:58:59.489) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - INVALID (raw 0xAF), temp2: INVALID (raw 0xAF)
+I (12:58:59.489) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - not connected (temp2: not connected)
 02 00 62 FF FF 80 00 31 0E 21 AF AF 5E 03
 
 I (12:59:05.169) MSG_DECODER: RX MSG: 02 00 72 FF FF 80 00 16 0D 15 0F 0F 03
@@ -33,10 +33,10 @@ D (601228305) MSG_DECODER: HiNRG Gas Heater setpoints not applied - heater confi
 
 Alternate Ninkasi
 I (00:04:32.380) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 11 00 11 03
-I (00:04:32.380) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 17°C (temp2: 0°C)
+I (00:04:32.380) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 17°C (temp2: not connected)
 02 00 62 FF FF 80 00 16 0E 06 11 00 11 03
 I (00:04:32.450) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 11 AD BE 03
-W (00:04:32.450) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 17°C, temp2: INVALID (raw 0xAD)
+I (00:04:32.450) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 17°C (temp2: not connected)
 02 00 62 FF FF 80 00 31 0E 21 11 AD BE 03
 
 I (65801381) MSG_DECODER: RX MSG: 02 00 70 FF FF 80 00 16 0D 13 12 12 03
@@ -52,10 +52,10 @@ I (00:43:22.064) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 0A 0E FA 02 05 07 03
 I (00:43:22.064) MSG_DECODER: [Connect 8/10 -> Broadcast] Firmware version - 2.5
 02 00 62 FF FF 80 00 0A 0E FA 02 05 07 03
 I (00:43:22.134) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 00 00 00 03
-I (00:43:22.134) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 0°C (temp2: 0°C)
+I (00:43:22.134) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - not connected (temp2: not connected)
 02 00 62 FF FF 80 00 16 0E 06 00 00 00 03
 I (00:43:22.204) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 B8 B8 70 03
-W (00:43:22.204) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - INVALID (raw 0xB8), temp2: INVALID (raw 0xB8)
+I (00:43:22.204) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - not connected (temp2: not connected)
 02 00 62 FF FF 80 00 31 0E 21 B8 B8 70 03
 
 I (00:43:57.764) MSG_DECODER: RX MSG: 02 00 74 FF FF 80 00 16 0D 17 10 10 03

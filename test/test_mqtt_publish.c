@@ -32,7 +32,8 @@ int main(void)
     state.num_seen_devices = 1;
     seen_device_t *dev = &state.seen_devices[0];
     dev->addr_lo = 0x62;
-    dev->temp1_valid = dev->temp2_valid = true;
+    dev->has_temp_sensors = true;
+    dev->temp1_connected = dev->temp2_connected = true;
     dev->temp1 = 24;
     dev->temp2 = 46;
     mqtt_publish_temperature_reading(&state, 0, 1);
@@ -47,23 +48,41 @@ int main(void)
     mqtt_publish_temperature_reading(&state, 0, 1);
     mqtt_publish_temperature_reading(&state, 0, 2);
     assert(count == 6 && discoveries == 2); /* Fresh unchanged samples. */
-    dev->temp2_valid = false;
+    /* Sensor not connected: one null, then nothing until it reconnects. */
+    dev->temp2_connected = false;
+    mqtt_publish_temperature_reading(&state, 0, 2);
+    assert(count == 7 && strcmp(payloads[6], "{\"value\":null}") == 0);
+    assert(strstr(topics[6], "/2/state"));
     mqtt_publish_temperature_reading(&state, 0, 2);
     mqtt_publish_temperature_reading(&state, -1, 1);
     mqtt_publish_temperature_reading(&state, 0, 3);
-    assert(count == 6);
+    assert(count == 7);
+    dev->temp2_connected = true;
+    mqtt_publish_temperature_reading(&state, 0, 2);
+    assert(count == 8 && strcmp(payloads[7], "{\"value\":47}") == 0);
+
+    /* A sensor never connected publishes null (clearing any stale retained
+     * value) but gets no discovery. */
+    state.num_seen_devices = 2;
+    seen_device_t *unwired = &state.seen_devices[1];
+    unwired->addr_lo = 0x74;
+    unwired->has_temp_sensors = true;
+    unwired->single_sensor_source = true;
+    mqtt_publish_temperature_reading(&state, 1, 1);
+    assert(count == 9 && discoveries == 2);
+    assert(strcmp(payloads[8], "{\"value\":null}") == 0);
 
     state.pump_speed_valid = true; state.pump_speed = 2850;
     state.pump_power_watts_valid = true; state.pump_power_watts = 900;
     mqtt_publish_pump(&state);
     mqtt_publish_pump(&state);
-    assert(count == 8 && discoveries == 3);
-    assert(strcmp(payloads[6], payloads[7]) == 0);
-    assert(strstr(payloads[7], "\"speed_rpm\":2850"));
+    assert(count == 11 && discoveries == 3);
+    assert(strcmp(payloads[9], payloads[10]) == 0);
+    assert(strstr(payloads[10], "\"speed_rpm\":2850"));
     connected = false;
     mqtt_publish_temperature_reading(&state, 0, 1);
     mqtt_publish_pump(&state);
-    assert(count == 8);
-    puts("MQTT publisher: independent sensors, unchanged samples, invalid values and disconnect passed");
+    assert(count == 11);
+    puts("MQTT publisher: independent sensors, unchanged samples, not-connected nulls and disconnect passed");
     return 0;
 }

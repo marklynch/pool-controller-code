@@ -46,9 +46,13 @@ static int mode_config_publishes = 0;
 void mqtt_publish_mode_config(const pool_state_t *state) { mode_config_publishes++; }
 void mqtt_publish_heater_setpoints(const pool_state_t *state, int index) {}
 static unsigned temperature_publish_calls[2];
+static bool temperature_publish_connected[2];   // connected flag on the latest call
 void mqtt_publish_temperature_reading(const pool_state_t *state, int dev_idx, uint8_t sensor_index)
 {
+    const seen_device_t *d = &state->seen_devices[dev_idx];
     temperature_publish_calls[sensor_index - 1]++;
+    temperature_publish_connected[sensor_index - 1] =
+        (sensor_index == 1) ? d->temp1_connected : d->temp2_connected;
 }
 void mqtt_publish_heater(const pool_state_t *state, int index) {}
 void mqtt_publish_gas_heater(const pool_state_t *state, int index) {}
@@ -903,8 +907,76 @@ void test_decode_temp_reading(void)
                 "First seen device should be 0x0062 (Connect 8/10)");
     TEST_ASSERT(test_pool_state.seen_devices[0].temp1 == 26,
                 "Sensor 1 temperature should be 26°C");
-    TEST_ASSERT(test_pool_state.seen_devices[0].temp1_valid,
-                "Sensor 1 valid flag should be set");
+    TEST_ASSERT(test_pool_state.seen_devices[0].temp1_connected,
+                "Sensor 1 connected flag should be set");
+    TEST_ASSERT(!test_pool_state.seen_devices[0].temp2_connected,
+                "Sensor 2 (0x00, no CMD 0x31 yet) should be not connected");
+}
+
+/**
+ * Test: CMD 0x16 zero vs genuine 0°C, decided by the previous CMD 0x31.
+ * A 0x16 byte of 0x00 counts as 0°C only when that sensor's latest 0x31
+ * also read 0x00; a 0x31 byte >= 0x80 marks the sensor not connected.
+ */
+void test_decode_temp_not_connected(void)
+{
+    init_test_context();
+
+    // 0x16 {0x00, 0x00} with no 0x31 seen yet: both not connected.
+    uint8_t zero16[] = { 0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00,
+                         0x16, 0x0E, 0x06, 0x00, 0x00, 0x00, 0x03 };
+    decode_message(zero16, sizeof(zero16), &test_ctx);
+    seen_device_t *dev = &test_pool_state.seen_devices[0];
+    TEST_ASSERT(dev->has_temp_sensors, "Source should be marked as a temperature source");
+    TEST_ASSERT(!dev->temp1_connected && !dev->temp2_connected,
+                "0x16 zero before any 0x31 should be not connected");
+
+    // 0x31 {0x00, 0xB9}: sensor 1 genuinely 0°C, sensor 2 not connected.
+    uint8_t alt31[] = { 0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00,
+                        0x31, 0x0E, 0x21, 0x00, 0xB9, 0xB9, 0x03 };
+    decode_message(alt31, sizeof(alt31), &test_ctx);
+    TEST_ASSERT(!dev->temp1_connected, "0x31 should not change the 0x16 connected flags");
+
+    decode_message(zero16, sizeof(zero16), &test_ctx);
+    TEST_ASSERT(dev->temp1_connected && dev->temp1 == 0,
+                "0x16 zero after a 0x31 zero should be a real 0°C");
+    TEST_ASSERT(!dev->temp2_connected,
+                "0x16 zero after a not-connected 0x31 should stay not connected");
+
+    // A connected reading followed by a 0x31 of 25 then a 0x16 zero (sensor
+    // unplugged): the stale reading must not survive.
+    uint8_t warm16[] = { 0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00,
+                         0x16, 0x0E, 0x06, 0x19, 0x00, 0x19, 0x03 };
+    uint8_t warm31[] = { 0x02, 0x00, 0x62, 0xFF, 0xFF, 0x80, 0x00,
+                         0x31, 0x0E, 0x21, 0x19, 0xB9, 0xD2, 0x03 };
+    decode_message(warm16, sizeof(warm16), &test_ctx);
+    decode_message(warm31, sizeof(warm31), &test_ctx);
+    TEST_ASSERT(dev->temp1_connected && dev->temp1 == 25, "Sensor 1 should read 25°C");
+    decode_message(zero16, sizeof(zero16), &test_ctx);
+    TEST_ASSERT(!dev->temp1_connected,
+                "0x16 zero after a connected 0x31 of 25°C should clear connected");
+}
+
+/**
+ * Test: 0x80 is the not-connected threshold; 0x7F is still a reading.
+ */
+void test_decode_temp_not_connected_threshold(void)
+{
+    init_test_context();
+
+    uint8_t msg[] = { 0x02, 0x00, 0x74, 0xFF, 0xFF, 0x80, 0x00,
+                      0x16, 0x0D, 0x00, 0x7F, 0x00, 0x03 };
+    msg[9] = 0x00;
+    for (int i = 0; i < 9; i++) msg[9] += msg[i];
+    msg[11] = msg[10];
+    decode_message(msg, sizeof(msg), &test_ctx);
+    seen_device_t *dev = &test_pool_state.seen_devices[0];
+    TEST_ASSERT(dev->single_sensor_source, "Heater should be a single-sensor source");
+    TEST_ASSERT(dev->temp1_connected && dev->temp1 == 0x7F, "0x7F should be a reading");
+
+    msg[10] = 0x80; msg[11] = 0x80;
+    decode_message(msg, sizeof(msg), &test_ctx);
+    TEST_ASSERT(!dev->temp1_connected, "0x80 should be not connected");
 }
 
 /**
@@ -2268,8 +2340,10 @@ static void test_solar_mode_and_output_are_independent(void)
 }
 
 /**
- * Test: CMD 0x16 publishes each valid sensor reading on its own, and an
- * invalid or missing reading publishes nothing. CMD 0x31 stays log-only.
+ * Test: each CMD 0x16 hands every sensor to the publisher with its own
+ * connected flag — a not-connected sensor never borrows the other's state or
+ * keeps a cached reading. (The publisher turns a not-connected sensor into a
+ * single null; see test_mqtt_publish.c.) CMD 0x31 never publishes.
  */
 static void test_temperature_samples_are_independent(void)
 {
@@ -2280,25 +2354,29 @@ static void test_temperature_samples_are_independent(void)
     TEST_ASSERT(decode_test_frame(0x62, 0x16, temps, 2), "Two valid temperatures decoded");
     TEST_ASSERT(temperature_publish_calls[0] == 1 && temperature_publish_calls[1] == 1,
                 "Both sensors published from the same frame");
+    TEST_ASSERT(temperature_publish_connected[0] && temperature_publish_connected[1],
+                "Both sensors connected");
     temps[1] = 0xFF;
     decode_test_frame(0x62, 0x16, temps, 2);
-    TEST_ASSERT(temperature_publish_calls[0] == 2 && temperature_publish_calls[1] == 1,
-                "Invalid roof sample does not republish its cached reading");
+    TEST_ASSERT(temperature_publish_calls[1] == 2 && !temperature_publish_connected[1]
+                && temperature_publish_connected[0],
+                "Not-connected sensor 2 is published as not connected, sensor 1 unaffected");
     temps[0] = 0xFF; temps[1] = 47;
     decode_test_frame(0x62, 0x16, temps, 2);
-    TEST_ASSERT(temperature_publish_calls[0] == 2 && temperature_publish_calls[1] == 2,
-                "Valid roof sample publishes even when water sample is invalid");
-    temps[1] = 0xFF;
-    decode_test_frame(0x62, 0x16, temps, 2);
-    TEST_ASSERT(temperature_publish_calls[0] == 2 && temperature_publish_calls[1] == 2,
-                "Two invalid samples do not create history points");
+    TEST_ASSERT(!temperature_publish_connected[0] && temperature_publish_connected[1],
+                "Connected sensor 2 is published even when sensor 1 is not connected");
     temps[0] = 24;
+    unsigned sensor2_calls = temperature_publish_calls[1];
     decode_test_frame(0x62, 0x16, temps, 1);
-    TEST_ASSERT(temperature_publish_calls[0] == 3 && temperature_publish_calls[1] == 2,
-                "Missing roof sample does not republish its cached reading");
-    decode_test_frame(0x62, 0x31, temps, 1);
-    TEST_ASSERT(temperature_publish_calls[0] == 3,
-                "Alternate CMD 0x31 remains log-only and does not duplicate history");
+    TEST_ASSERT(temperature_publish_connected[0]
+                && temperature_publish_calls[1] == sensor2_calls
+                && test_pool_state.seen_devices[0].temp2_connected
+                && test_pool_state.seen_devices[0].temp2 == 47,
+                "Frame without sensor 2 leaves sensor 2 unchanged and unpublished");
+    unsigned before = temperature_publish_calls[0] + temperature_publish_calls[1];
+    decode_test_frame(0x62, 0x31, temps, 2);
+    TEST_ASSERT(temperature_publish_calls[0] + temperature_publish_calls[1] == before,
+                "CMD 0x31 (unclamped) never publishes");
 }
 
 /**
@@ -2334,6 +2412,8 @@ int main(void)
     test_heater_config_change_publishes();
     test_separate_pool_spa_modes_register();
     test_decode_temp_reading();
+    test_decode_temp_not_connected();
+    test_decode_temp_not_connected_threshold();
     test_temperature_samples_are_independent();
     test_decode_heater_on();
     test_decode_heater_off();

@@ -884,14 +884,16 @@ static bool handle_temp_reading(
 
         dev->temp1_connected = connected[0];
         if (connected[0]) dev->temp1 = payload[0];
-        if (!dev->single_sensor_source) {
-            dev->temp2_connected = (sensor_count == 2) && connected[1];
-            if (dev->temp2_connected) dev->temp2 = payload[1];
+        // A frame without the second byte says nothing about sensor 2, so
+        // leave its state as it was.
+        if (!dev->single_sensor_source && sensor_count == 2) {
+            dev->temp2_connected = connected[1];
+            if (connected[1]) dev->temp2 = payload[1];
         }
     }
 
     bool publish = is_canonical && dev;
-    bool publish_temp2 = publish && !dev->single_sensor_source;
+    bool publish_temp2 = publish && !dev->single_sensor_source && sensor_count == 2;
     state_unlock(ctx, is_canonical, is_canonical ? &snapshot : NULL);
 
     char t_buf[2][24];

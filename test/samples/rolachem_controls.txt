@@ -80,9 +80,9 @@ I (02:28:13.105) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:28:13.224) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:28:13.225) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:28:14.014) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:28:14.016) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:28:14.016) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:28:14.084) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:28:14.086) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:28:14.086) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:28:14.154) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:28:14.155) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:28:14.224) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -181,9 +181,9 @@ I (02:29:13.116) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:29:13.234) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:29:13.235) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:29:13.714) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:29:13.716) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:29:13.716) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:29:13.784) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:29:13.785) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:29:13.785) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:29:13.854) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:29:13.854) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:29:13.924) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -293,9 +293,9 @@ I (02:30:13.125) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:30:13.244) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:30:13.246) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:30:13.414) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:30:13.416) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:30:13.416) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:30:13.484) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:30:13.486) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:30:13.486) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:30:13.554) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:30:13.555) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:30:13.624) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -383,9 +383,9 @@ I (02:30:26.086) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:30:26.204) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:30:26.205) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:30:26.574) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:30:26.576) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:30:26.576) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:30:26.644) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:30:26.645) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:30:26.645) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:30:26.714) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:30:26.714) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:30:26.784) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -461,9 +461,9 @@ I (02:30:36.086) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:30:36.204) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:30:36.206) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:30:36.694) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:30:36.696) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:30:36.696) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:30:36.754) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:30:36.755) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:30:36.755) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:30:36.834) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:30:36.835) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:30:36.894) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -495,9 +495,9 @@ I (02:30:37.866) MSG_DECODER:   Ch8: Unused
 I (02:30:39.624) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 0A 0E E8 02 08 0A 03 
 I (02:30:39.626) MSG_DECODER: [Touch Screen -> Broadcast] Firmware version - 2.8
 I (02:30:39.724) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:30:39.726) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:30:39.726) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:30:39.794) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:30:39.795) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:30:39.795) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:30:39.864) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:30:39.864) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:30:39.934) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -553,9 +553,9 @@ I (02:30:42.396) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:30:42.514) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:30:42.516) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:30:42.754) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:30:42.756) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:30:42.756) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:30:42.824) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:30:42.825) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:30:42.825) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:30:42.894) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:30:42.894) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:30:42.964) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -635,9 +635,9 @@ I (02:31:42.096) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:31:42.214) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:31:42.216) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:31:42.464) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:31:42.466) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:31:42.466) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:31:42.534) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:31:42.535) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:31:42.535) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:31:42.604) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:31:42.605) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:31:42.674) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -718,9 +718,9 @@ I (02:32:42.105) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:32:42.224) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:32:42.226) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:32:43.184) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:32:43.186) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:32:43.186) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:32:43.254) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:32:43.256) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:32:43.256) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:32:43.324) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:32:43.325) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:32:43.394) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -800,9 +800,9 @@ I (02:33:42.116) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:33:42.234) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:33:42.236) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:33:42.894) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:33:42.896) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:33:42.896) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:33:42.964) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:33:42.965) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:33:42.965) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:33:43.034) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:33:43.034) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:33:43.104) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -884,9 +884,9 @@ I (02:34:42.456) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active
 I (02:34:42.574) MSG_DECODER: RX MSG: 02 00 50 00 6F 80 00 0D 0D 5B 01 01 03 
 I (02:34:42.576) MSG_DECODER: [Touch Screen -> Internal Channels] Active channels - 0x01 [-------1]
 I (02:34:42.634) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:34:42.635) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:34:42.635) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:34:42.704) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:34:42.705) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:34:42.705) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:34:42.774) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:34:42.775) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:34:42.844) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -932,9 +932,9 @@ W (02:34:45.395) MSG_DECODER: [Touch Screen -> Broadcast] Unhandled register - R
 I (02:34:45.514) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 0D 00 D0 03 
 W (02:34:45.516) MSG_DECODER: [Touch Screen -> Broadcast] Unhandled register - Reg=0xC3, Slot=0x0D, Payload[3]: C3 0D 00
 I (02:34:45.624) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:34:45.626) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:34:45.626) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:34:45.684) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:34:45.685) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:34:45.685) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:34:45.754) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:34:45.755) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:34:45.824) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -999,9 +999,9 @@ I (02:34:49.056) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:34:49.174) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:34:49.176) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:34:49.664) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:34:49.666) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:34:49.666) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:34:49.734) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:34:49.735) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:34:49.735) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:34:49.804) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:34:49.805) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:34:49.874) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1099,9 +1099,9 @@ I (02:35:48.746) MSG_DECODER: [RolaChem -> Broadcast] Chlorinator pH setpoint - 
 I (02:35:48.934) MSG_DECODER: RX MSG: 02 00 90 FF FF 80 00 1D 0F 3C 02 9E 02 A2 03 
 I (02:35:48.936) MSG_DECODER: [RolaChem -> Broadcast] Chlorinator ORP setpoint - 670 mV
 I (02:35:49.354) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:35:49.356) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:35:49.356) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:35:49.424) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:35:49.425) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:35:49.425) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:35:49.494) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:35:49.496) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:35:49.564) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1153,9 +1153,9 @@ I (02:36:42.846) MSG_DECODER: [Touch Screen -> Broadcast] Touchscreen status - 0
 I (02:36:42.964) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 05 0D E2 01 01 03 
 I (02:36:42.966) MSG_DECODER: [Touch Screen -> Broadcast] Touchscreen unknown (CMD 0x05): 0x01
 I (02:36:43.024) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:36:43.025) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:36:43.025) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:36:43.094) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:36:43.095) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:36:43.095) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:36:43.164) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:36:43.165) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:36:43.234) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1209,9 +1209,9 @@ I (02:36:45.585) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active
 I (02:36:45.704) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 F4 01 08 FD 03 
 I (02:36:45.706) MSG_DECODER: [Touch Screen -> Broadcast] Channel count - 8
 I (02:36:46.024) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:36:46.026) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:36:46.026) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:36:46.094) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:36:46.095) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:36:46.095) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:36:46.164) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:36:46.166) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:36:46.234) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1349,9 +1349,9 @@ I (02:37:40.196) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:37:40.314) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:37:40.316) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:37:40.664) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:37:40.665) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:37:40.665) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:37:40.734) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:37:40.735) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:37:40.735) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:37:40.804) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:37:40.805) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:37:40.840) FW_UPDATE: installed=v1.19.0-24-g8616f28-dirty latest=v1.19.0 (5 releases) update_available=0
@@ -1423,9 +1423,9 @@ I (02:38:34.056) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 - Off
 I (02:38:34.174) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 06 0E E4 01 00 01 03 
 I (02:38:34.176) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 - Off
 I (02:38:34.294) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:38:34.296) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:38:34.296) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:38:34.364) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:38:34.365) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:38:34.365) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:38:34.434) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:38:34.434) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:38:34.504) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1479,9 +1479,9 @@ I (02:38:37.076) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:38:37.194) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:38:37.196) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:38:37.324) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:38:37.326) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:38:37.326) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:38:37.394) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:38:37.396) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:38:37.396) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:38:37.464) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:38:37.465) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:38:37.534) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1567,9 +1567,9 @@ I (02:39:02.236) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:39:02.354) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:39:02.356) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:39:02.624) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:39:02.626) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:39:02.626) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:39:02.694) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:39:02.695) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:39:02.695) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:39:02.764) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:39:02.765) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:39:02.834) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1647,9 +1647,9 @@ I (02:40:02.376) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active
 I (02:40:02.494) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 B9 0B 01 C5 03 
 W (02:40:02.495) MSG_DECODER: [Touch Screen -> Broadcast] Unhandled register - Reg=0xB9, Slot=0x0B, Payload[3]: B9 0B 01
 I (02:40:03.324) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:40:03.326) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:40:03.326) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:40:03.394) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:40:03.395) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:40:03.395) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:40:03.464) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:40:03.464) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:40:03.534) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1729,9 +1729,9 @@ I (02:40:25.216) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:40:25.334) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:40:25.336) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:40:25.584) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:40:25.586) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:40:25.586) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:40:25.654) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:40:25.656) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:40:25.656) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:40:25.724) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:40:25.725) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:40:25.794) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1777,9 +1777,9 @@ I (02:40:36.526) MSG_DECODER: [RolaChem -> Broadcast] Chlorinator pH setpoint - 
 I (02:40:36.714) MSG_DECODER: RX MSG: 02 00 90 FF FF 80 00 1D 0F 3C 02 9E 02 A2 03 
 I (02:40:36.716) MSG_DECODER: [RolaChem -> Broadcast] Chlorinator ORP setpoint - 670 mV
 I (02:40:36.784) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:40:36.786) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:40:36.786) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:40:36.854) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:40:36.855) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:40:36.855) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:40:36.924) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:40:36.925) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:40:36.994) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1831,9 +1831,9 @@ I (02:40:39.256) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:40:39.374) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:40:39.376) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:40:39.744) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:40:39.745) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:40:39.745) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:40:39.814) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:40:39.815) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:40:39.815) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:40:39.884) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:40:39.885) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:40:39.954) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
@@ -1911,9 +1911,9 @@ I (02:41:38.226) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 active
 I (02:41:38.354) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E3 01 00 E4 03 
 I (02:41:38.356) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 active - No
 I (02:41:39.434) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03 
-I (02:41:39.436) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: 0°C)
+I (02:41:39.436) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature - 25°C (temp2: not connected)
 I (02:41:39.504) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 31 0E 21 19 AA C3 03 
-W (02:41:39.506) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (alt) - 25°C, temp2: INVALID (raw 0xAA)
+I (02:41:39.506) MSG_DECODER: [Connect 8/10 -> Broadcast] Current temperature (unclamped) - 25°C (temp2: not connected)
 I (02:41:39.574) MSG_DECODER: RX MSG: 02 00 62 FF FF 80 00 12 0F 03 00 00 08 08 03 
 I (02:41:39.575) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service mode - Off, Solar output - Inactive
 I (02:41:39.644) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
