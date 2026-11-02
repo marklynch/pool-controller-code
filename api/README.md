@@ -44,7 +44,8 @@ so in practice only the device that made it can delete it.
 ### Anything else
 
 Any path outside `/v1/`, such as the bare domain opened in a browser, gets a
-302 redirect to the project's GitHub repo.
+302 redirect to <https://poolcontrol.io/usage/>, the website's page explaining
+what devices send here. That page lives in `website/usage/`.
 
 ### What's stored
 

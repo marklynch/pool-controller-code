@@ -132,6 +132,8 @@ with open(os.path.join(out, "versions.json"), "w") as f:
 PY
 
 cp "$SRC/index.html" "$SRC/site.css" "$SRC/_headers" "$OUT/"
+mkdir -p "$OUT/usage"
+cp "$SRC/usage/index.html" "$OUT/usage/"
 cp "$SRC/install/index.html" "$SRC/install/app.js" "$INSTALL/"
 # Kept so a direct link to manifest.json still resolves to the current release.
 cp "$INSTALL/manifest-${LATEST}.json" "$INSTALL/manifest.json"

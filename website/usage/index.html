@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A static page: no scripts at all, and nothing loaded from another origin. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'">
+<title>Usage Reporting — PoolControl.io</title>
+<meta name="description" content="What the Pool Controller's anonymous usage report sends to api.poolcontrol.io, what is stored, and how to turn it off.">
+<link rel="canonical" href="https://poolcontrol.io/usage/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231565C0' d='M2,15C3.67,14.25 5.33,13.5 7,13.17V5A3,3 0 0,1 10,2C11.31,2 12.42,2.83 12.83,4H10A1,1 0 0,0 9,5V6H14V5A3,3 0 0,1 17,2C18.31,2 19.42,2.83 19.83,4H17A1,1 0 0,0 16,5V14.94C18,14.62 20,13 22,13V15C19.78,15 17.56,17 15.33,17C13.11,17 10.89,15 8.67,15C6.44,15 4.22,16 2,17V15M14,8H9V10H14V8M14,12H9V13C10.67,13.16 12.33,14.31 14,14.79V12M2,19C4.22,18 6.44,17 8.67,17C10.89,17 13.11,19 15.33,19C17.56,19 19.78,17 22,17V19C19.78,19 17.56,21 15.33,21C13.11,21 10.89,19 8.67,19C6.44,19 4.22,20 2,21V19Z'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../site.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="../"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1565C0" d="M2,15C3.67,14.25 5.33,13.5 7,13.17V5A3,3 0 0,1 10,2C11.31,2 12.42,2.83 12.83,4H10A1,1 0 0,0 9,5V6H14V5A3,3 0 0,1 17,2C18.31,2 19.42,2.83 19.83,4H17A1,1 0 0,0 16,5V14.94C18,14.62 20,13 22,13V15C19.78,15 17.56,17 15.33,17C13.11,17 10.89,15 8.67,15C6.44,15 4.22,16 2,17V15M14,8H9V10H14V8M14,12H9V13C10.67,13.16 12.33,14.31 14,14.79V12M2,19C4.22,18 6.44,17 8.67,17C10.89,17 13.11,19 15.33,19C17.56,19 19.78,17 22,17V19C19.78,19 17.56,21 15.33,21C13.11,21 10.89,19 8.67,19C6.44,19 4.22,20 2,21V19Z"/></svg>PoolControl.io</a>
+  <a href="../">Overview</a>
+  <a href="../install/">Install</a>
+  <a href="https://github.com/marklynch/pool-controller-code">GitHub</a>
+</nav>
+<main>
+  <header>
+    <h1>Usage Reporting</h1>
+    <p class="tagline">
+      What the device sends to <code>api.poolcontrol.io</code>, what is kept, and how to turn it off.
+    </p>
+  </header>
+
+  <section class="card">
+    <h2>Why it exists</h2>
+    <p>
+      To see how many devices are in use and which firmware versions they run, each device
+      sends a small anonymous report twice a day. It is <strong>on by default</strong> and
+      takes one click to turn off.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>What the device sends</h2>
+    <p>An HTTPS <code>POST</code> to <code>https://api.poolcontrol.io/v1/usage</code>, containing only:</p>
+    <ul>
+      <li>
+        <strong>A random install ID</strong>, e.g. <code>9f3a1c0b7e2d4a58</code>. It is made before
+        the first report and kept in flash. It is not derived from the MAC address, serial number
+        or anything else about the hardware. It survives reboots and firmware updates; erasing the
+        flash makes a new one.
+      </li>
+      <li><strong>The running firmware version</strong>, e.g. <code>1.21.2</code>.</li>
+    </ul>
+    <p class="hint">
+      It is sent about 30 seconds after boot, then every 12 hours. A failed report is dropped,
+      not retried, so an unreachable server never affects the device.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>What is stored</h2>
+    <p>
+      The server keeps the install ID and version, when that ID was first and last seen, and
+      the <strong>country and continent</strong> Cloudflare works out from the connection.
+      Nothing finer.
+    </p>
+    <p>
+      <strong>Not collected:</strong> anything about your pool, the bus or the device's
+      configuration; IP addresses, city or region, network names or ISP. The server keeps no
+      request logs.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Turning it off</h2>
+    <p>
+      Open the device's update page, <code>http://poolcontrol-AABBCC.local/update</code>, and
+      untick <strong>Participate in anonymous usage reporting</strong>. It takes effect
+      immediately and is remembered across reboots and updates.
+    </p>
+    <p>
+      The device then asks the server to <strong>delete everything it holds</strong> for that
+      install, and keeps asking until the server confirms. If the device is offline, that
+      happens once it's back. After that nothing is sent while reporting is off.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>The code</h2>
+    <p>
+      Both sides are open source: the server is in
+      <a href="https://github.com/marklynch/pool-controller-code/tree/main/api"><code>api/</code></a>,
+      along with the queries run against the data, and the device side is
+      <a href="https://github.com/marklynch/pool-controller-code/blob/main/main/usage_report.c"><code>main/usage_report.c</code></a>.
+    </p>
+  </section>
+
+  <footer>
+    Not an official product. No support or warranty, and not connected to or supported by Fluidra.<br>
+    MIT licensed.
+  </footer>
+</main>
+</body>
+</html>

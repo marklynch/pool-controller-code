@@ -4,7 +4,7 @@
 //   POST   /v1/usage       {"id":"<16 lowercase hex>","v":"<firmware version>"}
 //   DELETE /v1/usage/<id>  sent when the user opts out: remove that install's rows
 //
-// Any other path outside /v1/ redirects to the GitHub repo.
+// Any other path outside /v1/ redirects to the website's usage-reporting page.
 //
 // Stores the install ID, the version (in full, and as vMAJOR.MINOR.PATCH for
 // aggregation), and the country/continent Cloudflare derives from the
@@ -13,9 +13,11 @@
 
 const PATH = "/v1/usage";
 const API_PREFIX = "/v1/";
-// Where a browser opening any other page (the bare domain, say) is sent.
-// 302 rather than 301, so browsers don't cache it and it can change later.
-const REDIRECT_URL = "https://github.com/marklynch/pool-controller-code";
+// Where a browser opening any other page (the bare domain, say) is sent:
+// someone who spotted this domain in their router or DNS logs, so the page
+// explains what devices send here. 302 rather than 301, so browsers don't
+// cache it and it can change later.
+const REDIRECT_URL = "https://poolcontrol.io/usage/";
 const DELETE_PATH_RE = /^\/v1\/usage\/([0-9a-f]{16})$/;
 const MAX_BODY = 256;
 const ID_RE = /^[0-9a-f]{16}$/;

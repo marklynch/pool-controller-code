@@ -4,8 +4,9 @@
 
 - **`/`** — a home page summarising the project, with links out to the README, hardware repos and protocol notes. Static HTML and CSS, no scripts.
 - **`/install/`** — the web installer, described below.
+- **`/usage/`** — what the anonymous usage report sends, what's stored, and how to turn it off. `api.poolcontrol.io` redirects browsers here, so keep the path stable.
 
-Both pages share `website/site.css`.
+All pages share `website/site.css`.
 
 ## Web installer
 
@@ -17,6 +18,7 @@ The page offers the **5 most recent releases** in a version picker, defaulting t
 
 - `website/index.html` — the home page.
 - `website/site.css` — styles shared by every page. In a file rather than inline so pages can keep a `style-src 'self'` CSP.
+- `website/usage/index.html` — the usage-reporting page. Static, like the home page.
 - `website/install/index.html` — the installer page. Static; it reads `versions.json` at runtime to build the picker, so it needs no build step.
 - `website/install/app.js` — the installer's script. Kept out of the HTML so the page's CSP can be `script-src 'self'` with no `'unsafe-inline'`.
 - `website/install/manifest.template.json` — the ESP Web Tools manifest, with `__VERSION__` / `__BINARY__` placeholders stamped once per offered version.
