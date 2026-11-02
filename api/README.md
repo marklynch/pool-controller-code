@@ -73,6 +73,18 @@ npx wrangler d1 execute pool-controller-usage --remote --file schema.sql
 npx wrangler deploy
 ```
 
+After that first setup, code changes deploy themselves:
+`.github/workflows/api.yml` runs `wrangler deploy` on every push to `main`
+that touches `api/`, or on demand from Actions → Deploy API → Run workflow. It
+uses the `production` environment's `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID` secrets, shared with the website deploy. The token
+needs **Account → D1 → Edit** for the database binding, on top of the Workers
+permissions the website uses.
+
+The workflow deploys code only. Apply schema changes by hand with step 2 above,
+**before** merging code that depends on them. Otherwise the new code goes live
+against the old tables.
+
 Smoke test:
 
 ```bash

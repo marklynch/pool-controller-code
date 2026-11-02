@@ -1,0 +1,50 @@
+name: Deploy API
+
+# Deploys the api.poolcontrol.io Worker (api/) whenever main changes anything
+# under api/. Devices in the field send their usage reports here, so a merge
+# to main that touches api/ goes live straight away.
+#
+# Deploys the Worker code only. Schema changes (api/schema.sql) stay a
+# deliberate manual step — see api/README.md.
+#
+# Uses the same "production" environment secrets as website.yml. The token
+# additionally needs Account → D1 → Edit for the Worker's database binding.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - '.github/workflows/api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Let an in-flight deploy finish; a newer push queues behind it.
+concurrency:
+  group: api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://api.poolcontrol.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Installs the exact Wrangler version from package-lock.json, the same
+      # one used for local deploys. wrangler-action finds and uses it.
+      - name: Install dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: api
+          command: deploy
