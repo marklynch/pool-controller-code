@@ -9,7 +9,7 @@
 #   ./website/build-site.sh --out site --limit 2
 #   ./website/build-site.sh --out site --bin build/x.bin --version dev
 #
-# Used by both .github/workflows/pages.yml and website/preview.sh, so what
+# Used by both .github/workflows/website.yml and website/preview.sh, so what
 # you preview locally is exactly what gets deployed.
 set -euo pipefail
 
@@ -131,7 +131,7 @@ with open(os.path.join(out, "versions.json"), "w") as f:
     f.write("\n")
 PY
 
-cp "$SRC/index.html" "$SRC/site.css" "$OUT/"
+cp "$SRC/index.html" "$SRC/site.css" "$SRC/_headers" "$OUT/"
 cp "$SRC/install/index.html" "$SRC/install/app.js" "$INSTALL/"
 # Kept so a direct link to manifest.json still resolves to the current release.
 cp "$INSTALL/manifest-${LATEST}.json" "$INSTALL/manifest.json"

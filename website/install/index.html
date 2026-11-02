@@ -9,8 +9,8 @@
      origin can supply code to a page that writes firmware over Web Serial.
      style-src allows inline because ESP Web Tools falls back to injecting
      <style> where adoptedStyleSheets is unavailable; blob: is allowed for connect because the flasher's dialog
-     creates object URLs. frame-ancestors is omitted: it is ignored in a meta
-     CSP and needs a real header. -->
+     creates object URLs. frame-ancestors is ignored in a meta CSP, so it is
+     sent as a real header from website/_headers instead. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' blob:; form-action 'self'; base-uri 'none'">
 <title>Install — Pool Controller</title>
 <meta name="description" content="Flash the Connect 10 pool controller firmware to an ESP32-C6 straight from your browser.">

@@ -1,0 +1,11 @@
+# Response headers for every page and asset. Cloudflare reads this file at
+# deploy time and does not serve it.
+#
+# Each page also carries its own CSP in a <meta> tag. A browser enforces every
+# policy it receives, so this header only adds what a meta CSP cannot express:
+# frame-ancestors, which stops another site framing the installer and tricking
+# a visitor into flashing from inside it.
+/*
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

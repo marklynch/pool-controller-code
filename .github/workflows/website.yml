@@ -1,20 +1,15 @@
 name: Deploy Website
 
-# Publishes the project website to GitHub Pages at https://poolcontrol.io: a
-# home page at the root, and the ESP Web Tools installer under /install/,
-# serving the merged full-flash binaries from recent releases alongside it.
+# Publishes the project website to https://poolcontrol.io, an assets-only
+# Cloudflare Worker (website/wrangler.toml): a home page at the root, and the
+# ESP Web Tools installer under /install/, serving the merged full-flash
+# binaries from recent releases alongside it.
 #
-# The custom domain is set in Settings → Pages, not by a CNAME file — Pages
-# ignores CNAME files in Actions-deployed artifacts. See docs/website.md.
+# The site is assembled here rather than by a Cloudflare build, because
+# build-site.sh needs the gh CLI and a GitHub token to fetch release assets.
 #
-# The page source lives in website/, deliberately NOT docs/ — GitHub Pages
-# treats docs/ as a branch publishing directory, and pointing Pages at it
-# serves the raw sources, which have no manifest.json and no firmware binary
-# (both are produced here at deploy time). Keeping the sources out of docs/
-# removes that trap: this workflow is the only way the site gets published.
-#
-# Pages must be configured with source "GitHub Actions" (Settings → Pages),
-# not "Deploy from a branch".
+# Needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as secrets on the
+# "production" environment. See docs/website.md.
 #
 # The workflow_run trigger is used rather than `release: published` because
 # Build & Release publishes its draft with the built-in GITHUB_TOKEN, and
@@ -30,13 +25,11 @@ on:
     branches: [main]
     paths:
       - 'website/**'
-      - '.github/workflows/pages.yml'
+      - '.github/workflows/website.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 env:
   # How many recent releases the installer offers in its version picker.
@@ -45,7 +38,7 @@ env:
 # Never run two deploys at once, and let an in-flight deploy finish rather
 # than cancelling it — a half-published installer page is worse than a stale one.
 concurrency:
-  group: pages
+  group: website
   cancel-in-progress: false
 
 jobs:
@@ -59,15 +52,14 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
       startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
+    # The Cloudflare secrets live on this environment, not the repo, so they
+    # can be limited to the main branch (Settings → Environments).
     environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      name: production
+      url: https://poolcontrol.io
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v6
 
       # Always the newest INSTALLER_VERSIONS releases, whichever tag triggered
       # the run. Re-running an old tag's build therefore can't roll the public
@@ -76,13 +68,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-        run: ./website/build-site.sh --out site --limit "${INSTALLER_VERSIONS:-5}"
+        run: ./website/build-site.sh --out website/dist --limit "${INSTALLER_VERSIONS:-5}"
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+      # Uploads website/dist (the [assets] directory in wrangler.toml). A
+      # Worker deploy switches over atomically, so visitors never see a mix
+      # of old and new files.
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
         with:
-          path: site
-
-      - name: Deploy to Pages
-        id: deploy
-        uses: actions/deploy-pages@v5
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: website
+          wranglerVersion: "4.156.0"
+          command: deploy

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Preview the poolcontrol.io site locally, exactly as GitHub Pages will serve it.
+# Preview the poolcontrol.io site locally.
 #
 #   ./website/preview.sh                      # latest 5 releases
 #   ./website/preview.sh --limit 2            # fewer, for a quicker download
@@ -8,14 +8,16 @@
 #
 # Builds the site with website/build-site.sh — the same script the deploy
 # workflow uses — and serves it over http://localhost, which counts as a secure
-# context, so the flasher genuinely works here.
+# context, so the flasher genuinely works here. The plain Python server ignores
+# _headers; to check those too, run `npx wrangler dev` from website/ after this
+# has built dist/.
 #
 # Opening website/install/index.html straight from disk does NOT work:
 # manifest.json and versions.json are generated, and file:// can't fetch them anyway.
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT="$(cd "$SRC/.." && pwd)/.site-preview"
+OUT="$SRC/dist"
 PORT="${PORT:-8001}"
 
 case "${1:-}" in

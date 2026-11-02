@@ -1,0 +1,19 @@
+name = "poolcontrol-site"
+compatibility_date = "2026-10-01"
+
+# An assets-only Worker: no script, just the files build-site.sh assembles into
+# dist/. Deployed by .github/workflows/website.yml — see docs/website.md.
+
+# Served only from our own domain. No *.workers.dev address or per-version
+# preview URLs, so the installer has exactly one public origin.
+workers_dev = false
+preview_urls = false
+routes = [
+  { pattern = "poolcontrol.io", custom_domain = true },
+  { pattern = "www.poolcontrol.io", custom_domain = true },
+]
+
+[assets]
+directory = "./dist"
+# /install redirects to /install/, so the installer's relative paths resolve.
+html_handling = "auto-trailing-slash"
