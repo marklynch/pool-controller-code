@@ -182,9 +182,11 @@ typedef struct {
 // version is populated by handle_firmware_version when a CMD 0x0A is seen.
 //
 // Temperature sensors hosted by a device (when it broadcasts CMD 0x16) hang
-// off this entry directly. `single_sensor_source` is committed at first sight
-// from the CMD 0x16 payload length (LEN 0x0D = single, LEN 0x0E = dual) and
-// drives the MQTT topic shape so it stays stable across the device's lifetime.
+// off this entry directly. `has_temp_sensors` and `single_sensor_source` are
+// committed at the first CMD 0x16, from its payload length (LEN 0x0D = single,
+// LEN 0x0E = dual); the latter drives the MQTT topic shape so it stays stable
+// across the device's lifetime. Each reading sets or clears the per-sensor
+// `connected` flag; the reading itself is only meaningful while it is set.
 typedef struct {
     uint8_t addr_hi;
     uint8_t addr_lo;
@@ -195,11 +197,14 @@ typedef struct {
     uint32_t unknown_count;     // Frames from this source that fell through to handle_unknown
 
     // Temperature sensors (populated from CMD 0x16; see message_decoder.c)
+    bool has_temp_sensors;      // True once this source has sent a CMD 0x16
     uint8_t temp1;              // Sensor 1 reading in °C
     uint8_t temp2;              // Sensor 2 reading in °C (multi-sensor sources only)
-    bool temp1_valid;
-    bool temp2_valid;
+    bool temp1_connected;       // Latest CMD 0x16 reported sensor 1 connected
+    bool temp2_connected;       // Latest CMD 0x16 reported sensor 2 connected
     bool single_sensor_source;  // True if this source only ever broadcasts temp1 (LEN 0x0D)
+    uint8_t unclamped_temp[2];  // Latest CMD 0x31 byte per sensor; tells a CMD 0x16
+                                // 0x00 (not connected) from a genuine 0°C
 } seen_device_t;
 
 // Operating mode values (CMD 0x14 status broadcast and register 0x65; note

@@ -35,6 +35,10 @@ static struct {
     bool service_mode;
 } s_discovery_published = {0};
 
+// Whether each temperature sensor's last publish was a not-connected null, so
+// repeated not-connected readings publish it only once
+static bool s_temp_null_published[MAX_SEEN_DEVICES][2];   // [dev_idx][sensor_index-1]
+
 // Effective multicolor light type each zone's discovery was last published with
 // (drives the color effect list); only meaningful while the zone's
 // s_discovery_published.lights flag is set
@@ -139,9 +143,15 @@ void mqtt_publish_temperature_reading(const pool_state_t *current_state, int dev
     if (sensor_index < 1 || sensor_index > 2) return;
 
     const seen_device_t *d = &current_state->seen_devices[dev_idx];
-    uint8_t value = (sensor_index == 1) ? d->temp1 : d->temp2;
-    bool    valid = (sensor_index == 1) ? d->temp1_valid : d->temp2_valid;
-    if (!valid) return;
+    uint8_t value     = (sensor_index == 1) ? d->temp1 : d->temp2;
+    bool    connected = (sensor_index == 1) ? d->temp1_connected : d->temp2_connected;
+
+    // A sensor that is not connected publishes a null value (HA shows it as
+    // unknown) once per run of not-connected readings. This also clears a
+    // stale retained value left by an earlier boot or firmware.
+    bool *null_published = &s_temp_null_published[dev_idx][sensor_index - 1];
+    if (!connected && *null_published) return;
+    *null_published = !connected;
 
     // Called for an actual sensor report, including an unchanged reading.
     // Do not cache the whole device: that would mark its other sensor as
@@ -153,8 +163,9 @@ void mqtt_publish_temperature_reading(const pool_state_t *current_state, int dev
     char slug[24];
     get_device_slug(d->addr_hi, d->addr_lo, slug, sizeof(slug));
 
-    // Lazy HA discovery — published once per (dev_idx, sensor_index) on first reading.
-    if (dev_idx < MAX_SEEN_DEVICES && !s_discovery_published.temp_sensors[dev_idx][sensor_index - 1]) {
+    // Lazy HA discovery — published once per (dev_idx, sensor_index) on the
+    // first connected reading, so a sensor that was never wired gets no entity.
+    if (connected && !s_discovery_published.temp_sensors[dev_idx][sensor_index - 1]) {
         mqtt_publish_temperature_sensor_discovery_single(
             d->addr_hi, d->addr_lo, sensor_index, d->single_sensor_source);
         s_discovery_published.temp_sensors[dev_idx][sensor_index - 1] = true;
@@ -168,13 +179,20 @@ void mqtt_publish_temperature_reading(const pool_state_t *current_state, int dev
     }
 
     char payload[64];
-    snprintf(payload, sizeof(payload), "{\"value\":%d}", value);
+    char value_str[16];
+    if (connected) {
+        snprintf(payload, sizeof(payload), "{\"value\":%d}", value);
+        snprintf(value_str, sizeof(value_str), "%d°C", value);
+    } else {
+        snprintf(payload, sizeof(payload), "{\"value\":null}");
+        snprintf(value_str, sizeof(value_str), "not connected");
+    }
     mqtt_publish(topic, payload, 0, true);
 
     if (d->single_sensor_source) {
-        ESP_LOGI(TAG, "Published temperature: %s=%d°C", slug, value);
+        ESP_LOGI(TAG, "Published temperature: %s=%s", slug, value_str);
     } else {
-        ESP_LOGI(TAG, "Published temperature: %s/%u=%d°C", slug, sensor_index, value);
+        ESP_LOGI(TAG, "Published temperature: %s/%u=%s", slug, sensor_index, value_str);
     }
 }
 

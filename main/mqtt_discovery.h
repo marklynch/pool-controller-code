@@ -89,8 +89,8 @@ void mqtt_publish_mode_discovery_single(void);
 void mqtt_remove_mode_discovery(void);
 
 // Publish individual temperature-sensor discovery for a (source, sensor) pair.
-// Called the first time `mqtt_publish_temperature_reading` fires for each
-// (dev_idx, sensor_index). `single_sensor_source` selects the HA entity name
+// Called the first time `mqtt_publish_temperature_reading` publishes a
+// connected reading for each (dev_idx, sensor_index). `single_sensor_source` selects the HA entity name
 // and state topic shape — see mqtt_publish.c.
 void mqtt_publish_temperature_sensor_discovery_single(
     uint8_t addr_hi, uint8_t addr_lo,

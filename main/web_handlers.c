@@ -268,12 +268,18 @@ static esp_err_t home_get_handler(httpd_req_t *req)
         "const rows=[];"
         "if(data.separate_pool_spa_modes!==null)rows.push(['Separate Pool/Spa Modes',data.separate_pool_spa_modes?'Yes':'No']);"
         "if(data.mode!==null)rows.push(['Mode',data.mode]);"
-        "const deg='\u00b0'+(data.temperature.scale==='Fahrenheit'?'F':'C');"
+        // Readings are always \u00b0C on the bus; the scale only sets how the
+        // Touchscreen displays them, so convert to match it.
+        "const temp=data.temperature.scale==='Fahrenheit'"
+        "?v=>Math.round(v*9/5+32)+'\u00b0F':v=>v+'\u00b0C';"
         "data.devices.forEach(d=>{"
-        "if(d.temperature1==null)return;"
+        "if(!('temperature1' in d))return;"
         "const multi='temperature2' in d;"
-        "rows.push([d.name+(multi?' Temperature 1':' Temperature'),d.temperature1+deg]);"
-        "if(d.temperature2!=null)rows.push([d.name+' Temperature 2',d.temperature2+deg]);});"
+        "const sensor=(n,label)=>rows.push(d['temperature'+n+'_connected']"
+        "?[d.name+label,temp(d['temperature'+n])]"
+        ":[d.name+label,'Not connected','text-lighter']);"
+        "sensor(1,multi?' Temperature 1':' Temperature');"
+        "if(multi)sensor(2,' Temperature 2');});"
         "data.heaters.forEach(h=>rows.push(['Heater '+(h.index+1),h.state]));"
         "data.channels.forEach(ch=>rows.push([ch.name||ch.type,ch.state]));"
         "data.lighting.forEach(lt=>{"
@@ -315,10 +321,11 @@ static esp_err_t home_get_handler(httpd_req_t *req)
         "memtr.innerHTML='<th>Memory</th><td>'+mem.free_heap+' free (min '+mem.min_free_heap+')</td>';"
         "document.getElementById('sys-body').appendChild(memtr);}"
         "const tb=document.getElementById('pool-body');"
-        "rows.forEach(([k,v])=>{"
+        "rows.forEach(([k,v,cls])=>{"
         "const tr=document.createElement('tr');"
         "const th=document.createElement('th');th.textContent=k;"
         "const td=document.createElement('td');td.textContent=v;"
+        "if(cls)td.className=cls;"
         "tr.appendChild(th);tr.appendChild(td);"
         "tb.appendChild(tr);});"
         "document.getElementById('pool-loading').hidden=true;"
@@ -698,6 +705,19 @@ static void add_fw_version(cJSON *obj, const char *key, const seen_device_t *d)
     }
 }
 
+// Add one temperature sensor's reading (°C, or null when not connected) and
+// its connected flag.
+static void add_temp_reading(cJSON *obj, const char *key, const char *connected_key,
+                             uint8_t value, bool connected)
+{
+    if (connected) {
+        cJSON_AddNumberToObject(obj, key, value);
+    } else {
+        cJSON_AddNullToObject(obj, key);
+    }
+    cJSON_AddBoolToObject(obj, connected_key, connected);
+}
+
 static esp_err_t status_get_handler(httpd_req_t *req)
 {
     const esp_app_desc_t *app_desc = esp_app_get_description();
@@ -753,18 +773,16 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         add_fw_version(dev, "firmware_version", d);
 
         // Temperatures hosted by this device — only emitted for devices that
-        // have actually broadcast a CMD 0x16 reading (i.e. once temp1_valid
-        // first goes true, signalling that this source is a temperature
-        // sensor). `temperature2` only appears for multi-sensor sources
-        // (LEN 0x0E payloads).
-        if (d->temp1_valid) {
-            cJSON_AddNumberToObject(dev, "temperature1", d->temp1);
+        // have broadcast a CMD 0x16 reading. Each sensor has a value (°C,
+        // whatever the display scale; null when not connected) and a
+        // `_connected` flag. `temperature2` only appears for multi-sensor
+        // sources (LEN 0x0E payloads).
+        if (d->has_temp_sensors) {
+            add_temp_reading(dev, "temperature1", "temperature1_connected",
+                             d->temp1, d->temp1_connected);
             if (!d->single_sensor_source) {
-                if (d->temp2_valid) {
-                    cJSON_AddNumberToObject(dev, "temperature2", d->temp2);
-                } else {
-                    cJSON_AddNullToObject(dev, "temperature2");
-                }
+                add_temp_reading(dev, "temperature2", "temperature2_connected",
+                                 d->temp2, d->temp2_connected);
             }
         }
 

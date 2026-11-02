@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Security
 
+## [1.21.3] - 2026-11-03
+### Added
+- The home page now lists every temperature sensor a device reports, showing "Not connected" for one with nothing wired to it instead of leaving it out. The `/status` JSON gives each sensor a `temperatureN_connected` flag alongside its value, which is `null` while the sensor is not connected
+### Changed
+- Temperature sensors that are not connected are now logged as "not connected" at info level instead of as a yellow "INVALID" warning, so an unused sensor input no longer looks like a fault in the Debug Log
+- Renamed CMD `0x31` from "Water Temperature Reading (alt)" to "Water Temperature Reading (unclamped)" in the log and PROTOCOL.md. It carries the same °C reading as CMD `0x16`, but appears to pass an unwired sensor's out-of-range value through where `0x16` clamps it to 0
+### Fixed
+- Fixed a temperature sensor with nothing wired to it being reported as 0°C on the controller's CMD `0x16` reading, which published 0°C to Home Assistant on systems whose water temperature comes from a heater. A 0 now counts as a real 0°C only when the controller's CMD `0x31` reading confirms the sensor is connected
+- Fixed a temperature sensor that stops reporting keeping its last reading forever on the home page, in `/status` and in Home Assistant. It now shows as not connected, and Home Assistant shows it as unknown, which also clears a 0°C left over from earlier firmware
+- Fixed the home page labelling temperature readings °F on systems set to Fahrenheit, though the bus always reports them in °C (the scale only changes the Touchscreen's display). Readings are now converted to °F for display; `/status` and Home Assistant still use °C
+- Widened the not-connected threshold from 160°C (`0xA0`) to 128°C (`0x80`), as the value an unwired sensor reports wanders (`0xA6`–`0xB9` seen so far) and came close to the old limit
+
 ## [1.21.2] - 2026-11-01
 ### Fixed
 - The automatic firmware update check now runs every 12 hours, as intended. A 32-bit overflow in the interval conversion meant it ran about every 4 minutes, fetching GitHub's release feed that often since v1.10.0 and, since v1.21.0, sending an anonymous usage ping just as often

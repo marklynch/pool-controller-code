@@ -280,7 +280,7 @@ static const cmd_name_entry_t CMD_NAME_TABLE[] = {
     {0x2B, "Controller Heartbeat"},
     {0x2C, "Solar Status"},
     {0x2D, "Solar Setpoint"},
-    {0x31, "Temperature Reading (alt)"},
+    {0x31, "Temperature Reading (unclamped)"},
     {0x36, "Gateway Info Request"},
     {0x37, "Gateway Info"},
     {0x38, "Register Response"},
@@ -691,13 +691,13 @@ static const register_handler_t REGISTER_HANDLERS[] = {
 
 #define REGISTER_HANDLER_COUNT (sizeof(REGISTER_HANDLERS) / sizeof(REGISTER_HANDLERS[0]))
 
-// Sensor disconnected / invalid reading sentinel — values >= 0xA0 (160°C) are
-// not real water temperatures. Observed e.g. as 0xAF in a Connect 8/10 with
-// no sensor wired up.
-#define TEMP_INVALID_MIN 0xA0
+// Sensor not connected — any temperature byte with the top bit set (>= 128°C)
+// is not a real reading. CMD 0x31 reports an unwired sensor this way, with a
+// value that wanders between installs and cycles (0xA6–0xB9 observed).
+#define TEMP_NOT_CONNECTED_MIN 0x80
 
-static inline bool temp_is_invalid(uint8_t t) {
-    return t >= TEMP_INVALID_MIN;
+static inline bool temp_is_not_connected(uint8_t t) {
+    return t >= TEMP_NOT_CONNECTED_MIN;
 }
 
 // Forward declaration — definition is further down with the other registry
@@ -820,11 +820,18 @@ static __attribute__((noinline)) void expire_pump_readings(message_decoder_conte
  *
  * Source-agnostic and dispatched on the CMD byte. The two CMDs carry the same
  * `{temp1, temp2}` field layout; the only practical difference is the
- * "sensor disconnected" encoding:
- *  - CMD 0x16: a disconnected sensor is reported as `0x00` (indistinguishable
- *    from a genuine 0°C reading — treated as valid by this handler).
- *  - CMD 0x31: a disconnected sensor is reported as `>= 0xA0` (a clean sentinel,
- *    e.g. 0xAF in installations with no sensor wired).
+ * "sensor not connected" encoding:
+ *  - CMD 0x16: a sensor that is not connected reads `0x00`, the same as a
+ *    genuine 0°C.
+ *  - CMD 0x31: a sensor that is not connected reads `>= 0x80`.
+ * Theory (see PROTOCOL.md `0x31`): both carry the same °C conversion, and an
+ * unwired thermistor converts to an extreme cold; 0x31 sends it unclamped
+ * (a negative signed byte), 0x16 clamps it to 0x00.
+ * The latest CMD 0x31 byte is kept per sensor, so a CMD 0x16 zero counts as a
+ * real 0°C only when that sensor's CMD 0x31 also read 0x00. The Connect 8/10
+ * sends CMD 0x16 first, ~70 ms before CMD 0x31, so this uses the previous
+ * cycle's 0x31; until one arrives (and for sources that never send 0x31, such
+ * as heaters) a CMD 0x16 zero is treated as not connected.
  *
  * Payload layouts (selected by LENGTH byte / payload_len):
  *  - LEN 0x0E (e.g. 0x0062 Connect 8/10): 2-byte payload `{temp1, temp2}` in °C.
@@ -832,10 +839,11 @@ static __attribute__((noinline)) void expire_pump_readings(message_decoder_conte
  *
  * CMD 0x16 is the canonical source — it writes temp1/temp2 onto the source's
  * `seen_device_t` entry (looked up by the message's source address) and
- * publishes to MQTT. CMD 0x31 is log-only (the Connect 8/10 broadcasts both
- * ~70 ms apart with the same temp1; suppressing 0x31 avoids dual MQTT updates).
- * Values >= 0xA0 are skipped. `single_sensor_source` is committed at first
- * sight from the payload length so the MQTT topic shape stays stable.
+ * publishes to MQTT. CMD 0x31 only records its bytes and logs (publishing
+ * both would double the MQTT updates for the same reading). Each CMD 0x16 sets
+ * or clears the sensors' `connected` flags; a sensor that is not connected
+ * keeps its last value but publishes null. `single_sensor_source` is committed
+ * at first sight from the payload length so the MQTT topic shape stays stable.
  */
 static bool handle_temp_reading(
     const uint8_t *data, int len,
@@ -846,75 +854,60 @@ static bool handle_temp_reading(
     if (payload_len < 1) return false;
 
     bool is_canonical = (data[7] == 0x16);
-    const char *variant = is_canonical ? "" : " (alt)";
+    const char *variant = is_canonical ? "" : " (unclamped)";
+    int sensor_count = (payload_len >= 2) ? 2 : 1;
+    bool connected[2] = {false, false};
 
-    uint8_t current_temp = payload[0];
-    bool t1_invalid = temp_is_invalid(current_temp);
-
-    if (payload_len >= 2) {
-        uint8_t current_temp2 = payload[1];
-        bool t2_invalid = temp_is_invalid(current_temp2);
-        if (t1_invalid || t2_invalid) {
-            char t1_buf[24], t2_buf[24];
-            if (t1_invalid) snprintf(t1_buf, sizeof t1_buf, "INVALID (raw 0x%02X)", current_temp);
-            else            snprintf(t1_buf, sizeof t1_buf, "%d°C", current_temp);
-            if (t2_invalid) snprintf(t2_buf, sizeof t2_buf, "INVALID (raw 0x%02X)", current_temp2);
-            else            snprintf(t2_buf, sizeof t2_buf, "%d°C", current_temp2);
-            ESP_LOGW(TAG, "%s Current temperature%s - %s, temp2: %s",
-                     addr_info, variant, t1_buf, t2_buf);
-        } else {
-            ESP_LOGI(TAG, "%s Current temperature%s - %d°C (temp2: %d°C)",
-                     addr_info, variant, current_temp, current_temp2);
-        }
-    } else {
-        if (t1_invalid) {
-            ESP_LOGW(TAG, "%s Current temperature%s - INVALID (raw 0x%02X)",
-                     addr_info, variant, current_temp);
-        } else {
-            ESP_LOGI(TAG, "%s Current temperature%s - %d°C", addr_info, variant, current_temp);
-        }
-    }
-
-    if (!is_canonical) {
-        return true;  // CMD 0x31 is log-only.
-    }
-
-    // Canonical path (CMD 0x16): write to the source device's temp slots and publish.
     pool_state_t snapshot;
     if (!state_lock(ctx, "temp reading")) return true;
 
     int dev_idx = find_or_insert_seen_device_locked(ctx->pool_state, data[1], data[2]);
-    if (dev_idx >= 0) {
-        seen_device_t *dev = &ctx->pool_state->seen_devices[dev_idx];
+    seen_device_t *dev = (dev_idx >= 0) ? &ctx->pool_state->seen_devices[dev_idx] : NULL;
 
-        // Commit the source's sensor-count shape on first sight. Once set, it
-        // stays — keeps MQTT topics stable across the device's lifetime.
-        if (!dev->temp1_valid && !dev->temp2_valid) {
-            dev->single_sensor_source = (payload_len < 2);
-        }
-
-        if (!t1_invalid) {
-            dev->temp1 = current_temp;
-            dev->temp1_valid = true;
-        }
-        if (payload_len >= 2 && !dev->single_sensor_source) {
-            uint8_t t2 = payload[1];
-            if (!temp_is_invalid(t2)) {
-                dev->temp2 = t2;
-                dev->temp2_valid = true;
-            }
+    for (int i = 0; i < sensor_count; i++) {
+        uint8_t raw = payload[i];
+        connected[i] = !temp_is_not_connected(raw);
+        if (!is_canonical) {
+            if (dev) dev->unclamped_temp[i] = raw;
+        } else if (raw == 0x00) {
+            connected[i] = dev && dev->unclamped_temp[i] == 0x00;
         }
     }
 
-    bool publish_temp2 = (dev_idx >= 0)
-                      && !ctx->pool_state->seen_devices[dev_idx].single_sensor_source
-                      && payload_len >= 2 && !temp_is_invalid(payload[1]);
-    state_unlock(ctx, true, &snapshot);
-
-    if (ctx->enable_mqtt) {
-        if (!t1_invalid && dev_idx >= 0) {
-            mqtt_publish_temperature_reading(&snapshot, dev_idx, 1);
+    if (is_canonical && dev) {
+        // Commit the source's sensor-count shape on first sight. Once set, it
+        // stays — keeps MQTT topics stable across the device's lifetime.
+        if (!dev->has_temp_sensors) {
+            dev->has_temp_sensors = true;
+            dev->single_sensor_source = (payload_len < 2);
         }
+
+        dev->temp1_connected = connected[0];
+        if (connected[0]) dev->temp1 = payload[0];
+        if (!dev->single_sensor_source) {
+            dev->temp2_connected = (sensor_count == 2) && connected[1];
+            if (dev->temp2_connected) dev->temp2 = payload[1];
+        }
+    }
+
+    bool publish = is_canonical && dev;
+    bool publish_temp2 = publish && !dev->single_sensor_source;
+    state_unlock(ctx, is_canonical, is_canonical ? &snapshot : NULL);
+
+    char t_buf[2][24];
+    for (int i = 0; i < sensor_count; i++) {
+        if (connected[i]) snprintf(t_buf[i], sizeof t_buf[i], "%d°C", payload[i]);
+        else              snprintf(t_buf[i], sizeof t_buf[i], "not connected");
+    }
+    if (sensor_count == 2) {
+        ESP_LOGI(TAG, "%s Current temperature%s - %s (temp2: %s)",
+                 addr_info, variant, t_buf[0], t_buf[1]);
+    } else {
+        ESP_LOGI(TAG, "%s Current temperature%s - %s", addr_info, variant, t_buf[0]);
+    }
+
+    if (ctx->enable_mqtt && publish) {
+        mqtt_publish_temperature_reading(&snapshot, dev_idx, 1);
         if (publish_temp2) {
             mqtt_publish_temperature_reading(&snapshot, dev_idx, 2);
         }
@@ -1945,11 +1938,15 @@ static int find_or_insert_seen_device_locked(pool_state_t *st, uint8_t hi, uint8
     st->seen_devices[idx].fw_version_minor = 0;
     st->seen_devices[idx].decoded_count = 0;
     st->seen_devices[idx].unknown_count = 0;
+    st->seen_devices[idx].has_temp_sensors = false;
     st->seen_devices[idx].temp1 = 0;
     st->seen_devices[idx].temp2 = 0;
-    st->seen_devices[idx].temp1_valid = false;
-    st->seen_devices[idx].temp2_valid = false;
+    st->seen_devices[idx].temp1_connected = false;
+    st->seen_devices[idx].temp2_connected = false;
     st->seen_devices[idx].single_sensor_source = false;
+    // Until a CMD 0x31 says otherwise, a CMD 0x16 zero means "not connected".
+    st->seen_devices[idx].unclamped_temp[0] = TEMP_NOT_CONNECTED_MIN;
+    st->seen_devices[idx].unclamped_temp[1] = TEMP_NOT_CONNECTED_MIN;
     return idx;
 }
 
@@ -4728,9 +4725,9 @@ static bool dispatch_message(
         return handle_valve_sync(data, len, payload, payload_len, addr_info, ctx);
     }
 
-    // Water temperature reading — CMD 0x16 (canonical) and CMD 0x31 (alt/
-    // log-only) share the same {temp1, temp2} layout and are routed through
-    // the same handler. See PROTOCOL.md commands `0x16` and `0x31`.
+    // Water temperature reading — CMD 0x16 (canonical) and CMD 0x31
+    // (unclamped, not published) share the same {temp1, temp2} layout and are
+    // routed through the same handler. See PROTOCOL.md commands `0x16` and `0x31`.
     if (cmd == 0x16 || cmd == 0x31) {
         return handle_temp_reading(data, len, payload, payload_len, addr_info, ctx);
     }

@@ -41,7 +41,7 @@ This document describes the proprietary serial protocol used by the Connect 10 p
   - [0x2B — Unknown ⚠️](#0x2b--unknown-️)
   - [0x2C — Solar Status Broadcast ⚠️](#0x2c--solar-status-broadcast-️)
   - [0x2D — Solar Setpoint Broadcast ✅](#0x2d--solar-setpoint-broadcast-)
-  - [0x31 — Water Temperature Reading (alt) ✅](#0x31--water-temperature-reading-alt-)
+  - [0x31 — Water Temperature Reading (unclamped) ✅](#0x31--water-temperature-reading-unclamped-)
   - [0x36 — Internet Gateway Info Request ✅](#0x36--internet-gateway-info-request-)
   - [0x37 — Internet Gateway Info ⚠️](#0x37--internet-gateway-info-️)
   - [0x38 — Register Data ⚠️](#0x38--register-data-️)
@@ -254,7 +254,7 @@ Click any CMD in the first column to jump to the full section in [Commands](#com
 | [`0x2B`](#0x2b--unknown-️)                                     | Unknown (heartbeat)                 | `0x0062` Connect 10 → `0x0050` Touchscreen                            | Unicast ~60 s; payload `[02 00]` observed; meaning unknown. Handler flags any deviation      | Yes (log-only + flag)   |
 | [`0x2C`](#0x2c--solar-status-broadcast-️)                      | Solar Status Broadcast              | `0x0050` Touchscreen → Broadcast                                       | Byte 11 = solar mode (Off/Auto/On); byte 15 = temperature differential °C; dispatched on CMD byte alone | Yes                     |
 | [`0x2D`](#0x2d--solar-setpoint-broadcast-)                     | Solar Setpoint Broadcast            | `0x0050` Touchscreen → Broadcast                                       | Fired when the solar setpoint is changed; 1-byte °C value; dispatched on CMD byte alone     | Yes (log-only)          |
-| [`0x31`](#0x31--water-temperature-reading-alt-)                | Water Temperature Reading (alt)     | `0x0062` → Broadcast                                                   | Same `{temp1, temp2}` field layout as `0x16`; different disconnected encoding (`>= 0xA0` vs `0x00`); shared handler, log-only | Yes (unified handler)   |
+| [`0x31`](#0x31--water-temperature-reading-unclamped-)          | Water Temperature Reading (unclamped) | `0x0062` → Broadcast                                                   | Same `{temp1, temp2}` field layout as `0x16`; different not-connected encoding (`>= 0x80` vs `0x00`); shared handler, not published | Yes (unified handler)   |
 | [`0x36`](#0x36--internet-gateway-info-request-)               | Internet Gateway Info Request       | `0x0050` Touchscreen → `0x00F0` Gateway                                | Unicast; byte 10 selects the item (`0x01` network config, `0x02` comms status, `0x04` serial, `0x05` firmware version) and the Gateway answers with the matching `0x37`; `0x03` is a Reconnect command with no reply; dispatched on CMD byte alone | Yes (log-only)          |
 | [`0x37`](#0x37--internet-gateway-info-️)                       | Internet Gateway Info               | `0x00F0` → Broadcast                                                   | Byte 10 (item ID) selects the variant: network config (`0x01`), comms status (`0x02`), serial (`0x04`), firmware version (`0x05`); LEN alone is ambiguous (`0x02` and `0x05` are both `0x0F`); sent on its own and in reply to `0x36`; dispatched on CMD byte alone | Yes (routed by item)    |
 | [`0x38`](#0x38--register-data-️)                               | Register Data (Response)            | `0x0050` Touchscreen, `0x0070` Genus / `0x0072` HiNRG / `0x0074` ICI Heater → Broadcast | Universal register system — sub-dispatched by register + slot (see [Appendix A](#appendix-a-register-dispatch-table)); dispatched on CMD byte alone | Yes (unified handler)   |
@@ -1151,9 +1151,9 @@ Current water temperature broadcast by the device that measures it. There are tw
 | `0x0072` HiNRG Gas Heater       | `0x0D` | 1 byte  — `{temp1}`           | ✅ |
 | `0x0074` ICI Gas Heater         | `0x0D` | 1 byte  — `{temp1}`           | ✅ |
 
-All variants are handled by the unified `handle_temp_reading()`, which selects the layout from `payload_len`. The Connect 10 also emits a second water-temperature variant under [0x31 — Water Temperature Reading (alt)](#0x31--water-temperature-reading-alt-) — same `{temp1, temp2}` field layout, routed through the same handler, but log-only and with a different disconnected-sensor encoding (`>= 0xA0` rather than `0x00`).
+All variants are handled by the unified `handle_temp_reading()`, which selects the layout from `payload_len`. The Connect 10 also emits a second water-temperature variant under [0x31 — Water Temperature Reading (unclamped)](#0x31--water-temperature-reading-unclamped-) — same `{temp1, temp2}` field layout, routed through the same handler, but not published and with a different not-connected encoding (`>= 0x80` rather than `0x00`).
 
-**Invalid-reading sentinel:** any temperature byte with a raw value `>= 0xA0` (≥ 160°C) indicates a disconnected or invalid sensor. The handler logs these as warnings and does not publish them to MQTT.
+**Sensor not connected:** CMD `0x16` reports a sensor that is not connected as `0x00`, the same byte as a genuine 0°C. The handler keeps the latest [0x31](#0x31--water-temperature-reading-unclamped-) byte for each sensor and accepts a `0x16` zero as 0°C only when that sensor's `0x31` also read `0x00`. Until a `0x31` arrives, and for sources that never send one (the heaters), a `0x16` zero is treated as not connected. A byte `>= 0x80` (≥ 128°C) is also treated as not connected. A sensor that is not connected is logged as such, reported as not connected on the web status page, and published to MQTT as a null value (unknown in Home Assistant).
 
 ---
 
@@ -1942,31 +1942,33 @@ Broadcast from the Touchscreen (`0x0050`) when the solar temperature setpoint is
 
 ---
 
-### 0x31 — Water Temperature Reading (alt) ✅
+### 0x31 — Water Temperature Reading (unclamped) ✅
 
-Second water-temperature variant broadcast by the Connect 10 Controller (`0x0062`), in parallel to the [0x16](#0x16--water-temperature-reading-) reading. The two CMDs carry the same `{temp1, temp2}` field layout; the only practical difference is the **disconnected-sensor encoding**:
+Second water-temperature reading broadcast by the Connect 10 Controller (`0x0062`), in parallel to the [0x16](#0x16--water-temperature-reading-) reading. The two CMDs carry the same `{temp1, temp2}` field layout; the only practical difference is the **not-connected encoding**:
 
-- CMD `0x16` reports a disconnected sensor as `0x00` (indistinguishable from a genuine 0°C reading).
-- CMD `0x31` reports a disconnected sensor as `>= 0xA0` (a clean sentinel — observed values include `0xA6`, `0xAD`, `0xAF`).
+- CMD `0x16` reports a sensor that is not connected as `0x00` (the same byte as a genuine 0°C reading).
+- CMD `0x31` reports a sensor that is not connected as a high byte, treated as `>= 0x80`. The value is not fixed: observed values range from `0xA6` to `0xB9`, varying between installs and from cycle to cycle. Real readings observed so far are all below `0x20`.
 
-Confirmed by paired captures: whenever a CMD `0x31` byte reads `>= 0xA0`, the corresponding CMD `0x16` byte in the same broadcast cycle reads `0x00`.
+Confirmed by paired captures: across 3,862 pairs, a connected `0x31` byte always equals the `0x16` byte in the same broadcast cycle, and whenever a `0x31` byte reads as not connected, the `0x16` byte reads `0x00`. Neither changes when the display scale is switched to Fahrenheit — both are always °C.
+
+**Why "unclamped" (theory):** both CMDs appear to carry the output of the same thermistor-to-°C conversion — not a raw thermistor value, since a connected reading matches `0x16` exactly across 14–30°C, which raw counts from a non-linear NTC thermistor would not. They differ only in how an out-of-range result is handled. An open-circuit (unwired) thermistor has near-infinite resistance, which converts to an extremely cold temperature. Read as a signed byte, the `0x31` not-connected values are about −90 to −71°C, consistent with that conversion passed through unclamped, wandering with electrical noise; `0x16` clamps the same result to a floor of `0x00`. This fits all captures but is unconfirmed: a genuine sub-zero reading (signed negative in `0x31`, `0x00` in `0x16`) or a shorted sensor would confirm or rule it out.
 
 **Pattern:** `02 00 62 FF FF 80 00 31 0E 21`
 
 ```
 02 00 62 FF FF 80 00 31 0E 21 1E A6 C4 03
                               ^^ Current water temperature 1 (0x1E = 30°C)
-                                 ^^ Current water temperature 2 (0xA6 = disconnected sensor)
+                                 ^^ Current water temperature 2 (0xA6 = not connected)
 ```
 
 **Data Fields:**
 
-- Byte 10: Current water temperature 1 in °C (`>= 0xA0` = disconnected)
-- Byte 11: Current water temperature 2 in °C (`>= 0xA0` = disconnected)
+- Byte 10: Current water temperature 1 in °C (`>= 0x80` = not connected)
+- Byte 11: Current water temperature 2 in °C (`>= 0x80` = not connected)
 
 **Notes:**
 
-- Both `0x16` and `0x31` are routed through the same `handle_temp_reading()` (dispatched on the CMD byte). `0x16` is the canonical source — it updates `pool_state->current_temp` and publishes to MQTT. `0x31` is log-only to avoid dual MQTT updates for the same reading (the Connect 10 broadcasts them ~70 ms apart).
+- Both `0x16` and `0x31` are routed through the same `handle_temp_reading()` (dispatched on the CMD byte). `0x16` is the canonical source — it updates the source device's temperatures and publishes to MQTT. `0x31` is not published, to avoid dual MQTT updates for the same reading (the Connect 10 broadcasts `0x16` first and `0x31` ~70 ms later); its bytes are kept to tell a `0x16` zero that means "not connected" from a genuine 0°C.
 - Byte 10 has been observed decreasing as pool water cools (30→25°C), confirming it as the current temperature.
 
 ---
