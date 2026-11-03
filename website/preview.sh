@@ -12,7 +12,7 @@
 # _headers; to check those too, run `npx wrangler dev` from website/ after this
 # has built dist/.
 #
-# Opening website/install/index.html straight from disk does NOT work:
+# Opening website/public/install/index.html straight from disk does NOT work:
 # manifest.json and versions.json are generated, and file:// can't fetch them anyway.
 set -euo pipefail
 

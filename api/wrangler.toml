@@ -14,6 +14,14 @@ routes = [
 [observability]
 enabled = false
 
+# Static files served ahead of the script: a path that matches one never runs
+# the Worker, so these are cached and don't count against request limits:
+# robots.txt, so crawlers don't index this host, and the favicons (copies of
+# the website's, see docs/website.md). Everything else falls through to
+# worker.js.
+[assets]
+directory = "./public"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "pool-controller-usage"

@@ -5,6 +5,10 @@ sdkconfig.old
 main/secrets.h
 .cache/
 .vscode/settings.json
+# OS and editor droppings: website/public/ and api/public/ are published whole.
+.DS_Store
+*~
+*.swp
 website/dist/
 api/.wrangler/
 api/node_modules/

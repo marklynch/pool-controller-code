@@ -49,11 +49,23 @@ done
 
 [ -n "$OUT" ] || { echo "--out is required" >&2; exit 1; }
 
+# public/ is copied whole, so refuse files git doesn't track: CI publishes only
+# what's committed, and a local preview should show the same site. Ignored
+# files count too (no --exclude-standard), since cp would copy a .DS_Store just
+# the same. Staged files pass, so a new page can be previewed before commit.
+UNTRACKED=$(git -C "$SRC" ls-files --others -- public)
+if [ -n "$UNTRACKED" ]; then
+  echo "untracked files in website/public/ — git add or delete them:" >&2
+  printf '%s\n' "$UNTRACKED" | sed 's/^/  website\//' >&2
+  exit 1
+fi
+
 rm -rf "$OUT"
-# Everything installer-related lives under install/; the home page and shared
-# stylesheet sit at the root.
+# The static files in public/ are the site as-is; everything below adds the
+# generated parts. Everything installer-related lives under install/.
+mkdir -p "$OUT"
+cp -R "$SRC/public/." "$OUT/"
 INSTALL="$OUT/install"
-mkdir -p "$INSTALL"
 
 # Collected as "tag<TAB>published" lines, newest first.
 SELECTED=""
@@ -99,7 +111,7 @@ while IFS=$'\t' read -r tag published; do
   [ -n "$tag" ] || continue
   sed -e "s|__VERSION__|${tag}|g" \
       -e "s|__BINARY__|pool-controller-full-${tag}.bin|g" \
-      "$SRC/install/manifest.template.json" > "$INSTALL/manifest-${tag}.json"
+      "$SRC/manifest.template.json" > "$INSTALL/manifest-${tag}.json"
   if grep -q '__VERSION__\|__BINARY__' "$INSTALL/manifest-${tag}.json"; then
     echo "manifest-${tag}.json still contains unsubstituted placeholders" >&2
     exit 1
@@ -131,10 +143,6 @@ with open(os.path.join(out, "versions.json"), "w") as f:
     f.write("\n")
 PY
 
-cp "$SRC/index.html" "$SRC/site.css" "$SRC/_headers" "$OUT/"
-mkdir -p "$OUT/usage"
-cp "$SRC/usage/index.html" "$OUT/usage/"
-cp "$SRC/install/index.html" "$SRC/install/app.js" "$INSTALL/"
 # Kept so a direct link to manifest.json still resolves to the current release.
 cp "$INSTALL/manifest-${LATEST}.json" "$INSTALL/manifest.json"
 

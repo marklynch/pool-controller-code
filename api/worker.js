@@ -4,6 +4,8 @@
 //   POST   /v1/usage       {"id":"<16 lowercase hex>","v":"<firmware version>"}
 //   DELETE /v1/usage/<id>  sent when the user opts out: remove that install's rows
 //
+// /robots.txt and the favicons are static assets (public/), served without running this script.
+//
 // Any other path outside /v1/ redirects to the website's usage-reporting page.
 //
 // Stores the install ID, the version (in full, and as vMAJOR.MINOR.PATCH for

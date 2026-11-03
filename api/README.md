@@ -45,7 +45,7 @@ so in practice only the device that made it can delete it.
 
 Any path outside `/v1/`, such as the bare domain opened in a browser, gets a
 302 redirect to <https://poolcontrol.io/usage/>, the website's page explaining
-what devices send here. That page lives in `website/usage/`.
+what devices send here. That page lives in `website/public/usage/`.
 
 ### What's stored
 

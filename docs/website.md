@@ -6,7 +6,7 @@
 - **`/install/`** — the web installer, described below.
 - **`/usage/`** — what the anonymous usage report sends, what's stored, and how to turn it off. `api.poolcontrol.io` redirects browsers here, so keep the path stable.
 
-All pages share `website/site.css`.
+All pages share `website/public/site.css`.
 
 ## Web installer
 
@@ -16,15 +16,22 @@ The page offers the **5 most recent releases** in a version picker, defaulting t
 
 ## Page source
 
-- `website/index.html` — the home page.
-- `website/site.css` — styles shared by every page. In a file rather than inline so pages can keep a `style-src 'self'` CSP.
-- `website/usage/index.html` — the usage-reporting page. Static, like the home page.
-- `website/install/index.html` — the installer page. Static; it reads `versions.json` at runtime to build the picker, so it needs no build step.
-- `website/install/app.js` — the installer's script. Kept out of the HTML so the page's CSP can be `script-src 'self'` with no `'unsafe-inline'`.
-- `website/install/manifest.template.json` — the ESP Web Tools manifest, with `__VERSION__` / `__BINARY__` placeholders stamped once per offered version.
+`website/public/` holds the static files, laid out as they are served: `build-site.sh` copies the whole folder into `dist/`, so a file added there is published with no build change. This matches `api/public/`, the API Worker's static files.
+
+- `website/public/index.html` — the home page.
+- `website/public/site.css` — styles shared by every page. In a file rather than inline so pages can keep a `style-src 'self'` CSP.
+- `website/public/usage/index.html` — the usage-reporting page. Static, like the home page.
+- `website/public/install/index.html` — the installer page. Static; it reads `versions.json` at runtime to build the picker, so it needs no build step.
+- `website/public/install/app.js` — the installer's script. Kept out of the HTML so the page's CSP can be `script-src 'self'` with no `'unsafe-inline'`.
+- `website/public/_headers` — response headers for every file, applied by Cloudflare.
+- `website/public/robots.txt` — lets crawlers index the pages, but not the firmware binaries under `/install/`.
+- `website/public/favicon.svg`, `website/public/favicon.ico` — the site icon. Every page links the SVG; the `.ico` (16/32/48 px, rendered from the SVG) is for clients that only fetch `/favicon.ico`. `api/public/` holds copies of both, so change all four together.
+
+Build inputs and config, outside `public/` because they are not served:
+
+- `website/manifest.template.json` — the ESP Web Tools manifest, with `__VERSION__` / `__BINARY__` placeholders stamped once per offered version.
 - `website/build-site.sh` — assembles the deployable site.
 - `website/preview.sh` — builds it and serves it locally.
-- `website/_headers` — response headers for every file, applied by Cloudflare.
 - `website/wrangler.toml` — the Worker: name, custom domains, and `dist/` as its assets directory.
 
 The published site is *not* these files as-is. `build-site.sh` queries the recent releases, downloads each `pool-controller-full-<tag>.bin`, and emits per-version manifests plus a `versions.json` index — none of which exist in the repo. Both the workflow and `preview.sh` call that one script, so a local preview is exactly what gets deployed. Serving the binaries same-origin rather than linking them from the releases keeps the flasher's fetch simple.
@@ -80,4 +87,4 @@ Runs of Build & Release that aren't tag builds show up as *skipped* here. That's
 ./website/preview.sh --bin build/pool-controller-full.bin --version dev
 ```
 
-This builds into `website/dist` and serves it on <http://localhost:8000> (installer at `/install/`), which counts as a secure context, so the flasher really works. The Python server ignores `_headers`. To test the real Worker behaviour (headers, the `/install` → `/install/` redirect), run `npx wrangler dev` from `website/` after a build; it serves the same `dist/` on <http://localhost:8787>. Requires `gh` unless you pass `--bin`. Opening `website/install/index.html` from disk does **not** work — `manifest.json` and `versions.json` are generated, and `file://` can't fetch them anyway.
+This builds into `website/dist` and serves it on <http://localhost:8000> (installer at `/install/`), which counts as a secure context, so the flasher really works. The Python server ignores `_headers`. To test the real Worker behaviour (headers, the `/install` → `/install/` redirect), run `npx wrangler dev` from `website/` after a build; it serves the same `dist/` on <http://localhost:8787>. Requires `gh` unless you pass `--bin`. Opening `website/public/install/index.html` from disk does **not** work — `manifest.json` and `versions.json` are generated, and `file://` can't fetch them anyway.
