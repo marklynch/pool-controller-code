@@ -25,6 +25,7 @@ user turns it off, is described in the main [README](../README.md#usage-reportin
 | 400 | Body isn't JSON, or `id` isn't 16 lowercase hex chars, or `v` isn't `[\w.\-+]{1,48}` |
 | 404 / 405 | Wrong path under `/v1/` / wrong method |
 | 413 | Body over 256 bytes |
+| 415 | `Content-Type` isn't `application/json` |
 | 503 | Database write failed |
 
 ### Delete
