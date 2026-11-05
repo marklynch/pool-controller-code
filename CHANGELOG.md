@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 ### Changed
 ### Fixed
+- Fixed the Home Assistant Favourite select dropping the user favourites (Favourites 1–6) when "Use separate pool and spa modes" is off (#156). Only the Pool and Spa built-ins are hidden then, as on the Touchscreen; enabled user favourites are offered alongside All Off and All Auto
 - The device now remembers across restarts that a telemetry-sending pump has been seen. This fixes a bug (#100) where the MQTT published pump telemetry values were not set to zero if the Filter channel was turned off within ~60s of a restart
 ### Removed
 ### Deprecated

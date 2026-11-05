@@ -34,8 +34,8 @@ void mqtt_publish_mode(const pool_state_t *current_state);
 
 // Act on a change to the "Use separate pool and spa modes" setting (register
 // 0x64): offer the Pool/Spa mode select and the heater spa setpoints while it
-// is on, and retract them while it is off; the favourite select keeps only
-// All Off / All Auto while it is off.
+// is on, and retract them while it is off; the favourite select drops the
+// Pool / Spa built-ins while it is off (user favourites stay).
 void mqtt_publish_mode_config(const pool_state_t *current_state);
 
 // Publish channel state by ID (1-8) from pool state

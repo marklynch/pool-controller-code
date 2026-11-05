@@ -415,7 +415,7 @@ static inline bool heater_configured(const pool_state_t *state, int index, bool 
 
 // Whether the Touchscreen has reported its "Use separate pool and spa modes"
 // setting (register 0x64) as off. With it off, the Touchscreen offers no
-// Pool/Spa mode, no favourites other than All Off / All Auto, and a single
+// Pool/Spa mode, no Pool / Spa favourites (user favourites remain), and a single
 // (pool) setpoint per heater.
 // False while the setting is still unknown.
 static inline bool separate_pool_spa_modes_off(const pool_state_t *state)
