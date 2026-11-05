@@ -1837,11 +1837,11 @@ static void publish_favourite_discovery(const char *device_id, const char *mac_s
 
     cJSON *opts = cJSON_CreateArray();
 
-    // Without separate pool and spa modes the Touchscreen hides Pool, Spa and
-    // the user favourites, leaving only All Off / All Auto.
-    bool show_favourites = !(state && separate_pool_spa_modes_off(state));
+    // Without separate pool and spa modes the Touchscreen hides the Pool and
+    // Spa built-ins. The user favourites (Favourites 1–6) stay available.
+    bool show_pool_spa = !(state && separate_pool_spa_modes_off(state));
 
-    if (show_favourites) {
+    if (show_pool_spa) {
         // Pool (index FAVOURITE_POOL = 0)
         if (state && state->favourites[FAVOURITE_POOL].name_valid && state->favourites[FAVOURITE_POOL].name[0] != '\0') {
             cJSON_AddItemToArray(opts, cJSON_CreateString(state->favourites[FAVOURITE_POOL].name));
@@ -1855,19 +1855,19 @@ static void publish_favourite_discovery(const char *device_id, const char *mac_s
         } else {
             cJSON_AddItemToArray(opts, cJSON_CreateString("Spa"));
         }
+    }
 
-        // User favourites (indices 2–7)
-        for (int i = 2; i < MAX_FAVOURITES; i++) {
-            if (!state || !state->favourites[i].enabled_valid || !state->favourites[i].enabled) {
-                continue;
-            }
-            if (state->favourites[i].name_valid && state->favourites[i].name[0] != '\0') {
-                cJSON_AddItemToArray(opts, cJSON_CreateString(state->favourites[i].name));
-            } else {
-                char fallback[24];
-                snprintf(fallback, sizeof(fallback), "Favourite %d", i - 1);
-                cJSON_AddItemToArray(opts, cJSON_CreateString(fallback));
-            }
+    // User favourites (indices 2–7), whatever the separate-modes setting
+    for (int i = 2; i < MAX_FAVOURITES; i++) {
+        if (!state || !state->favourites[i].enabled_valid || !state->favourites[i].enabled) {
+            continue;
+        }
+        if (state->favourites[i].name_valid && state->favourites[i].name[0] != '\0') {
+            cJSON_AddItemToArray(opts, cJSON_CreateString(state->favourites[i].name));
+        } else {
+            char fallback[24];
+            snprintf(fallback, sizeof(fallback), "Favourite %d", i - 1);
+            cJSON_AddItemToArray(opts, cJSON_CreateString(fallback));
         }
     }
 

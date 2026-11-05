@@ -382,8 +382,8 @@ void mqtt_publish_mode_config(const pool_state_t *current_state)
         mqtt_remove_mode_discovery();
     }
 
-    // Without separate modes the Touchscreen also hides Pool, Spa and the user
-    // favourites (leaving All Off / All Auto), and keeps only the pool
+    // Without separate modes the Touchscreen also hides the Pool and Spa
+    // favourites (the user favourites stay), and keeps only the pool
     // setpoint. Both publishers follow the setting themselves.
     mqtt_publish_favourite_discovery_single(current_state);
     for (int i = 0; i < MAX_HEATERS; i++) {
