@@ -54,7 +54,7 @@ for test_src in test_*.c; do
         extra_srcs=(../main/framing.c ../main/lighting_colors.c ../main/channel_states.c ../main/filter_pump_type.c ../main/pump_telemetry.c)
     elif [ "$module" = "mqtt_commands" ]; then
         extra_srcs=(../main/lighting_colors.c ../main/channel_states.c)
-    elif [ "$module" = "mqtt_publish" ]; then
+    elif [ "$module" = "mqtt_publish" ] || [ "$module" = "mqtt_discovery" ]; then
         # Strip the publishers the test doesn't call, and with them their
         # cJSON and discovery references. Apple's linker spells it -dead_strip.
         if [ "$(uname)" = "Darwin" ]; then
