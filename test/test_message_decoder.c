@@ -1314,6 +1314,45 @@ void test_dedicated_solar_undocumented_mode_keeps_active(void)
 }
 
 /**
+ * Test: a color outside the known table is flagged from either of its sources,
+ * CMD 0x07 and the Light Zone Color register.
+ */
+void test_light_color_outside_table_flagged(void)
+{
+    init_test_context();
+
+    uint8_t broadcast_known[] = {
+        0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x07, 0x0E, 0xE5,
+        0x00, LIGHTING_COLOR_COUNT - 1, LIGHTING_COLOR_COUNT - 1, 0x03
+    };
+    int before = unknown_buffer_record_count;
+    TEST_ASSERT(decode_message(broadcast_known, sizeof(broadcast_known), &test_ctx),
+                "CMD 0x07 with the last known color decoded");
+    TEST_ASSERT(unknown_buffer_record_count == before,
+                "CMD 0x07 with a known color is not flagged");
+
+    uint8_t broadcast_unknown[] = {
+        0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x07, 0x0E, 0xE5,
+        0x00, LIGHTING_COLOR_COUNT, LIGHTING_COLOR_COUNT, 0x03
+    };
+    before = unknown_buffer_record_count;
+    TEST_ASSERT(decode_message(broadcast_unknown, sizeof(broadcast_unknown), &test_ctx),
+                "CMD 0x07 with an unknown color decoded");
+    TEST_ASSERT(unknown_buffer_record_count == before + 1,
+                "CMD 0x07 with an unknown color is flagged");
+
+    uint8_t register_unknown[] = {
+        0x02, 0x00, 0x50, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F, 0x17,
+        0xD0, 0x01, LIGHTING_COLOR_COUNT, (uint8_t)(0xD0 + 0x01 + LIGHTING_COLOR_COUNT), 0x03
+    };
+    before = unknown_buffer_record_count;
+    TEST_ASSERT(decode_message(register_unknown, sizeof(register_unknown), &test_ctx),
+                "Color register with an unknown color decoded");
+    TEST_ASSERT(unknown_buffer_record_count == before + 1,
+                "Color register with an unknown color is flagged");
+}
+
+/**
  * Test: an undocumented raw 0x0B state on the dedicated Solar channel is still
  * flagged, even though CMD 0x2C's mode replaces it.
  */
@@ -2430,6 +2469,7 @@ int main(void)
     test_dedicated_solar_state_register_does_not_override();
     test_dedicated_solar_status_before_type_register();
     test_dedicated_solar_undocumented_mode_keeps_active();
+    test_light_color_outside_table_flagged();
     test_dedicated_solar_undocumented_raw_state_flagged();
     test_solar_mode_and_output_are_independent();
     test_decode_channel_status_lights_active();

@@ -3070,6 +3070,23 @@ static bool handle_light_config(
 }
 
 /**
+ * Log a light zone's color in the same form for CMD 0x07 and the Light Zone
+ * Color register, naming the CMD it came from, and flag a code outside the
+ * known color table.
+ */
+static void log_light_zone_color(const uint8_t *data, int len, const char *addr_info,
+                                 uint8_t zone_idx, uint8_t color)
+{
+    const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
+    ESP_LOGI(TAG, "%s Lighting zone %d color (CMD 0x%02X) - 0x%02X - %s (%d)",
+             addr_info, zone_idx + 1, data[7], color, color_name, color);
+
+    if (color >= LIGHTING_COLOR_COUNT) {  // not in the known colour table
+        record_undocumented(data, len);
+    }
+}
+
+/**
  * Handler: Lighting zone color broadcast (CMD 0x07) — log-only
  * Dispatched on the CMD byte alone (source-agnostic).
  *
@@ -3096,7 +3113,7 @@ static bool handle_light_color(
         return true;
     }
 
-    ESP_LOGI(TAG, "%s Lighting zone %d color - 0x%02X", addr_info, zone_idx + 1, color);
+    log_light_zone_color(data, len, addr_info, zone_idx, color);
 
     return true;
 }
@@ -3745,12 +3762,7 @@ static bool handle_light_zone_color(
         return true;  // captured as undocumented; don't fall through to UNHANDLED
     }
 
-    const char *color_name = (color < LIGHTING_COLOR_COUNT) ? LIGHTING_COLOR_NAMES[color] : "Unknown";
-    ESP_LOGI(TAG, "%s Lighting zone %d color - %s (%d)", addr_info, zone_idx + 1, color_name, color);
-
-    if (color >= LIGHTING_COLOR_COUNT) {  // not in the known colour table
-        record_undocumented(data, len);
-    }
+    log_light_zone_color(data, len, addr_info, zone_idx, color);
 
     bool should_publish = false;
     uint8_t zone_num = 0;

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 ### Changed
 - Updated the favourite log lines to name favourites consistently: label and enable lines now number registers 1–8, matching their read requests (e.g. `Favourite 1 label (0x31) - "Pool"`), and the active favourite and control command lines show the favourite's label, or its default name until the label arrives (e.g. `Active favourite - filter and heatpump (0x03)`)
+- Updated the light zone color log lines to read the same from both sources, naming the command each came from (e.g. `Lighting zone 1 color (CMD 0x07) - 0x0E - Cyan (14)`), and a CMD `0x07` color outside the known table is now flagged as undocumented, as the color register already was
 ### Fixed
 - Fixed choosing a user favourite in the Home Assistant Favourite select doing nothing while its label hadn't arrived yet. The select offers it as e.g. `Favourite 3`, but the command handler only recognised received labels
 - Corrected PROTOCOL.md's description of the Pool and Spa favourite enable registers (`0x21`, `0x22`): they read `0x01` with "Use separate pool and spa modes" on and `0x00` with it off, rather than always `0x01`

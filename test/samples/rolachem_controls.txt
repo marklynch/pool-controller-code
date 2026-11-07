@@ -64,13 +64,13 @@ I (02:28:12.085) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:28:12.214) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:28:12.215) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:28:12.334) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:28:12.336) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:28:12.336) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:28:12.454) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:28:12.455) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:28:12.455) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:28:12.574) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:28:12.576) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:28:12.576) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:28:12.734) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:28:12.736) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:28:12.736) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:28:12.864) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:28:12.866) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:28:12.984) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -88,9 +88,9 @@ I (02:28:14.155) MSG_DECODER: [Connect 8/10 -> Broadcast] Heater - Off, Service 
 I (02:28:14.224) MSG_DECODER: RX MSG: 02 00 62 00 50 80 00 2B 0E 6D 02 00 02 03 
 I (02:28:14.226) MSG_DECODER: [Connect 8/10 -> Touch Screen] Controller heartbeat (CMD 0x2B): 0x02 0x00
 I (02:28:14.604) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:28:14.606) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:28:14.606) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:28:14.724) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:28:14.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:28:14.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:28:29.604) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:28:29.606) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:28:29.724) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -164,13 +164,13 @@ I (02:29:12.096) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:29:12.214) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:29:12.215) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:29:12.344) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:29:12.346) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:29:12.346) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:29:12.464) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:29:12.466) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:29:12.466) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:29:12.584) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:29:12.586) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:29:12.586) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:29:12.744) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:29:12.746) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:29:12.746) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:29:12.874) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:29:12.877) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:29:12.897) esp-x509-crt-bundle: Certificate validated
@@ -277,13 +277,13 @@ I (02:30:12.106) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:30:12.224) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:30:12.226) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:30:12.354) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:30:12.356) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:30:12.356) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:12.475) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:30:12.477) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:30:12.477) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:12.594) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:30:12.596) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:30:12.596) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:12.754) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:30:12.756) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:30:12.756) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:12.874) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:30:12.876) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:30:13.004) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -367,13 +367,13 @@ I (02:30:25.106) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:30:25.234) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:30:25.236) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:30:25.354) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:30:25.356) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:30:25.356) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:25.474) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:30:25.476) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:30:25.476) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:25.594) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:30:25.596) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:30:25.596) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:25.714) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:30:25.715) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:30:25.715) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:25.844) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:30:25.846) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:30:25.964) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -445,13 +445,13 @@ I (02:30:35.115) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:30:35.234) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:30:35.236) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:30:35.354) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:30:35.356) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:30:35.356) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:35.474) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:30:35.476) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:30:35.476) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:35.594) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:30:35.595) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:30:35.595) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:35.724) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:30:35.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:30:35.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:35.844) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:30:35.846) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:30:35.965) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -537,13 +537,13 @@ I (02:30:41.425) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:30:41.544) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:30:41.544) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:30:41.664) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:30:41.666) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:30:41.666) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:41.784) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:30:41.786) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:30:41.786) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:41.904) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:30:41.904) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:30:41.904) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:42.034) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:30:42.036) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:30:42.036) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:30:42.154) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:30:42.155) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:30:42.274) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -619,13 +619,13 @@ I (02:31:41.126) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:31:41.244) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:31:41.246) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:31:41.364) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:31:41.366) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:31:41.366) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:31:41.484) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:31:41.485) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:31:41.485) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:31:41.604) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:31:41.605) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:31:41.605) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:31:41.734) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:31:41.736) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:31:41.736) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:31:41.854) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:31:41.856) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:31:41.974) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -702,13 +702,13 @@ I (02:32:41.136) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:32:41.254) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:32:41.256) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:32:41.374) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:32:41.376) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:32:41.376) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:32:41.494) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:32:41.496) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:32:41.496) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:32:41.614) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:32:41.616) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:32:41.616) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:32:41.744) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:32:41.746) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:32:41.746) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:32:41.864) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:32:41.866) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:32:41.984) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -784,13 +784,13 @@ I (02:33:41.136) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:33:41.264) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:33:41.266) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:33:41.384) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:33:41.386) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:33:41.386) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:33:41.504) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:33:41.506) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:33:41.506) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:33:41.624) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:33:41.626) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:33:41.626) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:33:41.744) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:33:41.746) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:33:41.746) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:33:41.874) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:33:41.875) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:33:41.994) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -864,13 +864,13 @@ I (02:34:41.146) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:34:41.274) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:34:41.276) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:34:41.394) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:34:41.396) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:34:41.396) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:34:41.514) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:34:41.516) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:34:41.516) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:34:41.634) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:34:41.634) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:34:41.634) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:34:41.754) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:34:41.756) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:34:41.756) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:34:41.884) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:34:41.885) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:34:42.004) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -976,13 +976,13 @@ I (02:34:47.436) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:34:47.554) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:34:47.556) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:34:47.724) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:34:47.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:34:47.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:34:47.844) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:34:47.846) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:34:47.846) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:34:47.964) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:34:47.966) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:34:47.966) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:34:48.084) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:34:48.086) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:34:48.086) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 W (02:34:48.284) BUS_FRAMING: Invalid header checksum: calculated BF, got 2F, data: 02 80 90 FF FF 80 00 12 1D 2F 01 , resyncing by 1 byte
 W (02:34:48.294) BUS_FRAMING: No start byte in buffer, discarding 11 bytes: 80 90 FF FF 80 00 12 1D 2F 01 01 
 W (02:34:48.444) BUS_FRAMING: Discarding 1 byte(s) before next start byte: 03 
@@ -1077,13 +1077,13 @@ I (02:35:47.155) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:35:47.284) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:35:47.285) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:35:47.404) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:35:47.406) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:35:47.406) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:35:47.524) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:35:47.526) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:35:47.526) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:35:47.644) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:35:47.646) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:35:47.646) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:35:47.804) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:35:47.806) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:35:47.806) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:35:47.934) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:35:47.936) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:35:48.054) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -1115,9 +1115,9 @@ I (02:36:00.946) BUS: TX complete: 14 bytes written and transmitted
 I (02:36:00.954) MSG_DECODER: RX MSG: 02 AC 1D FF FF 80 00 0A 0E 61 01 13 14 03 
 I (02:36:00.955) MSG_DECODER: [Pool Controller ESP32 -> Broadcast] Firmware version - 1.19
 I (02:36:14.674) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:36:14.676) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:36:14.676) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:36:14.804) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:36:14.806) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:36:14.806) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:36:25.674) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 FD 0F DC 23 0D 04 34 03 
 I (02:36:25.676) MSG_DECODER: [Touch Screen -> Broadcast] Controller time - 13:35 Friday
 I (02:36:29.684) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
@@ -1191,13 +1191,13 @@ I (02:36:44.486) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:36:44.604) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:36:44.606) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:36:44.724) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:36:44.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:36:44.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:36:44.854) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:36:44.855) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:36:44.855) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:36:44.974) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:36:44.976) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:36:44.976) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:36:45.094) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:36:45.096) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:36:45.096) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:36:45.214) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:36:45.215) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:36:45.334) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -1333,13 +1333,13 @@ I (02:37:39.215) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:37:39.334) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:37:39.335) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:37:39.454) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:37:39.456) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:37:39.456) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:37:39.584) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:37:39.585) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:37:39.585) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:37:39.704) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:37:39.706) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:37:39.706) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:37:39.824) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:37:39.826) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:37:39.826) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:37:39.944) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:37:39.946) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:37:40.064) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -1463,13 +1463,13 @@ I (02:38:36.105) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:38:36.224) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:38:36.226) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:38:36.344) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:38:36.346) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:38:36.346) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:38:36.464) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:38:36.465) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:38:36.465) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:38:36.584) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:38:36.586) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:38:36.586) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:38:36.714) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:38:36.715) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:38:36.715) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:38:36.834) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:38:36.836) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:38:36.954) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -1551,13 +1551,13 @@ I (02:39:01.264) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:39:01.384) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:39:01.386) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:39:01.504) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:39:01.506) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:39:01.506) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:39:01.624) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:39:01.625) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:39:01.625) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:39:01.744) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:39:01.746) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:39:01.746) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:39:01.874) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:39:01.876) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:39:01.876) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:39:01.994) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:39:01.996) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:39:02.114) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -1629,13 +1629,13 @@ I (02:40:01.276) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:40:01.394) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:40:01.396) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:40:01.524) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:40:01.525) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:40:01.525) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:01.644) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:40:01.645) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:40:01.645) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:01.764) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:40:01.766) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:40:01.766) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:01.884) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:40:01.886) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:40:01.886) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:02.004) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:40:02.006) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:40:02.134) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -1713,13 +1713,13 @@ I (02:40:24.246) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:40:24.364) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:40:24.366) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:40:24.484) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:40:24.486) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:40:24.486) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:24.604) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:40:24.606) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:40:24.606) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:24.724) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:40:24.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:40:24.726) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:24.854) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:40:24.856) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:40:24.856) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:24.974) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:40:24.976) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:40:25.094) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -1815,13 +1815,13 @@ I (02:40:38.285) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:40:38.404) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:40:38.405) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:40:38.524) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:40:38.526) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:40:38.526) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:38.644) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:40:38.645) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:40:38.645) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:38.764) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:40:38.766) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:40:38.766) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:38.894) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:40:38.896) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:40:38.896) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:40:39.014) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:40:39.016) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:40:39.134) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 
@@ -1895,13 +1895,13 @@ I (02:41:37.216) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 state 
 I (02:41:37.334) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 C3 01 00 C4 03 
 I (02:41:37.336) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 state - Off
 I (02:41:37.454) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 05 D6 03 
-I (02:41:37.456) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color - Blue (5)
+I (02:41:37.456) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:41:37.574) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D1 01 05 D7 03 
-I (02:41:37.576) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color - Blue (5)
+I (02:41:37.576) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 2 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:41:37.704) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D2 01 05 D8 03 
-I (02:41:37.705) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color - Blue (5)
+I (02:41:37.705) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 3 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:41:37.864) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D3 01 05 D9 03 
-I (02:41:37.866) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color - Blue (5)
+I (02:41:37.866) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 4 color (CMD 0x38) - 0x05 - Blue (5)
 I (02:41:37.984) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E0 01 00 E1 03 
 I (02:41:37.986) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 active - No
 I (02:41:38.104) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 E1 01 00 E2 03 

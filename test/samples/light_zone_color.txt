@@ -1,0 +1,10 @@
+# A light zone's color, logged in the same form from both of its sources: the
+# CMD 0x07 broadcast and the Light Zone Color register (0xD0, slot 0x01).
+#
+# Captured 2026-11-06 on an install with one multicolor zone. Other traffic has
+# been dropped. Timestamps are from the capture.
+
+I (22:04:38.813) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 07 0E E5 00 0E 0E 03
+I (22:04:38.814) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x07) - 0x0E - Cyan (14)
+I (22:04:40.403) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 D0 01 0E DF 03
+I (22:04:40.404) MSG_DECODER: [Touch Screen -> Broadcast] Lighting zone 1 color (CMD 0x38) - 0x0E - Cyan (14)
