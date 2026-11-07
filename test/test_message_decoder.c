@@ -1314,6 +1314,38 @@ void test_dedicated_solar_undocumented_mode_keeps_active(void)
 }
 
 /**
+ * Test: the heater water temperature register is decoded without touching the
+ * heater's temperature state, and a non-zero second byte is flagged.
+ */
+void test_heater_water_temp_register(void)
+{
+    init_test_context();
+
+    uint8_t reading[] = {
+        0x02, 0x00, 0x70, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x10, 0x38,
+        0x2C, 0x01, 0x18, 0x00, 0x45, 0x03
+    };
+    int before = unknown_buffer_record_count;
+    TEST_ASSERT(decode_message(reading, sizeof(reading), &test_ctx),
+                "Heater water temperature register decoded");
+    TEST_ASSERT(unknown_buffer_record_count == before,
+                "Second byte 0x00 is not flagged");
+    TEST_ASSERT(test_pool_state.num_seen_devices == 0 ||
+                !test_pool_state.seen_devices[0].has_temp_sensors,
+                "Register does not set the heater's temperature state");
+
+    uint8_t second_byte_set[] = {
+        0x02, 0x00, 0x70, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x10, 0x38,
+        0x2C, 0x01, 0x18, 0x01, 0x46, 0x03
+    };
+    before = unknown_buffer_record_count;
+    TEST_ASSERT(decode_message(second_byte_set, sizeof(second_byte_set), &test_ctx),
+                "Heater water temperature register with non-zero second byte decoded");
+    TEST_ASSERT(unknown_buffer_record_count == before + 1,
+                "Non-zero second byte is flagged");
+}
+
+/**
  * Test: a color outside the known table is flagged from either of its sources,
  * CMD 0x07 and the Light Zone Color register.
  */
@@ -2470,6 +2502,7 @@ int main(void)
     test_dedicated_solar_status_before_type_register();
     test_dedicated_solar_undocumented_mode_keeps_active();
     test_light_color_outside_table_flagged();
+    test_heater_water_temp_register();
     test_dedicated_solar_undocumented_raw_state_flagged();
     test_solar_mode_and_output_are_independent();
     test_decode_channel_status_lights_active();

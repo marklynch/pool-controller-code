@@ -1,0 +1,12 @@
+# Heater Water Temperature register (0x2C, slot 0x01), answered by the heater
+# itself, alongside the CMD 0x16 broadcast carrying the same reading.
+#
+# Captured 2026-11-06 on an install with a Genus Heater. Other traffic has been
+# dropped. Timestamps are from the capture.
+
+I (22:05:27.693) MSG_DECODER: RX MSG: 02 00 70 FF FF 80 00 16 0D 13 18 18 03
+I (22:05:27.694) MSG_DECODER: [Genus Heater -> Broadcast] Current temperature - 24°C
+I (22:06:20.123) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 2C 01 2D 03
+I (22:06:20.124) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Heater Water Temperature 1
+I (22:06:20.483) MSG_DECODER: RX MSG: 02 00 70 FF FF 80 00 38 10 38 2C 01 18 00 45 03
+I (22:06:20.484) MSG_DECODER: [Genus Heater -> Broadcast] Heater water temperature (CMD 0x38) - 24°C

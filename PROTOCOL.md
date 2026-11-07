@@ -1198,7 +1198,7 @@ Data fields:
 - Byte 10: Current water temperature in °C
 - Byte 11: Data checksum (equals byte 10)
 
-This is the Heater's own water-temperature reading; it is independent of the controller's reading and may differ if the two sensors are sited differently in the plumbing. 
+This is the Heater's own water-temperature reading; it is independent of the controller's reading and may differ if the two sensors are sited differently in the plumbing. The Genus Heater also returns it when the [Heater Water Temperature register](#appendix-a-register-dispatch-table) (`0x2C`/slot `0x01`) is read.
 
 Handled by the unified `handle_temp_reading()` via the LEN `0x0D` path.
 
@@ -2251,6 +2251,13 @@ The Genus Heater (`0x0070`) on ninkasi answers the same Heater 1 registers (`sam
 
 `0xC9` is answered the same way (`02 00 70 FF FF 80 00 38 0F 37 C9 00 00 C9 03`). The `0xE7`/`0xE8` values match the Pool and Spa bytes of the Genus's own [0x17](#0x17--temperature-settings-) broadcast in the same capture (`18 1B` = Spa 24°C, Pool 27°C).
 
+It also answers the Heater Water Temperature register, in slot `0x01`:
+
+```
+02 00 F0 FF FF 80 00 39 0E B7 2C 01 2D 03         Gateway asks for 0x2C/0x01 (Heater Water Temperature)
+02 00 70 FF FF 80 00 38 10 38 2C 01 18 00 45 03   Genus Heater answers: 24°C
+```
+
 Notes:
 
 - **The register ID still identifies the data.** `(register, slot)` means the same thing whoever sends it, so a response needs no source-specific handling — `0xE7`/`0xE8` are Heater 1's setpoints and `0xEA`/`0xEB` are Heater 2's regardless of which device answers. The firmware already dispatches CMD `0x38` source-agnostically on `(reg_id, slot)`, so these frames decode correctly as-is.
@@ -2757,6 +2764,7 @@ The register ID and slot together determine the message meaning. The slot distin
 | `0x20`         | `0x03` | Active Favourite       | CMD `0x2A` value of the active favourite (`0x00`=Pool … `0x07`=Favourite 6); `0xFF` = none active — see note below |
 | `0x21`–`0x28`  | `0x03` | Favourite Enable       | 1-byte flag (`0x01`=enabled, `0x00`=disabled). Maps to CMD `0x2A` values `0x00`–`0x07` in order. Pool (`0x21`) and Spa (`0x22`) follow the separate pool/spa modes setting (`0x64`): `0x01` with it on, `0x00` with it off. |
 | `0x26`–`0x2D`  | `0x02` | Valve Configured       | 1-byte flag (`0x01`=valve zone configured, `0x00`=not configured). `0x26`=Valve 1 … `0x2D`=Valve 8 — see note below |
+| `0x2C` ⚠️      | `0x01` | Heater Water Temperature | 2-byte `{temp °C, 0x00}`: the heater's own reading, answered by the heater — see note below |
 | `0x30`         | `0x01` | Current Water Temperature | 2-byte `{temp °C, 0x00}` mirror of the controller's [0x16](#0x16--water-temperature-reading-) reading — see note below |
 | `0x30` ⚠️      | `0x03` | Unknown                | 1-byte, only `0x00` observed. Polled by the Internet Gateway. Sits immediately before the Favourite Labels block, as `0x20` does the Enable block. |
 | `0x31`–`0x38`  | `0x03` | Favourite Labels       | Null-terminated ASCII string. Maps to CMD `0x2A` values `0x00`–`0x07` in order. `0x31`=Pool, `0x32`=Spa, `0x33`–`0x38`=user Favourites 1–6. |
@@ -2804,6 +2812,7 @@ The register ID and slot together determine the message meaning. The slot distin
 - The same slot value (e.g., `0x02`) can represent different data formats depending on the register
 - Slot values appear to be context-dependent rather than globally defining a data type
 - **`0x30`/slot `0x01` (Current Water Temperature) — confirmed ✅**: 2-byte payload `{temp, 0x00}` mirroring the water temperature the controller broadcasts via [0x16](#0x16--water-temperature-reading-) (same two bytes as that message's `{temp1, temp2}` payload). Tracks the controller's own sensor, not a heater's — observed reading 17°C while the heat pump's `0x16` said 18°C — and follows changes: a 16→17°C rise in the controller reading appeared in the next `0x30` broadcast ~23 s later. Polled by the Internet Gateway every cycle via [0x39](#0x39--register-read-request-) and also rebroadcast unsolicited by the touchscreen roughly every 2 minutes. On an install whose controller has no temperature sensor (its `0x16` reads `00 00`), the touchscreen never answers the Gateway's `0x30`/`0x01` polls.
+- **`0x2C`/slot `0x01` (Heater Water Temperature) ⚠️**: the heater's own water temperature in °C, in the same `{temp, 0x00}` shape as the controller's `0x30`/slot `0x01`. Answered by the Genus Heater (`0x0070`), in reply to the Internet Gateway's [0x39](#0x39--register-read-request-) poll. In all four replies compared, it matched the heater's latest [0x16](#0x16--water-temperature-reading-) broadcast (18°C twice on one capture, 24°C twice on another), while the controller read 17°C and 21–22°C. Values from 17°C to 28°C have been seen. The second byte has only read `0x00`, and its meaning is unknown. Nothing answers this poll on the reference install. Whether other heater models answer it is untested. As it repeats the `0x16` reading only when polled, `0x16` remains the source of the heater's temperature.
 - **`0x65` (Mode) — confirmed ✅**: the Pool/Spa mode, with the same encoding as the [0x14 Mode](#0x14--mode-spapool-) broadcast. On one install, each of ten broadcasts in the ~8-minute register cycle, captured over two days in both modes, matched the mode at the time. Read back with [0x39](#0x39--register-read-request-) either side of a [0x15](#0x15--mode-toggle-command-spapool-) switch, it went from `0x01` to `0x00` within 5 s of a switch to Spa. Earlier captures only saw `0x01`, because those installs were in Pool mode whenever it was broadcast. `0x14` is sent every ~60 s and on every change, so it remains the main source. The firmware reads `0x65` once at startup, so it knows the mode without waiting up to a minute for the next `0x14`, and the decoder takes the mode from either. Its neighbour `0x64`/slot `0x00` (Separate Pool/Spa Modes, below) stayed at `0x01` through every mode change. A sweep of 60 registers, read either side of a switch to Spa, found only `0x65` and the [Active Favourite](#appendix-a-register-dispatch-table) `0x20` changing with the mode.
 - **`0x64`/slot `0x00` (Separate Pool/Spa Modes) — confirmed ✅**: the Touchscreen's "Use separate pool and spa modes" setting, answered by the Touchscreen. Read with [0x39](#0x39--register-read-request-) on the reference install, it was `0x01` with the setting on Yes and `0x00` with it on No. It is a setting, not the mode: it does not change on a Pool/Spa switch (the mode itself is [`0x65`](#appendix-a-register-dispatch-table)). Installs with Pool/Spa switching read `0x01`. One install without it reads `0x00`, and in three captures there it never broadcast [0x14 Mode](#0x14--mode-spapool-) or sent [0x15](#0x15--mode-toggle-command-spapool-). Whether setting `0x00` on its own stops the `0x14` broadcasts is untested. ⚠️
 - **`0x3A` (Solar Setpoint) — confirmed ✅**: 1-byte solar temperature setpoint in °C. Confirmed by UI experiment: changing the solar setpoint to 23°C rebroadcast `3A 01 17`. Polled by the Internet Gateway every cycle via [0x39](#0x39--register-read-request-) (never appears in the touchscreen's spontaneous ~8-minute dump); on installs where the setting is untouched it reads the `0x19` (25°C) default. Setpoint changes are also announced via the dedicated [0x2D Solar Setpoint Broadcast](#0x2d--solar-setpoint-broadcast-).

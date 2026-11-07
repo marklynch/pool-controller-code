@@ -575,6 +575,7 @@ static bool handle_favourite_enable(const uint8_t *data, int len, const uint8_t 
 static bool handle_active_favourite(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_temp_setpoint(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_solar_setpoint(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
+static bool handle_heater_water_temp_register(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_water_temp_register(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_multicolor_light_type(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
 static bool handle_channel_count(const uint8_t *data, int len, const uint8_t *payload, int payload_len, const char *addr_info, message_decoder_context_t *ctx);
@@ -638,6 +639,7 @@ static const register_handler_t REGISTER_HANDLERS[] = {
 
     // Water temperature mirror (slot 0x01, register 0x30)
     {REG_ID_WATER_TEMP,              REG_ID_WATER_TEMP,              0x01, handle_water_temp_register,   "Water Temperature"},
+    {REG_ID_HEATER_WATER_TEMP,       REG_ID_HEATER_WATER_TEMP,       0x01, handle_heater_water_temp_register, "Heater Water Temperature"},
 
     // Favourite labels (slot 0x03, registers 0x31-0x38 = Pool,Spa,Fav1-6)
     {REG_ID_FAVOURITE_LABEL_0,       REG_ID_FAVOURITE_LABEL_7,       0x03, handle_favourite_label,       "Favourite Label"},
@@ -1012,6 +1014,30 @@ static bool handle_water_temp_register(
                  addr_info, temp_c, payload[3]);
     } else {
         ESP_LOGI(TAG, "%s Water temperature (register mirror) - %d°C", addr_info, temp_c);
+    }
+
+    return true;
+}
+
+/**
+ * Handler: Heater water temperature register
+ * Register 0x2C, Slot 0x01. 2-byte payload {temp °C, 0x00}, answered by the
+ * heater itself. Log-only — the same reading arrives unprompted in the heater's
+ * CMD 0x16 (handle_temp_reading), which publishes it to MQTT. The second byte
+ * has only read 0x00, so anything else is flagged.
+ */
+static bool handle_heater_water_temp_register(
+    const uint8_t *data, int len,
+    const uint8_t *payload, int payload_len,
+    const char *addr_info,
+    message_decoder_context_t *ctx)
+{
+    if (payload_len < 4) return false;
+
+    ESP_LOGI(TAG, "%s Heater water temperature (CMD 0x%02X) - %d°C", addr_info, data[7], payload[2]);
+
+    if (payload[3] != 0x00) {
+        record_undocumented(data, len);
     }
 
     return true;

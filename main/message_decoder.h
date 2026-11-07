@@ -138,6 +138,8 @@ typedef enum {
     REG_ID_VALVE_CONFIGURED_0      = 0x26,  // Valve 0 configured flag (0–7 → 0x26–0x2D, slot 0x02; 0x26–0x28 shares range with REG_ID_FAVOURITE_ENABLE_[5-7], slot 0x03)
     REG_ID_VALVE_CONFIGURED_7      = 0x2D,  // Valve 7 configured (last)
 
+    REG_ID_HEATER_WATER_TEMP       = 0x2C,  // Heater's own water temperature °C (slot 0x01), answered by the heater — repeats its CMD 0x16 reading
+
     REG_ID_WATER_TEMP              = 0x30,  // Current water temperature °C (slot 0x01) — mirror of the controller's CMD 0x16 reading
 
     REG_ID_FAVOURITE_LABEL_0       = 0x31,  // Fav label index 0   (0–7 → 0x31–0x38, slot 0x03)
