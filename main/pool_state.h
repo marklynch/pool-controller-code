@@ -209,6 +209,16 @@ typedef struct {
 
 // Operating mode values (CMD 0x14 status broadcast and register 0x65; note
 // CMD 0x2A uses inverted Pool/Spa values)
+// Viron Chlorinator pH/ORP statistics (registers 0xE2-0xE5, slot 0x0B), in
+// register order; index = register - REG_ID_CHLOR_LOWEST_PH
+typedef enum {
+    CHLOR_STAT_LOWEST_PH = 0,   // pH * 10
+    CHLOR_STAT_HIGHEST_PH,      // pH * 10
+    CHLOR_STAT_LOWEST_ORP,      // mV
+    CHLOR_STAT_HIGHEST_ORP,     // mV
+    CHLOR_STAT_COUNT
+} chlor_stat_t;
+
 #define MODE_SPA   0x00
 #define MODE_POOL  0x01
 
@@ -357,6 +367,8 @@ typedef struct {
     bool orp_setpoint_valid;
     uint8_t chlor_mode;        // CMD 0x12 status byte, meaning unknown (see PROTOCOL.md)
     bool chlor_mode_valid;
+    uint16_t chlor_stats[CHLOR_STAT_COUNT];   // Recorded pH/ORP extremes, indexed by chlor_stat_t
+    bool chlor_stats_valid[CHLOR_STAT_COUNT];
     uint8_t chlor_output_level;       // Chlorine output level 1–8 (from VX 11S v3, address 0x0081)
     bool chlor_output_level_valid;
 

@@ -292,6 +292,11 @@ static esp_err_t home_get_handler(httpd_req_t *req)
         "rows.push(['pH',(c.ph_reading!==null?c.ph_reading:'\u2014')+sp(c.ph_setpoint,'')]);"
         "if(c.orp_reading!==null||c.orp_setpoint!==null)"
         "rows.push(['ORP',(c.orp_reading!==null?c.orp_reading+'mV':'\u2014')+sp(c.orp_setpoint,'mV')]);"
+        "const rng=(lo,hi,u)=>(lo!==null?lo+u:'\u2014')+' \u2013 '+(hi!==null?hi+u:'\u2014');"
+        "if(c.ph_lowest!==null||c.ph_highest!==null)"
+        "rows.push(['pH Range Measured',rng(c.ph_lowest,c.ph_highest,'')]);"
+        "if(c.orp_lowest!==null||c.orp_highest!==null)"
+        "rows.push(['ORP Range Measured',rng(c.orp_lowest,c.orp_highest,'mV')]);"
         "if(c.chlor_output_level!==null)rows.push(['Chlorine Output Level',c.chlor_output_level]);"
         "if(data.timers&&data.timers.length>0){"
         "data.timers.forEach(t=>rows.push(['Timer '+t.num,t.start+' \u2013 '+t.stop+' ['+t.days+']']));}"
@@ -1030,6 +1035,17 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         cJSON_AddNumberToObject(chlorinator, "chlor_output_level", state.chlor_output_level);
     } else {
         cJSON_AddNullToObject(chlorinator, "chlor_output_level");
+    }
+    // pH/ORP statistics, under the same keys as the MQTT chlorinator state
+    for (int i = 0; i < CHLOR_STAT_COUNT; i++) {
+        const char *key = mqtt_chlor_stat_key((chlor_stat_t)i);
+        if (!state.chlor_stats_valid[i]) {
+            cJSON_AddNullToObject(chlorinator, key);
+        } else if (i == CHLOR_STAT_LOWEST_PH || i == CHLOR_STAT_HIGHEST_PH) {
+            cJSON_AddNumberToObject(chlorinator, key, state.chlor_stats[i] / 10.0);
+        } else {
+            cJSON_AddNumberToObject(chlorinator, key, state.chlor_stats[i]);
+        }
     }
     cJSON_AddItemToObject(root, "chlorinator", chlorinator);
 
