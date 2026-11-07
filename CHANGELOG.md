@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Decoded the Heater Water Temperature register (`0x2C`, slot `0x01`), which a Genus Heater answers with the same reading as its CMD `0x16` broadcast. It is now logged (e.g. `Heater water temperature (CMD 0x38) - 24°C`) instead of as an unhandled register, and PROTOCOL.md documents it. A decoder replay test (`heater_water_temperature.txt`) covers it
 ### Changed
 - Updated the favourite log lines to name favourites consistently: label and enable lines now number registers 1–8, matching their read requests (e.g. `Favourite 1 label (0x31) - "Pool"`), and the active favourite and control command lines show the favourite's label, or its default name until the label arrives (e.g. `Active favourite - filter and heatpump (0x03)`)
 - Updated the light zone color log lines to read the same from both sources, naming the command each came from (e.g. `Lighting zone 1 color (CMD 0x07) - 0x0E - Cyan (14)`), and a CMD `0x07` color outside the known table is now flagged as undocumented, as the color register already was
