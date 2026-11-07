@@ -546,6 +546,74 @@ void test_mode_unknown(void)
 }
 
 // ======================================================
+// Favourite tests
+// ======================================================
+
+static void set_user_favourite(int index, bool enabled, const char *name)
+{
+    favourite_t *favourite = &s_pool_state.favourites[index];
+    memset(favourite, 0, sizeof(*favourite));
+    favourite->enabled = enabled;
+    favourite->enabled_valid = true;
+    if (name) {
+        snprintf(favourite->name, sizeof(favourite->name), "%s", name);
+        favourite->name_valid = true;
+    }
+}
+
+static void reset_favourites(void)
+{
+    memset(s_pool_state.favourites, 0, sizeof(s_pool_state.favourites));
+    s_pool_state_mutex = (SemaphoreHandle_t)&s_pool_state;
+}
+
+static void assert_favourite_sent(uint8_t value, const char *message)
+{
+    TEST_ASSERT(s_uart_calls == 1 && s_uart_buf[7] == 0x2A &&
+                s_uart_buf[10] == value && s_uart_buf[11] == value, message);
+}
+
+void test_favourite_by_label(void)
+{
+    reset_favourites();
+    set_user_favourite(2, true, "filter only");
+    send_cmd("favourite/set", "filter only");
+    assert_favourite_sent(0x02, "favourite/set label: sends CMD 0x2A with its value");
+    s_pool_state_mutex = NULL;
+}
+
+// Discovery offers an enabled favourite under this name until its label arrives
+void test_favourite_by_default_name_before_label(void)
+{
+    reset_favourites();
+    set_user_favourite(4, true, NULL);
+    send_cmd("favourite/set", "Favourite 3");
+    assert_favourite_sent(0x04, "favourite/set default name with no label: sends CMD 0x2A with its value");
+    s_pool_state_mutex = NULL;
+}
+
+void test_favourite_default_name_after_label(void)
+{
+    reset_favourites();
+    set_user_favourite(3, true, "filter and heatpump");
+    send_cmd("favourite/set", "Favourite 2");
+    TEST_ASSERT(s_uart_calls == 0, "favourite/set default name of a labelled favourite: no UART write");
+    s_pool_state_mutex = NULL;
+}
+
+void test_favourite_disabled(void)
+{
+    reset_favourites();
+    set_user_favourite(2, false, "filter only");
+    set_user_favourite(5, false, NULL);
+    send_cmd("favourite/set", "filter only");
+    TEST_ASSERT(s_uart_calls == 0, "favourite/set disabled label: no UART write");
+    send_cmd("favourite/set", "Favourite 4");
+    TEST_ASSERT(s_uart_calls == 0, "favourite/set disabled default name: no UART write");
+    s_pool_state_mutex = NULL;
+}
+
+// ======================================================
 // Temperature tests
 // ======================================================
 
@@ -914,6 +982,12 @@ int main(void)
     test_light_1_color_blue();
     test_light_2_color_magenta();
     test_light_color_unknown();
+
+    printf("\n--- Favourite Tests ---\n");
+    test_favourite_by_label();
+    test_favourite_by_default_name_before_label();
+    test_favourite_default_name_after_label();
+    test_favourite_disabled();
 
     printf("\n--- Channel Pump Mode Tests ---\n");
     test_channel_mode_high_speed();

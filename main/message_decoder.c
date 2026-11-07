@@ -2687,6 +2687,29 @@ static bool handle_register_write_request(
 }
 
 /**
+ * Name to log for a favourite value (CMD 0x2A, register 0x20): the label the
+ * Touchscreen has reported for it, else its default name (Pool, Spa,
+ * Favourites 1-6). state may be NULL if it couldn't be read.
+ */
+static const char *favourite_log_name(const pool_state_t *state, uint8_t value,
+                                      char *buf, size_t buf_len)
+{
+    if (value < MAX_FAVOURITES) {
+        if (state && state->favourites[value].name_valid && state->favourites[value].name[0] != '\0') {
+            return state->favourites[value].name;
+        }
+        if (value == FAVOURITE_POOL) return "Pool";
+        if (value == FAVOURITE_SPA)  return "Spa";
+        snprintf(buf, buf_len, "Favourite %d", value - 1);
+        return buf;
+    }
+    if (value == FAVOURITE_ALL_OFF)  return "All Off";
+    if (value == FAVOURITE_ALL_AUTO) return "All Auto";
+    if (value == FAVOURITE_NONE)     return "None";
+    return "Unknown";
+}
+
+/**
  * Handler: Favourite control command (CMD 0x2A) — source-agnostic.
  * Sent to the Touchscreen by the Gateway (0x00F0) for remote activations
  * and by the Connect 8/10 controller (0x0062) for activations made at the
@@ -2701,17 +2724,6 @@ static bool handle_favourite_control_cmd(
     if (payload_len < 1) return false;
 
     uint8_t favourite_value = payload[0];
-    const char *favourite_name;
-    if (favourite_value == FAVOURITE_POOL)      favourite_name = "Pool";
-    else if (favourite_value == FAVOURITE_SPA)  favourite_name = "Spa";
-    else if (favourite_value == FAVOURITE_ALL_OFF)  favourite_name = "All Off";
-    else if (favourite_value == FAVOURITE_ALL_AUTO) favourite_name = "All Auto";
-    else if (favourite_value == FAVOURITE_NONE) favourite_name = "None";
-    else if (favourite_value >= 0x02 && favourite_value <= 0x07) favourite_name = "Favourite";
-    else favourite_name = "Unknown";
-
-    ESP_LOGI(TAG, "%s Favourite control command - %s (0x%02X)",
-             addr_info, favourite_name, favourite_value);
 
     // Documented values: 0x00-0x07 (Pool/Spa/Fav1-6), All Off, All Auto.
     if (favourite_value > 0x07
@@ -2730,6 +2742,12 @@ static bool handle_favourite_control_cmd(
         should_publish = true;
         state_unlock(ctx, false, &state_snapshot);
     }
+
+    char fallback[24];
+    ESP_LOGI(TAG, "%s Favourite control command - %s (0x%02X)", addr_info,
+             favourite_log_name(should_publish ? &state_snapshot : NULL, favourite_value,
+                                fallback, sizeof(fallback)),
+             favourite_value);
 
     if (should_publish) {
         mqtt_publish_favourite(&state_snapshot);
@@ -4085,7 +4103,7 @@ static bool handle_favourite_label(
     if (str_len > (int)sizeof(label) - 1) str_len = (int)sizeof(label) - 1;
     memcpy(label, &payload[2], str_len);
 
-    ESP_LOGI(TAG, "%s Favourite %d label (0x%02X) - \"%s\"", addr_info, index, reg_id, label);
+    ESP_LOGI(TAG, "%s Favourite %d label (0x%02X) - \"%s\"", addr_info, index + 1, reg_id, label);
 
     pool_state_t state_snapshot;
     if (!state_lock(ctx, "favourite label")) return true;
@@ -4099,12 +4117,6 @@ static bool handle_favourite_label(
     return true;
 }
 
-/**
- * Handler: Favourite enable flag
-
- * Register range: 0x21–0x28, Slot: 0x03
- * Index 0=Pool, 1=Spa, 2–7=Favourites 1–6
- */
 /**
  * Handler: Active favourite (register 0x20, slot 0x03)
  * Value is the CMD 0x2A favourite value (0x00=Pool, 0x01=Spa,
@@ -4121,17 +4133,6 @@ static bool handle_active_favourite(
 
     uint8_t value = payload[2];
 
-    const char *name;
-    if (value == FAVOURITE_POOL)                       name = "Pool";
-    else if (value == FAVOURITE_SPA)                   name = "Spa";
-    else if (value >= 0x02 && value < MAX_FAVOURITES)  name = "Favourite";
-    else if (value == FAVOURITE_ALL_OFF)               name = "All Off";
-    else if (value == FAVOURITE_ALL_AUTO)              name = "All Auto";
-    else if (value == FAVOURITE_NONE)                  name = "None";
-    else                                               name = "Unknown";
-
-    ESP_LOGI(TAG, "%s Active favourite - %s (0x%02X)", addr_info, name, value);
-
     if (value >= MAX_FAVOURITES && value != FAVOURITE_ALL_OFF && value != FAVOURITE_ALL_AUTO &&
         value != FAVOURITE_NONE) {
         record_undocumented(data, len);
@@ -4146,12 +4147,23 @@ static bool handle_active_favourite(
         state_unlock(ctx, true, &state_snapshot);
     }
 
+    char fallback[24];
+    ESP_LOGI(TAG, "%s Active favourite - %s (0x%02X)", addr_info,
+             favourite_log_name(should_publish ? &state_snapshot : NULL, value,
+                                fallback, sizeof(fallback)),
+             value);
+
     if (should_publish) {
         mqtt_publish_favourite(&state_snapshot);
     }
     return true;
 }
 
+/**
+ * Handler: Favourite enable flag
+ * Register range: 0x21–0x28, Slot: 0x03
+ * Index 0=Pool, 1=Spa, 2–7=Favourites 1–6
+ */
 static bool handle_favourite_enable(
     const uint8_t *data, int len,
     const uint8_t *payload, int payload_len,
@@ -4166,11 +4178,11 @@ static bool handle_favourite_enable(
 
     bool enabled = (payload[2] != 0x00);
 
-    ESP_LOGI(TAG, "%s Favourite %d (0x%02X) - %s", addr_info, index, reg_id,
+    ESP_LOGI(TAG, "%s Favourite %d (0x%02X) - %s", addr_info, index + 1, reg_id,
              enabled ? "enabled" : "disabled");
 
     if (payload[2] > 0x01) {  // documented: 0x00 disabled, 0x01 enabled
-        ESP_LOGW(TAG, "%s Favourite %d - undocumented enable value: 0x%02X", addr_info, index, payload[2]);
+        ESP_LOGW(TAG, "%s Favourite %d - undocumented enable value: 0x%02X", addr_info, index + 1, payload[2]);
         record_undocumented(data, len);
     }
 

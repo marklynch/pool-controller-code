@@ -354,16 +354,24 @@ static void handle_favourite_command(const char *payload, int payload_len)
         ESP_LOGI(TAG, "Ignoring 'No Favourite' selection (status-only)");
         return;
     } else {
-        // Search enabled user favourites (indices 2–7 → values 0x02–0x07)
+        // Search enabled user favourites (indices 2–7 → values 0x02–0x07) by
+        // the name discovery offers: the label, or "Favourite N" until it arrives
         value = 0xFF;
         if (s_pool_state_mutex &&
             xSemaphoreTake(s_pool_state_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
             for (int i = 2; i < MAX_FAVOURITES; i++) {
                 const favourite_t *fav = &s_pool_state.favourites[i];
-                if (fav->enabled_valid && fav->enabled &&
-                    fav->name_valid &&
-                    (int)strlen(fav->name) == payload_len &&
-                    strncmp(payload, fav->name, payload_len) == 0) {
+                if (!fav->enabled_valid || !fav->enabled) {
+                    continue;
+                }
+                char fallback[24];
+                const char *name = fav->name;
+                if (!fav->name_valid || fav->name[0] == '\0') {
+                    snprintf(fallback, sizeof(fallback), "Favourite %d", i - 1);
+                    name = fallback;
+                }
+                if ((int)strlen(name) == payload_len &&
+                    strncmp(payload, name, payload_len) == 0) {
                     value = (uint8_t)i;
                     break;
                 }

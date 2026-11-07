@@ -1811,8 +1811,8 @@ The Connect 10's Auto button sends All Auto (`0x81`). When the controller is in 
 
 | Value  | Meaning       | Label register (slot `0x03`) | Enable register (slot `0x03`) |
 |--------|---------------|------------------------------|-------------------------------|
-| `0x00` | Pool mode     | `0x31` — always `"Pool"`     | `0x21` — always `0x01`        |
-| `0x01` | Spa mode      | `0x32` — always `"Spa"`      | `0x22` — always `0x01`        |
+| `0x00` | Pool mode     | `0x31` — always `"Pool"`     | `0x21` — `0x01` with separate pool/spa modes on, `0x00` with them off |
+| `0x01` | Spa mode      | `0x32` — always `"Spa"`      | `0x22` — `0x01` with separate pool/spa modes on, `0x00` with them off |
 | `0x02` | Favourite 1   | `0x33` — user-defined label  | `0x23` — `0x01`=enabled, `0x00`=disabled |
 | `0x03` | Favourite 2   | `0x34` — user-defined label  | `0x24` — `0x01`=enabled, `0x00`=disabled |
 | `0x04` | Favourite 3   | `0x35` — user-defined label  | `0x25` — `0x01`=enabled, `0x00`=disabled |
@@ -1829,7 +1829,7 @@ The Connect 10's Auto button sends All Auto (`0x81`). When the controller is in 
 - **Command values are inverted from status values** — in status messages ([0x14 Mode](#0x14--mode-spapool-)), Spa=`0x00` and Pool=`0x01`; in this command, Pool=`0x00` and Spa=`0x01`.
 - The Touchscreen acknowledges each activation with an immediate [0x05 Touchscreen Activation Ack](#0x05--touchscreen-activation-ack-️) (value `0x01`) followed by the relevant mode, active-channel, and channel-status broadcasts
 - Up to 6 user Favourites are supported (`0x02`–`0x07`). The labels for all 8 slots (including the Pool and Spa built-ins) are stored in registers `0x31`–`0x38` (slot `0x03`), readable via the register protocol ([0x38](#0x38--register-data-️))
-- Each slot's enabled/disabled state is stored in registers `0x21`–`0x28` (slot `0x03`), with `0x01` = enabled and `0x00` = disabled. Pool (`0x21`) and Spa (`0x22`) are always `0x01`. All Off (`0x80`) and All Auto (`0x81`) have no corresponding enable registers and are always available
+- Each slot's enabled/disabled state is stored in registers `0x21`–`0x28` (slot `0x03`), with `0x01` = enabled and `0x00` = disabled. Pool (`0x21`) and Spa (`0x22`) follow the "Use separate pool and spa modes" setting ([`0x64`](#appendix-a-register-dispatch-table)): `0x01` with it on, `0x00` with it off. All Off (`0x80`) and All Auto (`0x81`) have no corresponding enable registers and are always available
 - The Touchscreen does not check the source address: on Touchscreen firmware 2.8 it acts on this command sent from the Pool Controller ESP32's own address `0xAC1D` (`02 AC 1D 00 50 80 00 2A 0D D2`). Our firmware sends it from `0xAC1D`.
 - There is no known "deactivate favourite" command: value `0xFF` (the "none active" sentinel used by the [Active Favourite register `0x20`](#appendix-a-register-dispatch-table)) was tested here and is ignored by the controller
 
@@ -2755,7 +2755,7 @@ The register ID and slot together determine the message meaning. The slot distin
 | `0x00`–`0x07` ⚠️| `0x04` | Unknown                | 1-byte, only `0x00` observed — including on installs that have timers configured. Polled by the Internet Gateway in the same contiguous slot-`0x04` scan as the timers, and answered by the touchscreen. |
 | `0x08`–`0x17`  | `0x04` | Timers 1–16            | start/stop time + days bitmask — read-only; writes ignored by controller (see [0x38 Timer Registers](#timer-registers-slot-0x04))   |
 | `0x20`         | `0x03` | Active Favourite       | CMD `0x2A` value of the active favourite (`0x00`=Pool … `0x07`=Favourite 6); `0xFF` = none active — see note below |
-| `0x21`–`0x28`  | `0x03` | Favourite Enable       | 1-byte flag (`0x01`=enabled, `0x00`=disabled). Maps to CMD `0x2A` values `0x00`–`0x07` in order. Pool (`0x21`) and Spa (`0x22`) are always `0x01`. |
+| `0x21`–`0x28`  | `0x03` | Favourite Enable       | 1-byte flag (`0x01`=enabled, `0x00`=disabled). Maps to CMD `0x2A` values `0x00`–`0x07` in order. Pool (`0x21`) and Spa (`0x22`) follow the separate pool/spa modes setting (`0x64`): `0x01` with it on, `0x00` with it off. |
 | `0x26`–`0x2D`  | `0x02` | Valve Configured       | 1-byte flag (`0x01`=valve zone configured, `0x00`=not configured). `0x26`=Valve 1 … `0x2D`=Valve 8 — see note below |
 | `0x30`         | `0x01` | Current Water Temperature | 2-byte `{temp °C, 0x00}` mirror of the controller's [0x16](#0x16--water-temperature-reading-) reading — see note below |
 | `0x30` ⚠️      | `0x03` | Unknown                | 1-byte, only `0x00` observed. Polled by the Internet Gateway. Sits immediately before the Favourite Labels block, as `0x20` does the Enable block. |

@@ -1,0 +1,66 @@
+# Favourite numbering in the log: registers 0x31-0x38 (label) and 0x21-0x28
+# (enable), slot 0x03, are logged as Favourites 1-8, the same numbering as the
+# read requests that ask for them. The Active Favourite register (0x20) and the
+# control command (CMD 0x2A) log the favourite's label once it is known.
+#
+# Captured 2026-11-06 on an install with two user favourites enabled, apart from
+# the CMD 0x2A frame, which comes from an earlier capture and is repeated here
+# with made-up timestamps. Other traffic has been dropped, and
+# frames are reordered to show the active favourite and control command before
+# and after a label arrives. Other timestamps are from the 2026-11-06 capture.
+
+
+# ======================================================================
+# Control command for value 0x02 before its label (0x33): its default name.
+# ======================================================================
+
+I (22:04:50.000) MSG_DECODER: RX MSG: 02 00 F0 00 50 80 00 2A 0D F9 02 02 03
+I (22:04:50.001) MSG_DECODER: [Internet Gateway -> Touch Screen] Favourite control command - Favourite 1 (0x02)
+
+# ======================================================================
+# Labels: first register and a user favourite.
+# ======================================================================
+
+I (22:04:56.033) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 31 03 34 03
+I (22:04:56.034) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Favourite Label 1
+I (22:04:56.163) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 13 1B 31 03 50 6F 6F 6C 00 CE 03
+I (22:04:56.164) MSG_DECODER: [Touch Screen -> Broadcast] Favourite 1 label (0x31) - "Pool"
+I (22:04:57.823) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 33 03 36 03
+I (22:04:57.824) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Favourite Label 3
+I (22:04:57.973) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 1A 22 33 03 66 69 6C 74 65 72 20 6F 6E 6C 79 00 9E 03
+I (22:04:57.974) MSG_DECODER: [Touch Screen -> Broadcast] Favourite 3 label (0x33) - "filter only"
+
+# ======================================================================
+# Control command for value 0x02 after its label: the label.
+# ======================================================================
+
+I (22:04:58.000) MSG_DECODER: RX MSG: 02 00 F0 00 50 80 00 2A 0D F9 02 02 03
+I (22:04:58.001) MSG_DECODER: [Internet Gateway -> Touch Screen] Favourite control command - filter only (0x02)
+
+# ======================================================================
+# Enable flags: first register, a user favourite and last register.
+# ======================================================================
+
+I (22:09:06.233) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 21 03 24 03
+I (22:09:06.234) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Favourite Enable 1
+I (22:09:06.353) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 21 03 00 24 03
+I (22:09:06.354) MSG_DECODER: [Touch Screen -> Broadcast] Favourite 1 (0x21) - disabled
+I (22:09:11.773) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 23 03 26 03
+I (22:09:11.774) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Favourite Enable 3
+I (22:09:11.893) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 23 03 01 27 03
+I (22:09:11.894) MSG_DECODER: [Touch Screen -> Broadcast] Favourite 3 (0x23) - enabled
+I (22:09:14.593) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 28 03 2B 03
+I (22:09:14.594) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Favourite Enable 8
+I (22:09:14.713) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 28 03 00 2B 03
+I (22:09:14.714) MSG_DECODER: [Touch Screen -> Broadcast] Favourite 8 (0x28) - disabled
+
+# ======================================================================
+# Active favourite 0x03: its default name until its label (0x34) arrives.
+# ======================================================================
+
+I (22:08:16.253) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 20 03 03 26 03
+I (22:08:16.254) MSG_DECODER: [Touch Screen -> Broadcast] Active favourite - Favourite 2 (0x03)
+I (22:04:58.893) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 22 2A 34 03 66 69 6C 74 65 72 20 61 6E 64 20 68 65 61 74 70 75 6D 70 00 94 03
+I (22:04:58.895) MSG_DECODER: [Touch Screen -> Broadcast] Favourite 4 label (0x34) - "filter and heatpump"
+I (22:08:16.253) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 38 0F 17 20 03 03 26 03
+I (22:08:16.254) MSG_DECODER: [Touch Screen -> Broadcast] Active favourite - filter and heatpump (0x03)
