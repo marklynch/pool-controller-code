@@ -679,11 +679,14 @@ static const register_handler_t REGISTER_HANDLERS[] = {
     // Heater 2 setpoints (slot 0x00, registers 0xEA=Pool, 0xEB=Spa)
     {REG_ID_HEATER2_POOL_SETPOINT, REG_ID_HEATER2_SPA_SETPOINT, 0x00, handle_temp_setpoint,          "Heater 2 Setpoint"},
 
-    // Viron Chlorinator pH/ORP statistics (slot 0x0B, registers 0xE2-0xE5)
+    // Viron Chlorinator statistics (slot 0x0B, registers 0xE0-0xE6)
+    {REG_ID_CHLOR_CELL_RUNNING_TIME, REG_ID_CHLOR_CELL_RUNNING_TIME, 0x0B, handle_chlor_statistic,         "Cell Running Time"},
+    {REG_ID_CHLOR_LOW_SALT_RUNNING_TIME, REG_ID_CHLOR_LOW_SALT_RUNNING_TIME, 0x0B, handle_chlor_statistic, "Low Salt Cell Running Time"},
     {REG_ID_CHLOR_LOWEST_PH,         REG_ID_CHLOR_LOWEST_PH,         0x0B, handle_chlor_statistic,         "Lowest pH Measured"},
     {REG_ID_CHLOR_HIGHEST_PH,        REG_ID_CHLOR_HIGHEST_PH,        0x0B, handle_chlor_statistic,         "Highest pH Measured"},
     {REG_ID_CHLOR_LOWEST_ORP,        REG_ID_CHLOR_LOWEST_ORP,        0x0B, handle_chlor_statistic,         "Lowest ORP Measured"},
     {REG_ID_CHLOR_HIGHEST_ORP,       REG_ID_CHLOR_HIGHEST_ORP,       0x0B, handle_chlor_statistic,         "Highest ORP Measured"},
+    {REG_ID_CHLOR_PREV_DAY_CELL_LOAD, REG_ID_CHLOR_PREV_DAY_CELL_LOAD, 0x0B, handle_chlor_statistic,       "Previous Day Cell Load"},
 
     // Viron Chlorinator unknowns (slot 0x0B, registers 0xE9/0xEA) — meaning
     // unknown; log-only and always recorded as undocumented for research
@@ -1309,10 +1312,12 @@ static bool handle_heater_power_channel(
 }
 
 /**
- * Handler: Viron Chlorinator pH/ORP statistics
- * Registers 0xE2-0xE5, Slot 0x0B. 2-byte little-endian value each:
- * 0xE2/0xE3 = lowest/highest pH measured (pH x 10, as in CMD 0x1D/0x1F),
- * 0xE4/0xE5 = lowest/highest ORP measured (mV). Stored in
+ * Handler: Viron Chlorinator statistics
+ * Registers 0xE0-0xE6, Slot 0x0B, little-endian values:
+ * 0xE0/0xE1 = cell / low salt cell running time (4 bytes, hours),
+ * 0xE2/0xE3 = lowest/highest pH measured (2 bytes, pH x 10, as in CMD 0x1D/0x1F),
+ * 0xE4/0xE5 = lowest/highest ORP measured (2 bytes, mV),
+ * 0xE6 = previous day cell load (1 byte, %). Stored in
  * pool_state->chlor_stats and published as Home Assistant sensors.
  */
 static bool handle_chlor_statistic(
@@ -1321,26 +1326,45 @@ static bool handle_chlor_statistic(
     const char *addr_info,
     message_decoder_context_t *ctx)
 {
-    if (payload_len < 4) return false;
-
-    uint16_t value = UINT16_LE(payload, 2);
+    uint32_t value;
 
     switch (payload[0]) {
-    case REG_ID_CHLOR_LOWEST_PH:
-        ESP_LOGI(TAG, "%s Chlorinator lowest pH measured - %.1f", addr_info, value / 10.0);
+    case REG_ID_CHLOR_CELL_RUNNING_TIME:
+    case REG_ID_CHLOR_LOW_SALT_RUNNING_TIME:
+        if (payload_len < 6) return false;
+        value = (uint32_t)payload[2] | ((uint32_t)payload[3] << 8) |
+                ((uint32_t)payload[4] << 16) | ((uint32_t)payload[5] << 24);
+        ESP_LOGI(TAG, "%s Chlorinator %s - %" PRIu32 " h", addr_info,
+                 payload[0] == REG_ID_CHLOR_CELL_RUNNING_TIME ? "cell running time"
+                                                             : "low salt cell running time",
+                 value);
         break;
-    case REG_ID_CHLOR_HIGHEST_PH:
-        ESP_LOGI(TAG, "%s Chlorinator highest pH measured - %.1f", addr_info, value / 10.0);
+    case REG_ID_CHLOR_PREV_DAY_CELL_LOAD:
+        if (payload_len < 3) return false;
+        value = payload[2];
+        ESP_LOGI(TAG, "%s Chlorinator previous day cell load - %" PRIu32 "%%", addr_info, value);
         break;
-    case REG_ID_CHLOR_LOWEST_ORP:
-        ESP_LOGI(TAG, "%s Chlorinator lowest ORP measured - %u mV", addr_info, value);
-        break;
-    default:  // REG_ID_CHLOR_HIGHEST_ORP — the dispatch table routes only 0xE2-0xE5 here
-        ESP_LOGI(TAG, "%s Chlorinator highest ORP measured - %u mV", addr_info, value);
+    default:  // 0xE2-0xE5 — the dispatch table routes only 0xE0-0xE6 here
+        if (payload_len < 4) return false;
+        value = UINT16_LE(payload, 2);
+        switch (payload[0]) {
+        case REG_ID_CHLOR_LOWEST_PH:
+            ESP_LOGI(TAG, "%s Chlorinator lowest pH measured - %.1f", addr_info, value / 10.0);
+            break;
+        case REG_ID_CHLOR_HIGHEST_PH:
+            ESP_LOGI(TAG, "%s Chlorinator highest pH measured - %.1f", addr_info, value / 10.0);
+            break;
+        case REG_ID_CHLOR_LOWEST_ORP:
+            ESP_LOGI(TAG, "%s Chlorinator lowest ORP measured - %" PRIu32 " mV", addr_info, value);
+            break;
+        default:  // REG_ID_CHLOR_HIGHEST_ORP
+            ESP_LOGI(TAG, "%s Chlorinator highest ORP measured - %" PRIu32 " mV", addr_info, value);
+            break;
+        }
         break;
     }
 
-    chlor_stat_t stat = (chlor_stat_t)(payload[0] - REG_ID_CHLOR_LOWEST_PH);
+    chlor_stat_t stat = (chlor_stat_t)(payload[0] - REG_ID_CHLOR_CELL_RUNNING_TIME);
     pool_state_t snapshot;
     if (!state_lock(ctx, "chlorinator statistic")) return true;
     ctx->pool_state->chlor_stats[stat] = value;

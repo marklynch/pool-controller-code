@@ -1,0 +1,37 @@
+# Viron Chlorinator statistics registers (0xE0-0xE6, slot 0x0B): cell and low
+# salt cell running time (hours), lowest/highest pH measured (pH x 10),
+# lowest/highest ORP measured (mV) and previous day cell load (%), answered by
+# the chlorinator to the Internet Gateway's 0x39 poll.
+#
+# Captured 2026-11-06 (0xE2-0xE5) and 2026-11-07 (0xE0, 0xE1, 0xE6) on an
+# install with a Viron Chlorinator. Other traffic has been dropped. Timestamps
+# are from the captures.
+
+I (22:06:08.623) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 E2 0B ED 03
+I (22:06:08.623) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Lowest pH Measured 1
+I (22:06:08.693) MSG_DECODER: RX MSG: 02 00 84 FF FF 80 00 38 10 4C E2 0B 2A 00 17 03
+I (22:06:08.693) MSG_DECODER: [Viron Chlorinator -> Broadcast] Chlorinator lowest pH measured - 4.2
+I (22:06:09.533) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 E3 0B EE 03
+I (22:06:09.533) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Highest pH Measured 1
+I (22:06:09.603) MSG_DECODER: RX MSG: 02 00 84 FF FF 80 00 38 10 4C E3 0B 60 00 4E 03
+I (22:06:09.603) MSG_DECODER: [Viron Chlorinator -> Broadcast] Chlorinator highest pH measured - 9.6
+I (22:06:10.423) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 E4 0B EF 03
+I (22:06:10.423) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Lowest ORP Measured 1
+I (22:06:10.493) MSG_DECODER: RX MSG: 02 00 84 FF FF 80 00 38 10 4C E4 0B 64 00 53 03
+I (22:06:10.493) MSG_DECODER: [Viron Chlorinator -> Broadcast] Chlorinator lowest ORP measured - 100 mV
+I (22:06:11.323) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 E5 0B F0 03
+I (22:06:11.323) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Highest ORP Measured 1
+I (22:06:11.394) MSG_DECODER: RX MSG: 02 00 84 FF FF 80 00 38 10 4C E5 0B 41 03 34 03
+I (22:06:11.394) MSG_DECODER: [Viron Chlorinator -> Broadcast] Chlorinator highest ORP measured - 833 mV
+I (09:55:40.583) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 E0 0B EB 03
+I (09:55:40.583) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Cell Running Time 1
+I (09:55:40.653) MSG_DECODER: RX MSG: 02 00 84 FF FF 80 00 38 12 4E E0 0B 84 09 00 00 78 03
+I (09:55:40.653) MSG_DECODER: [Viron Chlorinator -> Broadcast] Chlorinator cell running time - 2436 h
+I (09:55:41.483) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 E1 0B EC 03
+I (09:55:41.483) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Low Salt Cell Running Time 1
+I (09:55:41.553) MSG_DECODER: RX MSG: 02 00 84 FF FF 80 00 38 12 4E E1 0B 3F 04 00 00 2F 03
+I (09:55:41.553) MSG_DECODER: [Viron Chlorinator -> Broadcast] Chlorinator low salt cell running time - 1087 h
+I (09:41:52.563) MSG_DECODER: RX MSG: 02 00 F0 FF FF 80 00 39 0E B7 E6 0B F1 03
+I (09:41:52.563) MSG_DECODER: [Internet Gateway -> Broadcast] Register read request - Previous Day Cell Load 1
+I (09:41:52.633) MSG_DECODER: RX MSG: 02 00 84 FF FF 80 00 38 0F 4B E6 0B 21 12 03
+I (09:41:52.633) MSG_DECODER: [Viron Chlorinator -> Broadcast] Chlorinator previous day cell load - 33%

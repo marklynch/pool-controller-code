@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "cJSON.h"
 #include <string.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -854,17 +855,17 @@ void mqtt_publish_chlorinator(const pool_state_t *current_state)
         len += snprintf(payload + len, sizeof(payload) - len, ",\"orp_setpoint\":null");
     }
 
-    // pH/ORP statistics: pH is stored x10, ORP in mV
+    // Chlorinator statistics: pH is stored x10, the rest in whole units
     for (int i = 0; i < CHLOR_STAT_COUNT; i++) {
         const char *key = mqtt_chlor_stat_key((chlor_stat_t)i);
         if (!current_state->chlor_stats_valid[i]) {
             len += snprintf(payload + len, sizeof(payload) - len, ",\"%s\":null", key);
-        } else if (i == CHLOR_STAT_LOWEST_PH || i == CHLOR_STAT_HIGHEST_PH) {
+        } else if (chlor_stat_is_ph((chlor_stat_t)i)) {
             len += snprintf(payload + len, sizeof(payload) - len,
                            ",\"%s\":%.1f", key, current_state->chlor_stats[i] / 10.0);
         } else {
             len += snprintf(payload + len, sizeof(payload) - len,
-                           ",\"%s\":%u", key, current_state->chlor_stats[i]);
+                           ",\"%s\":%" PRIu32, key, current_state->chlor_stats[i]);
         }
     }
 
