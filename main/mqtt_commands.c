@@ -288,7 +288,7 @@ static void handle_light_resync_command(int zone)
 
 static void handle_heater_command(const char *payload, int payload_len, int index)
 {
-    ESP_LOGI(TAG, "Heater %d command: %.*s", index, payload_len, payload);
+    ESP_LOGI(TAG, "Heater %d command: %.*s", index + 1, payload_len, payload);
 
     // State register per heater: Heater 1 = 0xE6, Heater 2 = 0xE9.
     uint8_t reg;
@@ -297,7 +297,7 @@ static void handle_heater_command(const char *payload, int payload_len, int inde
     } else if (index == 1) {
         reg = REG_ID_HEATER2_ONOFF;
     } else {
-        ESP_LOGW(TAG, "No state register known for heater %d", index);
+        ESP_LOGW(TAG, "No state register known for heater %d", index + 1);
         return;
     }
 
@@ -326,7 +326,7 @@ static void handle_heater_command(const char *payload, int payload_len, int inde
         0x03              // END
     };
 
-    ESP_LOGI(TAG, "Sending heater %d %s command", index, state ? "ON" : "OFF");
+    ESP_LOGI(TAG, "Sending heater %d %s command", index + 1, state ? "ON" : "OFF");
     send_uart_command(cmd, sizeof(cmd));
 }
 

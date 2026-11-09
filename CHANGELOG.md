@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed choosing a user favourite in the Home Assistant Favourite select doing nothing while its label hadn't arrived yet. The select offers it as e.g. `Favourite 3`, but the command handler only recognised received labels
 - Corrected PROTOCOL.md's description of the Pool and Spa favourite enable registers (`0x21`, `0x22`): they read `0x01` with "Use separate pool and spa modes" on and `0x00` with it off, rather than always `0x01`
+- Fixed the Home Assistant heater command log lines numbering heaters from 0 (e.g. `Sending heater 0 ON command` for Heater 1). They now number heaters 1 and 2, matching the entity names
 ### Removed
 ### Deprecated
 ### Security
