@@ -15,12 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Decoded the Heater Water Temperature register (`0x2C`, slot `0x01`), which a Genus Heater answers with the same reading as its CMD `0x16` broadcast. It is now logged (e.g. `Heater water temperature (CMD 0x38) - 24°C`) instead of as an unhandled register, and PROTOCOL.md documents it. A decoder replay test (`heater_water_temperature.txt`) covers it
+- Decoded the Viron Chlorinator's statistics registers (`0xE0`–`0xE6`, slot `0x0B`): cell running time, low salt cell running time, the lowest and highest pH and ORP it has measured, and the previous day's cell load. They are logged (e.g. `Chlorinator cell running time - 2436 h`) instead of as unhandled registers, published as Home Assistant sensors (Cell Running Time, Low Salt Cell Running Time, Lowest/Highest pH Measured, Lowest/Highest ORP Measured, Previous Day Cell Load), shown on the home page, and documented in PROTOCOL.md. A decoder replay test (`chlorinator_statistics.txt`) covers them
 ### Changed
 - Updated the favourite log lines to name favourites consistently: label and enable lines now number registers 1–8, matching their read requests (e.g. `Favourite 1 label (0x31) - "Pool"`), and the active favourite and control command lines show the favourite's label, or its default name until the label arrives (e.g. `Active favourite - filter and heatpump (0x03)`)
 - Updated the light zone color log lines to read the same from both sources, naming the command each came from (e.g. `Lighting zone 1 color (CMD 0x07) - 0x0E - Cyan (14)`), and a CMD `0x07` color outside the known table is now flagged as undocumented, as the color register already was
 ### Fixed
 - Fixed choosing a user favourite in the Home Assistant Favourite select doing nothing while its label hadn't arrived yet. The select offers it as e.g. `Favourite 3`, but the command handler only recognised received labels
 - Corrected PROTOCOL.md's description of the Pool and Spa favourite enable registers (`0x21`, `0x22`): they read `0x01` with "Use separate pool and spa modes" on and `0x00` with it off, rather than always `0x01`
+- Fixed the Home Assistant heater command log lines numbering heaters from 0 (e.g. `Sending heater 0 ON command` for Heater 1). They now number heaters 1 and 2, matching the entity names
 ### Removed
 ### Deprecated
 ### Security

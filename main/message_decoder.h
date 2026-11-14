@@ -203,6 +203,13 @@ typedef enum {
     REG_ID_HEATER2_ONOFF         = 0xE9,  // Heater 2 on/off state — tentative, see PROTOCOL.md Appendix A
     REG_ID_HEATER2_POOL_SETPOINT = 0xEA,  // Heater 2 pool setpoint
     REG_ID_HEATER2_SPA_SETPOINT  = 0xEB,  // Heater 2 spa setpoint — tentative, see PROTOCOL.md Appendix A
+    REG_ID_CHLOR_CELL_RUNNING_TIME = 0xE0,  // Cell running time in hours (slot 0x0B, Viron Chlorinator), 4-byte LE
+    REG_ID_CHLOR_LOW_SALT_RUNNING_TIME = 0xE1,  // Low salt cell running time in hours (slot 0x0B, Viron Chlorinator), 4-byte LE
+    REG_ID_CHLOR_LOWEST_PH         = 0xE2,  // Lowest pH measured × 10 (slot 0x0B, Viron Chlorinator), 2-byte LE
+    REG_ID_CHLOR_HIGHEST_PH        = 0xE3,  // Highest pH measured × 10 (slot 0x0B, Viron Chlorinator), 2-byte LE
+    REG_ID_CHLOR_LOWEST_ORP        = 0xE4,  // Lowest ORP measured in mV (slot 0x0B, Viron Chlorinator), 2-byte LE
+    REG_ID_CHLOR_HIGHEST_ORP       = 0xE5,  // Highest ORP measured in mV (slot 0x0B, Viron Chlorinator), 2-byte LE
+    REG_ID_CHLOR_PREV_DAY_CELL_LOAD = 0xE6,  // Previous day cell load in % (slot 0x0B, Viron Chlorinator), 1 byte
     REG_ID_CHLOR_UNKNOWN_COUNTDOWN = 0xE9,  // Unknown countdown (slot 0x0B, Viron Chlorinator) — tentative, see PROTOCOL.md Appendix A
     REG_ID_CHLOR_UNKNOWN_VALUE     = 0xEA,  // Unknown static value (slot 0x0B, Viron Chlorinator) — tentative, see PROTOCOL.md Appendix A
     REG_ID_MULTICOLOR_LIGHT_TYPE = 0xF0,  // System-wide multicolor light type selection (slot 0x01): MULTICOLOR_LIGHT_TYPE_*

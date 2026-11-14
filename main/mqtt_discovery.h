@@ -106,6 +106,9 @@ void mqtt_publish_orp_discovery_single(void);
 void mqtt_publish_ph_setpoint_discovery_single(void);
 void mqtt_publish_orp_setpoint_discovery_single(void);
 void mqtt_publish_chlor_output_level_discovery_single(void);
+void mqtt_publish_chlor_stat_discovery_single(chlor_stat_t stat);
+// Chlorinator state JSON field (and entity object_id suffix) for a statistic
+const char *mqtt_chlor_stat_key(chlor_stat_t stat);
 void mqtt_publish_service_mode_discovery_single(void);
 
 // Publish the pump entities: the speed sensor always, plus the power and

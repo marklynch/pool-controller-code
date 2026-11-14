@@ -1496,6 +1496,88 @@ static void publish_orp_setpoint_discovery(const char *device_id, const char *ma
 }
 
 // ======================================================
+// Chlorinator Statistics Sensor Discovery
+// ======================================================
+
+// One entry per chlor_stat_t, in enum order. key is both the chlorinator
+// state JSON field and the entity's object_id suffix. NULL fields are omitted.
+// pH has no unit: HA's `ph` device class accepts none (see publish_ph_discovery).
+static const struct {
+    const char *key;
+    const char *name;
+    const char *device_class;
+    const char *unit;
+    const char *state_class;
+    const char *icon;
+} CHLOR_STAT_SENSORS[CHLOR_STAT_COUNT] = {
+    [CHLOR_STAT_CELL_RUNNING_TIME]     = {"cell_running_time",          "Cell Running Time",          "duration", "h",  "total_increasing", NULL},
+    [CHLOR_STAT_LOW_SALT_RUNNING_TIME] = {"low_salt_cell_running_time", "Low Salt Cell Running Time", "duration", "h",  "total_increasing", NULL},
+    [CHLOR_STAT_LOWEST_PH]             = {"ph_lowest",                  "Lowest pH Measured",         "ph",       NULL, NULL,               NULL},
+    [CHLOR_STAT_HIGHEST_PH]            = {"ph_highest",                 "Highest pH Measured",        "ph",       NULL, NULL,               NULL},
+    [CHLOR_STAT_LOWEST_ORP]            = {"orp_lowest",                 "Lowest ORP Measured",        "voltage",  "mV", NULL,               NULL},
+    [CHLOR_STAT_HIGHEST_ORP]           = {"orp_highest",                "Highest ORP Measured",       "voltage",  "mV", NULL,               NULL},
+    [CHLOR_STAT_PREV_DAY_CELL_LOAD]    = {"previous_day_cell_load",     "Previous Day Cell Load",     NULL,       "%",  "measurement",      "mdi:chart-bar"},
+};
+
+const char *mqtt_chlor_stat_key(chlor_stat_t stat)
+{
+    return CHLOR_STAT_SENSORS[stat].key;
+}
+
+void mqtt_publish_chlor_stat_discovery_single(chlor_stat_t stat)
+{
+    char device_id[32];
+    mqtt_get_device_id(device_id, sizeof(device_id));
+
+    char mac_suffix[DEVICE_MAC_SUFFIX_LEN];
+    device_get_mac_suffix(mac_suffix, sizeof(mac_suffix));
+
+    const char *key = CHLOR_STAT_SENSORS[stat].key;
+
+    char avail_topic[128];
+    char state_topic[128];
+    snprintf(avail_topic, sizeof(avail_topic), "pool/%s/availability", device_id);
+    snprintf(state_topic, sizeof(state_topic), "pool/%s/chlorinator/state", device_id);
+
+    char uid[64];
+    snprintf(uid, sizeof(uid), DISCOVERY_ID_PREFIX "_%s_%s", mac_suffix, key);
+
+    char value_template[64];
+    snprintf(value_template, sizeof(value_template), "{{ value_json.%s }}", key);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "name", CHLOR_STAT_SENSORS[stat].name);
+    cJSON_AddStringToObject(root, "state_topic", state_topic);
+    cJSON_AddStringToObject(root, "value_template", value_template);
+    if (CHLOR_STAT_SENSORS[stat].device_class) {
+        cJSON_AddStringToObject(root, "device_class", CHLOR_STAT_SENSORS[stat].device_class);
+    }
+    if (CHLOR_STAT_SENSORS[stat].unit) {
+        cJSON_AddStringToObject(root, "unit_of_measurement", CHLOR_STAT_SENSORS[stat].unit);
+    }
+    if (CHLOR_STAT_SENSORS[stat].state_class) {
+        cJSON_AddStringToObject(root, "state_class", CHLOR_STAT_SENSORS[stat].state_class);
+    }
+    if (CHLOR_STAT_SENSORS[stat].icon) {
+        cJSON_AddStringToObject(root, "icon", CHLOR_STAT_SENSORS[stat].icon);
+    }
+    add_entity_ids(root, "sensor", mac_suffix, uid, "%s", key);
+    cJSON_AddStringToObject(root, "availability_topic", avail_topic);
+    cJSON_AddItemToObject(root, "device", build_device_cjson(device_id, mac_suffix));
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    if (!json_str) {
+        ESP_LOGE(TAG, "Failed to print %s discovery JSON", key);
+        cJSON_Delete(root);
+        return;
+    }
+    ESP_LOGI(TAG, "Publishing %s discovery: %s", key, json_str);
+    publish_discovery("sensor", uid, json_str);
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+}
+
+// ======================================================
 // Chlorine Output Level Sensor Discovery
 // ======================================================
 
@@ -2132,7 +2214,7 @@ void mqtt_publish_discovery(void)
     // Favourite select (snapshot state for dynamic options)
     publish_favourite_discovery(device_id, mac_suffix, &snapshot);
 
-    // Note: Chemistry (pH/ORP readings and setpoints, chlorine output level),
+    // Note: Chemistry (pH/ORP readings and setpoints, chlorinator statistics, chlorine output level),
     // pump speed, and service mode are NOT published here. Each entity is
     // published individually on its first valid reading (see
     // mqtt_publish_chlorinator, mqtt_publish_pump, and

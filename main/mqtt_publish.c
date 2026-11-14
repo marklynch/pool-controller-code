@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "cJSON.h"
 #include <string.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -31,6 +32,7 @@ static struct {
     bool ph_setpoint;
     bool orp_setpoint;
     bool chlor_output_level;
+    bool chlor_stats[CHLOR_STAT_COUNT];
     bool pump;
     bool service_mode;
 } s_discovery_published = {0};
@@ -776,7 +778,11 @@ void mqtt_publish_chlorinator(const pool_state_t *current_state)
         s_last_published_state.ph_setpoint == current_state->ph_setpoint &&
         s_last_published_state.orp_setpoint == current_state->orp_setpoint &&
         s_last_published_state.chlor_output_level_valid == current_state->chlor_output_level_valid &&
-        s_last_published_state.chlor_output_level == current_state->chlor_output_level) {
+        s_last_published_state.chlor_output_level == current_state->chlor_output_level &&
+        memcmp(s_last_published_state.chlor_stats, current_state->chlor_stats,
+               sizeof(current_state->chlor_stats)) == 0 &&
+        memcmp(s_last_published_state.chlor_stats_valid, current_state->chlor_stats_valid,
+               sizeof(current_state->chlor_stats_valid)) == 0) {
         return;  // No change, skip publish
     }
 
@@ -800,6 +806,12 @@ void mqtt_publish_chlorinator(const pool_state_t *current_state)
     if (current_state->chlor_output_level_valid && !s_discovery_published.chlor_output_level) {
         mqtt_publish_chlor_output_level_discovery_single();
         s_discovery_published.chlor_output_level = true;
+    }
+    for (int i = 0; i < CHLOR_STAT_COUNT; i++) {
+        if (current_state->chlor_stats_valid[i] && !s_discovery_published.chlor_stats[i]) {
+            mqtt_publish_chlor_stat_discovery_single((chlor_stat_t)i);
+            s_discovery_published.chlor_stats[i] = true;
+        }
     }
 
     char device_id[32];
@@ -843,6 +855,20 @@ void mqtt_publish_chlorinator(const pool_state_t *current_state)
         len += snprintf(payload + len, sizeof(payload) - len, ",\"orp_setpoint\":null");
     }
 
+    // Chlorinator statistics: pH is stored x10, the rest in whole units
+    for (int i = 0; i < CHLOR_STAT_COUNT; i++) {
+        const char *key = mqtt_chlor_stat_key((chlor_stat_t)i);
+        if (!current_state->chlor_stats_valid[i]) {
+            len += snprintf(payload + len, sizeof(payload) - len, ",\"%s\":null", key);
+        } else if (chlor_stat_is_ph((chlor_stat_t)i)) {
+            len += snprintf(payload + len, sizeof(payload) - len,
+                           ",\"%s\":%.1f", key, current_state->chlor_stats[i] / 10.0);
+        } else {
+            len += snprintf(payload + len, sizeof(payload) - len,
+                           ",\"%s\":%" PRIu32, key, current_state->chlor_stats[i]);
+        }
+    }
+
     // Salt chlorinator setpoint
     if (current_state->chlor_output_level_valid) {
         len += snprintf(payload + len, sizeof(payload) - len,
@@ -864,6 +890,10 @@ void mqtt_publish_chlorinator(const pool_state_t *current_state)
     s_last_published_state.orp_setpoint_valid = current_state->orp_setpoint_valid;
     s_last_published_state.chlor_output_level = current_state->chlor_output_level;
     s_last_published_state.chlor_output_level_valid = current_state->chlor_output_level_valid;
+    memcpy(s_last_published_state.chlor_stats, current_state->chlor_stats,
+           sizeof(current_state->chlor_stats));
+    memcpy(s_last_published_state.chlor_stats_valid, current_state->chlor_stats_valid,
+           sizeof(current_state->chlor_stats_valid));
 
     ESP_LOGI(TAG, "Published chlorinator: pH=%.1f (sp=%.1f), ORP=%d (sp=%d), chlor_output_level=%d",
              current_state->ph_reading / 10.0, current_state->ph_setpoint / 10.0,

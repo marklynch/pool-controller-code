@@ -2791,7 +2791,14 @@ The register ID and slot together determine the message meaning. The slot distin
 | `0xD0`–`0xD1`  | `0x07` | Internet Gateway WiFi SSID / password | Unterminated ASCII string, written by the Touchscreen to the Gateway via CMD `0x3A` — see [Internet Gateway WiFi Credentials](#internet-gateway-wifi-credentials-register-0xd00xd1-slot-0x07-) |
 | `0xE0`–`0xE7`  | `0x01` | Light Zone Active      | 1-byte binary (`0x00`=Inactive, `0x01`=Active)   |
 | `0xE0`–`0xE7`  | `0x02` | Valve State            | 1-byte (`0x00`=Off, `0x01`=Auto, `0x02`=On), the state byte of the valve's [0x27](#0x27--valve-state-broadcast-) slot. `0xE0`=Valve 1 … `0xE7`=Valve 8 — see note below |
+| `0xE0`         | `0x0B` | Cell Running Time (Chlorinator) | 4-byte little-endian hours (`84 09 00 00` = 2436 h), answered by the Viron Chlorinator — see note below |
+| `0xE1`         | `0x0B` | Low Salt Cell Running Time (Chlorinator) | 4-byte little-endian hours (`3F 04 00 00` = 1087 h), answered by the Viron Chlorinator — see note below |
+| `0xE2`         | `0x0B` | Lowest pH Measured (Chlorinator)  | 2-byte little-endian pH × 10 (`2A 00` = 4.2), answered by the Viron Chlorinator — see note below |
+| `0xE3`         | `0x0B` | Highest pH Measured (Chlorinator) | 2-byte little-endian pH × 10 (`60 00` = 9.6), answered by the Viron Chlorinator — see note below |
+| `0xE4`         | `0x0B` | Lowest ORP Measured (Chlorinator)  | 2-byte little-endian mV (`64 00` = 100 mV), answered by the Viron Chlorinator — see note below |
+| `0xE5`         | `0x0B` | Highest ORP Measured (Chlorinator) | 2-byte little-endian mV (`41 03` = 833 mV), answered by the Viron Chlorinator — see note below |
 | `0xE6`         | `0x00` | Heater State (Heater 1)   | 1-byte (`0x00`=Off, `0x01`=On)                |
+| `0xE6`         | `0x0B` | Previous Day Cell Load (Chlorinator) | 1-byte % (`21` = 33%), answered by the Viron Chlorinator — see note below |
 | `0xE7`         | `0x00` | Pool Temperature Setpoint (Heater 1) | 1-byte °C value                    |
 | `0xE8`         | `0x00` | Spa Temperature Setpoint (Heater 1)  | 1-byte °C value                    |
 | `0xE8`–`0xF7`  | `0x03` | Timer Configured       | 1-byte flag (`0x01`=timer configured, `0x00`=not configured). `0xE8`=Timer 1 … `0xF7`=Timer 16 — see note below |
@@ -2833,6 +2840,19 @@ The register ID and slot together determine the message meaning. The slot distin
   Both are answered only while their heater uses a channel: `0xCA` only while Heater 1 is Connect Inbuilt (not with Genus or no heater), and `0xCD` only while `0xCC` = `0x01`, since a second heater is always Connect Inbuilt. `0xFF` means a heater configured without a channel assigned yet. The channel has not yet been seen to change as a heater is moved to another channel.
 - **Unanswered heater registers**: with no heater configured, or with Genus selected and no Genus heater on the bus, the Touchscreen stopped answering `0xC9`, `0xCA` and the `0xE6`–`0xEB` setpoint and state registers, though `0xC8` still answers. On installs with a bus-controlled heater, the heater itself can answer some of these (see [Non-Touchscreen Responders](#non-touchscreen-responders)).
 - **`0xEB` default**: when the second heater isn't plumbed to spa, `0xEB` reads `0x0A` (10°C) — an unused default at the minimum setpoint rather than a live value.
+- **`0xE0`–`0xE6`/slot `0x0B` (chlorinator statistics)**: a contiguous block of the chlorinator's own statistics, answered by the Viron Chlorinator (`0x0084`) in response to the Internet Gateway's [0x39](#0x39--register-read-request-) poll. All values are little-endian, at three widths:
+
+  | Register | Width | Value | Unit |
+  |----------|-------|-------|------|
+  | `0xE0` | 4 bytes | Cell running time | hours |
+  | `0xE1` | 4 bytes | Low salt cell running time | hours |
+  | `0xE2` | 2 bytes | Lowest pH measured | pH × 10 |
+  | `0xE3` | 2 bytes | Highest pH measured | pH × 10 |
+  | `0xE4` | 2 bytes | Lowest ORP measured | mV |
+  | `0xE5` | 2 bytes | Highest ORP measured | mV |
+  | `0xE6` | 1 byte  | Previous day cell load | % |
+
+  pH uses the same × 10 scaling as [0x1D](#0x1d--chlorinator-setpoint-) and [0x1F](#0x1f--chlorinator-reading-). Matched against the chlorinator's own statistics on the zagnuts install: `84 09 00 00` = 2436 h, `3F 04 00 00` = 1087 h, `2A 00` = 4.2, `60 00` = 9.6, `64 00` = 100 mV, `41 03` = 833 mV and `21` = 33%, the values it reported for each field. Across an overnight capture the pH and ORP extremes stayed static. Both running-time counters ticked up by one hour during the morning pump run (`0xE0` 2436 → 2437, `0xE1` 1087 → 1088) and held still while the pump was off. `0xE6` changed once, from 33% to 41%, between 23:40 and 08:48 local time, which spans local midnight as a previous-day value should. The chlorinator has a Reset Statistics action, but how these registers respond to it has not been captured.
 - **`0xE9`/slot `0x0B` — tentative ⚠️**: a 2-byte little-endian value followed by 2 bytes that have only ever read `00 00`. Answered by the Viron Chlorinator (`0x0084`) rather than the Touchscreen, in response to the Internet Gateway's [0x39](#0x39--register-read-request-) poll. The value is a linear countdown in units of 1/5 second — **300 units = 1 minute**. Measured across 13 consecutive reads in one capture: 12700 → 5500 over 24 minutes, a rate of 298 units/minute with a residual spread of only 275 units (55 s), which is the one-minute quantisation expected from a value the chlorinator refreshes once a minute. Extrapolating the zero-crossing and cross-referencing the Touchscreen clock ([0xFD](#0xfd--controller-daytimeclock-)) shows the countdown targeting a fixed wall-clock time (~10:45 in that capture). What it counts down *to* is unknown — that install's only configured timer runs 09:00–13:00 daily, so it is not the timer's stop time. A separate capture from the same install reads `00 00 00 00` at 15:36–15:40, outside the timer window, consistent with the counter only running while the equipment does. On the other install the Gateway polls this register every cycle but the chlorinator never answers it.
 - **`0xEA`/slot `0x0B` — tentative ⚠️**: same payload shape and source as `0xE9`/slot `0x0B` above — a 2-byte little-endian value followed by 2 bytes that have only ever read `00 00`, answered by the Viron Chlorinator (`0x0084`) in response to the Gateway's [0x39](#0x39--register-read-request-) poll (`02 00 F0 FF FF 80 00 39 0E B7 EA 0B F5 03`). Two installs report different but entirely static values: `94 11 00 00` = 4500 (141 responses over ~18.5 hours) and `28 23 00 00` = 9000 (18 responses across three captures). It reads as a stored setting rather than a live measurement — 4500 would be a plausible salt level in ppm, but 9000 is high for the same units, so the meaning is unconfirmed. The Gateway polls it back-to-back with `0xE9` (~1.5 s apart, every cycle), but the two are not related as total and remaining: `0xEA` held at 9000 while `0xE9` swept 12700 → 0, including passing straight through 9000 with no effect.
 - **`0x20` (Active Favourite) — confirmed ✅**: slot `0x03` is the Favourite slot, and `0x20` sits immediately before the Favourite Enable block (`0x21`–`0x28`). Reports which favourite is currently active, using the same value space as CMD [`0x2A`](#0x2a--favourite-control-command-): `0x00`=Pool, `0x01`=Spa, `0x02`–`0x07`=user Favourites 1–6; `0xFF` = no favourite active. The All Off/All Auto command values (`0x80`/`0x81`) never appear here — the controller does not remember them as states: All Off reports as `0x00` (it is implemented as Pool mode with all channels off; the accompanying [0x14 Mode](#0x14--mode-spapool-) broadcast also says Pool) and All Auto reports as `0xFF`. Broadcast ~1 s after a gateway-commanded activation ([0x2A](#0x2a--favourite-control-command-)), when an active favourite is knocked out by a manual channel change, and in the periodic ~8-minute register dump — but **not** when a favourite is activated at the touchscreen itself (the new value then only appears in the next dump). A [0x15 Mode Toggle](#0x15--mode-toggle-command-spapool-) counts as activating the Pool or Spa favourite: read back 5–10 s later, it set `0x20` to `0x01` on a switch to Spa and `0x00` on a switch to Pool. Switching the heater outside a mode change knocks the favourite out just as a channel change does: in Spa, an injected [0x1A heater toggle](#0x1a--heater-toggle-command-) that switched the heater off took `0x20` from `0x01` to `0xFF` (see `test/samples/active_favourite.txt`).
@@ -3068,6 +3088,13 @@ static const register_handler_t REGISTER_HANDLERS[] = {
     {0xCD, 0xCD, 0x00, handle_heater_power_channel,    "Heater 2 Power Channel"},
     {0xEA, 0xEB, 0x00, handle_temp_setpoint,           "Heater 2 Setpoint"},
 
+    {0xE0, 0xE0, 0x0B, handle_chlor_statistic,         "Cell Running Time"},
+    {0xE1, 0xE1, 0x0B, handle_chlor_statistic,         "Low Salt Cell Running Time"},
+    {0xE2, 0xE2, 0x0B, handle_chlor_statistic,         "Lowest pH Measured"},
+    {0xE3, 0xE3, 0x0B, handle_chlor_statistic,         "Highest pH Measured"},
+    {0xE4, 0xE4, 0x0B, handle_chlor_statistic,         "Lowest ORP Measured"},
+    {0xE5, 0xE5, 0x0B, handle_chlor_statistic,         "Highest ORP Measured"},
+    {0xE6, 0xE6, 0x0B, handle_chlor_statistic,         "Previous Day Cell Load"},
     {0xE9, 0xE9, 0x0B, handle_chlor_unknown_countdown, "Unknown Countdown"},
     {0xEA, 0xEA, 0x0B, handle_chlor_unknown_value,     "Unknown Value"},
 

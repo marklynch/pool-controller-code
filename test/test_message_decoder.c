@@ -1346,6 +1346,74 @@ void test_heater_water_temp_register(void)
 }
 
 /**
+ * Test: the chlorinator statistics registers (0xE0-0xE6, slot 0x0B), at their
+ * three payload widths, land in their own chlor_stats slots without being
+ * flagged as undocumented. Frames are from real Viron Chlorinator captures.
+ */
+void test_chlor_statistics_registers(void)
+{
+    init_test_context();
+
+    uint8_t cell_hours[] = {
+        0x02, 0x00, 0x84, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x12, 0x4E,
+        0xE0, 0x0B, 0x84, 0x09, 0x00, 0x00, 0x78, 0x03
+    };
+    uint8_t low_salt_hours[] = {
+        0x02, 0x00, 0x84, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x12, 0x4E,
+        0xE1, 0x0B, 0x3F, 0x04, 0x00, 0x00, 0x2F, 0x03
+    };
+    uint8_t prev_day_load[] = {
+        0x02, 0x00, 0x84, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x0F, 0x4B,
+        0xE6, 0x0B, 0x21, 0x12, 0x03
+    };
+    uint8_t frames[][16] = {
+        {0x02, 0x00, 0x84, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x10, 0x4C, 0xE2, 0x0B, 0x2A, 0x00, 0x17, 0x03},
+        {0x02, 0x00, 0x84, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x10, 0x4C, 0xE3, 0x0B, 0x60, 0x00, 0x4E, 0x03},
+        {0x02, 0x00, 0x84, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x10, 0x4C, 0xE4, 0x0B, 0x64, 0x00, 0x53, 0x03},
+        {0x02, 0x00, 0x84, 0xFF, 0xFF, 0x80, 0x00, 0x38, 0x10, 0x4C, 0xE5, 0x0B, 0x41, 0x03, 0x34, 0x03},
+    };
+
+    TEST_ASSERT(!test_pool_state.chlor_stats_valid[CHLOR_STAT_LOWEST_PH],
+                "No statistic valid before any frame");
+
+    int before = unknown_buffer_record_count;
+    for (int i = 0; i < 4; i++) {
+        TEST_ASSERT(decode_message(frames[i], sizeof(frames[i]), &test_ctx),
+                    "Chlorinator statistic register decoded");
+    }
+    TEST_ASSERT(decode_message(cell_hours, sizeof(cell_hours), &test_ctx),
+                "Cell running time decoded");
+    TEST_ASSERT(decode_message(low_salt_hours, sizeof(low_salt_hours), &test_ctx),
+                "Low salt cell running time decoded");
+    TEST_ASSERT(decode_message(prev_day_load, sizeof(prev_day_load), &test_ctx),
+                "Previous day cell load decoded");
+    TEST_ASSERT(unknown_buffer_record_count == before, "Statistics are not flagged");
+
+    TEST_ASSERT(test_pool_state.chlor_stats_valid[CHLOR_STAT_CELL_RUNNING_TIME] &&
+                test_pool_state.chlor_stats[CHLOR_STAT_CELL_RUNNING_TIME] == 2436,
+                "Cell running time = 2436 h");
+    TEST_ASSERT(test_pool_state.chlor_stats_valid[CHLOR_STAT_LOW_SALT_RUNNING_TIME] &&
+                test_pool_state.chlor_stats[CHLOR_STAT_LOW_SALT_RUNNING_TIME] == 1087,
+                "Low salt cell running time = 1087 h");
+    TEST_ASSERT(test_pool_state.chlor_stats_valid[CHLOR_STAT_PREV_DAY_CELL_LOAD] &&
+                test_pool_state.chlor_stats[CHLOR_STAT_PREV_DAY_CELL_LOAD] == 33,
+                "Previous day cell load = 33%");
+
+    TEST_ASSERT(test_pool_state.chlor_stats_valid[CHLOR_STAT_LOWEST_PH] &&
+                test_pool_state.chlor_stats[CHLOR_STAT_LOWEST_PH] == 42,
+                "Lowest pH = 42 (4.2)");
+    TEST_ASSERT(test_pool_state.chlor_stats_valid[CHLOR_STAT_HIGHEST_PH] &&
+                test_pool_state.chlor_stats[CHLOR_STAT_HIGHEST_PH] == 96,
+                "Highest pH = 96 (9.6)");
+    TEST_ASSERT(test_pool_state.chlor_stats_valid[CHLOR_STAT_LOWEST_ORP] &&
+                test_pool_state.chlor_stats[CHLOR_STAT_LOWEST_ORP] == 100,
+                "Lowest ORP = 100 mV");
+    TEST_ASSERT(test_pool_state.chlor_stats_valid[CHLOR_STAT_HIGHEST_ORP] &&
+                test_pool_state.chlor_stats[CHLOR_STAT_HIGHEST_ORP] == 833,
+                "Highest ORP = 833 mV");
+}
+
+/**
  * Test: a color outside the known table is flagged from either of its sources,
  * CMD 0x07 and the Light Zone Color register.
  */
@@ -2503,6 +2571,7 @@ int main(void)
     test_dedicated_solar_undocumented_mode_keeps_active();
     test_light_color_outside_table_flagged();
     test_heater_water_temp_register();
+    test_chlor_statistics_registers();
     test_dedicated_solar_undocumented_raw_state_flagged();
     test_solar_mode_and_output_are_independent();
     test_decode_channel_status_lights_active();
