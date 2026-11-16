@@ -30,7 +30,7 @@ This document describes the proprietary serial protocol used by the Connect 10 p
   - [0x19 — Temperature Setpoint Command ✅](#0x19--temperature-setpoint-command-)
   - [0x1A — Heater Toggle Command ✅](#0x1a--heater-toggle-command-)
   - [0x1B — Pump Button Activity ✅](#0x1b--pump-button-activity-)
-  - [0x1D — Chlorinator Setpoint ✅](#0x1d--chlorinator-setpoint-)
+  - [0x1D — Chlorinator Setpoint ⚠️](#0x1d--chlorinator-setpoint-️)
   - [0x1F — Chlorinator Reading ✅](#0x1f--chlorinator-reading-)
   - [0x25 — Valve Sync ✅](#0x25--valve-sync-)
   - [0x26 — Configuration ⚠️](#0x26--configuration-️)
@@ -243,7 +243,7 @@ Click any CMD in the first column to jump to the full section in [Commands](#com
 | [`0x1A`](#0x1a--heater-toggle-command-)                             | Heater Toggle Command               | `0x0050` → `0x007F` All Heaters                                        | Unicast frame with no data (LEN `0x0B`, FRAME_TYPE `00 00`) that toggles the heater on/off; sent in a mode change when the heater needs switching | Yes (log-only)          |
 | [`0x1B`](#0x1b--pump-button-activity-)                         | Pump Button Activity                | `0x00A0` Viron XT Pump → Broadcast                                      | Speed button pressed on pump (Low/Med/High)                                                  | Yes (log-only)          |
 | [`0x19`](#0x19--temperature-setpoint-command-)                 | Temperature Setpoint Command        | `0x00F0` Gateway, `0x0050` Touchscreen, `0xAC1D` → Broadcast           | Sub-dispatched by slot byte (`0x01`/`0x02` Pool/Spa from Gateway, `0x03` heater pair from Touchscreen); dispatched on CMD byte alone | Yes (unified handler)   |
-| [`0x1D`](#0x1d--chlorinator-setpoint-)                         | Chlorinator Setpoint                | `0x0090` RolaChem, `0x0084` Viron, `0x0081` VX 11S v3 → Broadcast         | Byte 10: `0x00`=chlorine output level (VX 11S v3 only), `0x01`=pH, `0x02`=ORP; dispatched on CMD byte alone | Yes (unified handler)   |
+| [`0x1D`](#0x1d--chlorinator-setpoint-️)                         | Chlorinator Setpoint                | `0x0090` RolaChem, `0x0084` Viron, `0x0081` VX 11S v3 → Broadcast         | Byte 10: `0x00`=chlorine output level (VX 11S v3 only), `0x01`=pH, `0x02`=ORP; dispatched on CMD byte alone | Yes (unified handler)   |
 | [`0x1F`](#0x1f--chlorinator-reading-)                          | Chlorinator Reading                 | `0x0090` RolaChem, `0x0084` Viron → Broadcast                          | Byte 10: `0x01`=pH, `0x02`=ORP; same payload from both sources; dispatched on CMD byte alone | Yes (unified handler)   |
 | [`0x25`](#0x25--valve-sync-)                                   | Valve Sync                          | `0x0050` → `0x006F` Internal Channels                                  | Unicast; valve counterpart of `0x0D`; dispatched on CMD byte alone                          | Yes (log-only)          |
 | [`0x26`](#0x26--configuration-️)                               | Configuration                       | `0x0050` → Broadcast                                                   |                                                                                             | Yes                     |
@@ -295,6 +295,7 @@ Single-byte broadcast emitted by the Touchscreen (`0x0050`) immediately after a 
 **Data Fields:**
 
 - Byte 10: Acknowledgement value (always `0x00` or `0x01` in observed captures)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 **Notes:**
 
@@ -322,6 +323,7 @@ Indicates which lighting zones are installed and their current on/off state. Bro
 
 - Byte 10: Zone index (`0x00` to `0x07` for zones 1-8)
 - Byte 11: Light status (`0x00` off, `0x01` on)
+- Byte 12: Data checksum (sum of bytes 10–11)
 
 **Notes:**
 
@@ -347,6 +349,7 @@ Reports a lighting zone's current color — the CMD companion to [0x06 Lighting 
 
 - Byte 10: Zone index (`0x00` to `0x07` for zones 1-8)
 - Byte 11: Color code — same value and enumeration as the zone's Light Zone Color register (`0xD0`+zone, slot `0x01`)
+- Byte 12: Data checksum (sum of bytes 10–11)
 
 **Notes:**
 
@@ -364,11 +367,22 @@ Firmware-version announcement (`{major, minor}` payload) broadcast by multiple d
 
 A broadcast frame with data and LENGTH `0x0E`: 14 bytes in total, carrying a 2-byte payload. Every sender uses the same header apart from its own source address in bytes 1–2. The header checksum (byte 9) changes with the source, and works out to `(0x98 + SRC_HI + SRC_LO) & 0xFF`, because the fixed header bytes sum to `0x98`. The table below gives each source's full header.
 
+**Example (Internet Gateway, v5.1):**
+
+```
+02 00 F0 FF FF 80 00 0A 0E 88 05 01 06 03
+                              ^^ Major version (5)
+                                 ^^ Minor version (1)
+                                    ^^ Data checksum (0x05 + 0x01 = 0x06)
+                                       ^^ END
+                              → Version 5.1
+```
+
 **Data Fields:**
 
 - Byte 10: Major version number
 - Byte 11: Minor version number
-- Byte 12: Data checksum, `(major + minor) & 0xFF`. This is the standard [data checksum](#checksum-calculation) over the two payload bytes and carries no version information of its own
+- Byte 12: Data checksum (sum of bytes 10–11)
 
 **Known sources and observed samples:**
 
@@ -383,17 +397,6 @@ A broadcast frame with data and LENGTH `0x0E`: 14 bytes in total, carrying a 2-b
 | `0x00A0` | Viron XT Pump                            | `02 00 A0 FF FF 80 00 0A 0E 38`         | `01 09 0A`                     | 1.9           |
 | `0x00F0` | Internet Gateway                         | `02 00 F0 FF FF 80 00 0A 0E 88`         | `05 01 06` / `05 00 05`        | 5.1 / 5.0     |
 | `0xAC1D` | Pool Controller ESP32 (this firmware)    | `02 AC 1D FF FF 80 00 0A 0E 61`         | `01 13 14`                     | 1.19          |
-
-**Example (Internet Gateway, v5.1):**
-
-```
-02 00 F0 FF FF 80 00 0A 0E 88 05 01 06 03
-                              ^^ Major version (5)
-                                 ^^ Minor version (1)
-                                    ^^ Data checksum (0x05 + 0x01 = 0x06)
-                                       ^^ END
-                              → Version 5.1
-```
 
 **Notes:**
 
@@ -429,6 +432,7 @@ Detailed status for all configured channels. Broadcast by the Touchscreen (`0x00
   - Byte 0: Channel type — see lookup table below
   - Byte 1: Channel state (`0x00` Off, `0x01` Auto, `0x02` On)
   - Byte 2: Currently active (e.g. turned on by timer)
+- Last byte before END: Data checksum (sum of bytes 10 onwards)
 
 **Channel Types:**
 
@@ -494,6 +498,7 @@ Reports which channels are currently active. Unicast from the Touchscreen (`0x00
   - Bit 2: Channel 3
   - Bit 1: Channel 2
   - Bit 0: Channel 1
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 ---
 
@@ -521,6 +526,7 @@ The Touchscreen does not check that the source address belongs to a chlorinator 
   - `0x03` = Low Speed
   - `0x04` = Medium Speed
   - `0x05` = High Speed
+- Byte 12: Data checksum (sum of bytes 10–11)
 
 **Notes:**
 
@@ -636,7 +642,7 @@ Captured for indices `0x00`–`0x05` by pressing each channel button on the Conn
 **Data Fields:**
 
 - Byte 10: Channel index (0-based)
-- Byte 11: Data checksum (equals channel index, as that is the only data byte)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 **Channel Index Mapping:**
 
@@ -700,7 +706,7 @@ Sent by the RolaChem (`0x0090`) to the Touchscreen when its Manual On / Off / Au
 **Data Fields:**
 
 - Byte 10: `0x01` in every captured request. Meaning unknown ⚠️ It could be a 1-based channel number (the Filter is channel 1 on the capturing install), which would differ from the 0-based index of `0x10`, or a fixed code.
-- Byte 11: Data checksum (equals byte 10)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 **Observed (single-speed Filter on channel 1, see `test/samples/rolachem_controls.txt`):**
 
@@ -758,8 +764,9 @@ The Touchscreen's own device status. Like the other devices in this family, it i
 
 - Byte 10: Bit 0 is always set. Bits 2–3 hold a value of 0–2 (3 never seen); bits 1 and 4–7 are always clear. Meaning unknown ⚠️
 - Byte 11: Always `0x00` in observed samples
+- Byte 12: Data checksum (sum of bytes 10–11)
 
-**Observed values of byte 10:**
+**Values (byte 10):**
 
 | Value  | Bits 3–2 | Where seen |
 |--------|----------|------------|
@@ -799,6 +806,7 @@ Broadcast by the main controller (`0x0062`) reporting the inbuilt heater's on/of
   - Bit 2: Dedicated Solar output active, correlated with physical pump stop/start on a Connect 10 (2026-10-18 capture): payload `00 00 00` stopped, `00 04 00` running under Auto and On, then `00 00 00` stopped again.
   - Bits 3–7: Unknown
 - Byte 12: Unknown (maybe bitmask or interlock?) — `0x08` or `0x00`. It differs between captures from the same install (the round 8 reference install shows `0x08` in some captures and `0x00` in others, such as round 8 `run_3`–`run_6`), and is always `0x00` on ninkasi ⚠️
+- Byte 13: Data checksum (sum of bytes 10–12)
 
 **Timing and the controller's mode buttons:**
 
@@ -832,8 +840,9 @@ Status broadcast from the Active i25 Evo (Genus) heat pump. Same LENGTH and payl
 - Byte 10: Always `0x00` in all observed samples
 - Byte 11: Status byte — see table below
 - Bytes 12–13: Always `0x00` in all observed samples
+- Byte 14: Data checksum (sum of bytes 10–13)
 
-**Observed status values:**
+**Values (byte 11):**
 
 | Value  | Bit 4 | Bit 2 | Bit 1 <br> Pressure / Flow | Bit 0 <br> Heater On | Meaning |
 |--------|-------|-------|-------|-------|---------|
@@ -883,8 +892,9 @@ Viron Gas Heater (`0x0071`) example:
 - Byte 11: Status byte — see table below
 - Byte 12: Always `0x00` in all observed samples
 - Byte 13: Always `0x00` in all observed samples
+- Byte 14: Data checksum (sum of bytes 10–13)
 
-**Observed status values (payload[1]):**
+**Values (byte 11):**
 
 | Value  | Bits 7–5 Diagnostics | Bit 4 <br> Locked Out | Bit 3 <br> Flame | Bit 2 <br> Gas Valve | Bit 1 <br> Pressure / Flow | Bit 0 <br> Heater On | Meaning |
 |--------|---------|-------|-------|-------|-------|-------|---------|
@@ -934,8 +944,8 @@ Broadcast by the VX 11S v3 on the same ~60-second cycle as its CMD `0x1D` chlori
 
 **Data Fields:**
 
-- Byte 10: Unknown — always `0x00` in observed captures; suspected status/warning flags (see [CMD 0x1D slot 0x00 notes](#0x1d--chlorinator-setpoint-))
-- Byte 11: Data checksum (equals byte 10)
+- Byte 10: Unknown — always `0x00` in observed captures; suspected status/warning flags (see [CMD 0x1D slot 0x00 notes](#0x1d--chlorinator-setpoint-️))
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 Handler: `handle_vx11s_status` — log-only, no state update (meaning unknown); a non-zero byte 10 is recorded as an "undocumented" entry on the Unknown Messages page.
 
@@ -960,9 +970,9 @@ Carries a 1-byte status whose meaning is unknown. Both chlorinator address varia
 **Data Fields:**
 
 - Byte 10: Status value. Meaning unknown ⚠️
-- Byte 11: Data checksum (equals byte 10 — only one data byte)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
-**Observed values:**
+**Values:**
 
 | Value  | Source   | Where seen |
 |--------|----------|------------|
@@ -1008,7 +1018,7 @@ Firmware version broadcast by the Internet Gateway on startup. One byte longer t
 
 **Observed samples:**
 
-| Sample (bytes 10–12) | Major | Minor | Embedded checksum |
+| Sample (bytes 10–12) | Major | Minor | Data checksum     |
 |----------------------|-------|-------|-------------------|
 | `05 01 06`           | 5     | 1     | `0x06` (=5+1)     |
 | `05 00 05`           | 5     | 0     | `0x05` (=5+0)     |
@@ -1021,7 +1031,21 @@ Carries redundant firmware-version information already announced by [0x0A](#0x0a
 
 A [frame with no data](#frame-types) broadcast by a chlorinator. From the RolaChem (`0x0090`) it heads an off-cycle burst sent when a setup change is saved at the RolaChem's own screen, and the Touchscreen answers that burst. Also seen from the VX 11S v3 (`0x0081`) and Viron (`0x0084`), next to their [0x12](#0x12--device-status-️) status. No handler in `message_decoder.c`; it is logged as an unhandled CMD.
 
-**Pattern:** `02 00 90 FF FF 00 00 13 0B AE 03`
+**Patterns:**
+
+- RolaChem (`0x0090`): `02 00 90 FF FF 00 00 13 0B AE 03`
+- VX 11S v3 Salt Chlorinator (`0x0081`): `02 00 81 FF FF 00 00 13 0B 9F 03`
+- Viron Chlorinator (`0x0084`): `02 00 84 FF FF 00 00 13 0B A2 03`
+
+**Example:**
+
+```
+02 00 90 FF FF 00 00 13 0B AE 03
+               ^^ ^^ FRAME_TYPE 00 00 (frame with no data)
+                        ^^ LENGTH (0x0B = 11 bytes)
+                           ^^ Header checksum
+                              ^^ END
+```
 
 **Data Fields:**
 
@@ -1034,8 +1058,8 @@ A [frame with no data](#frame-types) broadcast by a chlorinator. From the RolaCh
 | 1 | `0x13` Chlorinator Change Notice |
 | 2 | [0x12](#0x12--device-status-️) status |
 | 3 | [0x0A](#0x0a--firmware-version-) firmware version (2.1) |
-| 4 | [0x1D](#0x1d--chlorinator-setpoint-) pH setpoint |
-| 5 | [0x1D](#0x1d--chlorinator-setpoint-) ORP setpoint |
+| 4 | [0x1D](#0x1d--chlorinator-setpoint-️) pH setpoint |
+| 5 | [0x1D](#0x1d--chlorinator-setpoint-️) ORP setpoint |
 
 **Notes:**
 
@@ -1043,7 +1067,7 @@ A [frame with no data](#frame-types) broadcast by a chlorinator. From the RolaCh
 - Only one save has changed the [0x12](#0x12--device-status-️) status byte (`0x01` → `0x00`, in `test/samples/rolachem_controls.txt`). Which setting that was is unknown; the saves above left it unchanged.
 - About 120 ms after the burst's last frame the Touchscreen broadcasts [0x14 Mode](#0x14--mode-spapool-) and [0x0B Channel Status](#0x0b--channel-status-), with no `0x0D` between them.
 - This burst is the only place the RolaChem's `0x0A` has been seen. Its regular ~60 s cycle is `0x12` → `0x1D` ×2 → `0x1F` ×2, without `0x13` or `0x0A`.
-- A setpoint change made at the screen does not raise a `0x13`: the new `0x1D` is sent on its own (see [0x1D](#0x1d--chlorinator-setpoint-)).
+- A setpoint change made at the screen does not raise a `0x13`: the new `0x1D` is sent on its own (see [0x1D](#0x1d--chlorinator-setpoint-️)).
 
 ---
 
@@ -1065,6 +1089,7 @@ Reports the current operating mode — pool or spa. Broadcast by the Touchscreen
 **Data Fields:**
 
 - Byte 10: Mode (`0x00` = Spa, `0x01` = Pool)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 **Notes:**
 
@@ -1147,7 +1172,7 @@ This form was long taken to set the mode, because early tests always sent the ot
 **Data Fields:**
 
 - Byte 10: ignored by the Touchscreen, which switches to the other mode whatever it holds (`0x00`, `0x01`, `0x02`, `0x7F` and `0xFF` tested)
-- Byte 11: Data checksum (equals byte 10 since it is the only data byte)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 ---
 
@@ -1187,6 +1212,7 @@ All variants are handled by the unified `handle_temp_reading()`, which selects t
 
 - Byte 10: Current water temperature 1 in °C
 - Byte 11: Current water temperature 2 in °C — second sensor reading; often `0x00` in installations with only one sensor wired.
+- Byte 12: Data checksum (sum of bytes 10–11)
 
 The touchscreen mirrors this reading into register `0x30`/slot `0x01` (same 2-byte payload), which the Internet Gateway polls — see [Appendix A](#appendix-a-register-dispatch-table).
 
@@ -1214,7 +1240,7 @@ When an Active i25 Evo (Genus), Viron Gas Heater, HiNRG Gas Heater or ICI Gas He
 **Data Fields:**
 
 - Byte 10: Current water temperature in °C
-- Byte 11: Data checksum (equals byte 10)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 This is the Heater's own water-temperature reading; it is independent of the controller's reading and may differ if the two sensors are sited differently in the plumbing. The Genus Heater also returns it when the [Heater Water Temperature register](#appendix-a-register-dispatch-table) (`0x2C`/slot `0x01`) is read.
 
@@ -1260,6 +1286,7 @@ The same setpoints are also broadcast individually via the register system — s
 - Byte 11: Pool setpoint temperature (°C)
 - Byte 12: Spa setpoint temperature (°F)
 - Byte 13: Pool setpoint temperature (°F)
+- Byte 14: Data checksum (sum of bytes 10–13)
 
 Temperature scale (Celsius vs Fahrenheit) is set by [0x26 Configuration](#0x26--configuration-️).
 
@@ -1341,9 +1368,9 @@ It is only sent to control the pump when its channel is active/on - this command
 **Data Fields:**
 
 - Byte 10: Speed command value
-- Byte 11: Data checksum (equals byte 10 — single data byte)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
-**Observed values:**
+**Values:**
 
 | Value  | Meaning    |
 |--------|------------|
@@ -1441,9 +1468,9 @@ Broadcast by the Viron XT Pump (`0x00A0`) when one of the three preset speed but
 **Data Fields:**
 
 - Byte 10: Button identifier
-- Byte 11: Data checksum (equals byte 10 — single data byte)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
-**Observed values:**
+**Values:**
 
 | Value  | Button |
 |--------|--------|
@@ -1460,7 +1487,7 @@ Broadcast by the Viron XT Pump (`0x00A0`) when one of the three preset speed but
 
 ---
 
-### 0x1D — Chlorinator Setpoint ✅
+### 0x1D — Chlorinator Setpoint ⚠️
 
 Setpoint broadcasts from chlorinator devices. The slot byte (byte 10) selects which value the message carries. Three sources are known; slots `0x01` and `0x02` come from the chemistry controllers while slot `0x00` comes from the VX 11S v3 Salt Chlorinator.
 
@@ -1480,6 +1507,10 @@ Setpoint broadcasts from chlorinator devices. The slot byte (byte 10) selects wh
 | `0x01` | `0x0090`, `0x0084` | pH setpoint | pH × 10, little-endian (e.g. `4E 00` = 78 → 7.8) |
 | `0x02` | `0x0090`, `0x0084` | ORP setpoint | mV, little-endian (e.g. `8A 02` = 0x028A = 650 mV) |
 
+#### Chlorinator (`0x0084` Viron / `0x0090` RolaChem) ✅
+
+pH and ORP setpoints, slots `0x01` and `0x02`.
+
 **Examples:**
 
 ```
@@ -1488,7 +1519,27 @@ Setpoint broadcasts from chlorinator devices. The slot byte (byte 10) selects wh
                               ^^ Slot (0x01 = pH, 0x02 = ORP)
                                  ^^ ^^ Value (little-endian)
                                        ^^ Data checksum
+```
 
+**Data Fields:**
+
+- Byte 10: Slot (`0x01` = pH, `0x02` = ORP)
+- Bytes 11-12: Value (little-endian; pH × 10 or mV depending on slot)
+- Byte 13: Data checksum (sum of bytes 10–12)
+
+**Notes:**
+
+- Sent in the ~60 s cycle, and also at once when a setpoint is changed at the RolaChem's screen: one frame for the changed slot only, outside the cycle and with no [0x13](#0x13--chlorinator-change-notice-️). pH 7.4 → 7.5 → 7.4 and ORP 670 → 675 → 670 mV each appeared within seconds of the edit (see `test/samples/rolachem_controls.txt`).
+
+---
+
+#### VX 11S v3 Salt Chlorinator (`0x0081`) ⚠️
+
+Chlorine output level, slot `0x00`.
+
+**Examples:**
+
+```
 02 00 81 FF FF 80 00 1D 0F 2D 00 03 00 03 03   Chlorine output level = 3
 02 00 81 FF FF 80 00 1D 0F 2D 00 02 00 02 03   Chlorine output level = 2
                               ^^ Slot (0x00 - Chlorine Output Level)
@@ -1497,22 +1548,14 @@ Setpoint broadcasts from chlorinator devices. The slot byte (byte 10) selects wh
                                        ^^ Data checksum
 ```
 
-**Data Fields (RolaChem and Viron Chlorinators):**
-
-- Byte 10: Slot `0x01` = pH, `0x02` = ORP)
-- Bytes 11-12: Value (little-endian; pH × 10 or mV depending on slot)
-
-**Notes (RolaChem):**
-
-- Sent in the ~60 s cycle, and also at once when a setpoint is changed at the RolaChem's screen: one frame for the changed slot only, outside the cycle and with no [0x13](#0x13--chlorinator-change-notice-️). pH 7.4 → 7.5 → 7.4 and ORP 670 → 675 → 670 mV each appeared within seconds of the edit (see `test/samples/rolachem_controls.txt`).
-
-**Data Fields (VX 11S v3 Salt Chlorinator):**
+**Data Fields:**
 
 - Byte 10: `0x00` in all observed captures.
 - Byte 11: Chlorine output level (integer 1–8; matches the 8 physical LEDs on the device)
 - Byte 12: `0x00` in all observed captures (normal operation). This could potentially carry warning flags — the device has two warnings lights (LOW SALT, NO FLOW) that may be encoded here as bits. ⚠️ Unconfirmed: capture a message while a warning is active to verify. `handle_chlor_output_level` now records any non-zero byte 12 as an "undocumented" entry on the Unknown Messages page to catch exactly this case.
+- Byte 13: Data checksum (sum of bytes 10–12)
 
-**Notes (VX 11S v3 Salt Chlorinator):**
+**Notes:**
 
 - Per the VX 11S v3 manual: "This 'chlorine output level' only applies to Pool Mode. When the Chlorinator is in Spa mode, the chlorine output will be at level 1."
 - During a Pool→Spa transition the device continued broadcasting the displayed level value (e.g. `03`) unchanged — it seems to broadcast the configured level, not the effective output?
@@ -1523,7 +1566,7 @@ Setpoint broadcasts from chlorinator devices. The slot byte (byte 10) selects wh
 
 ### 0x1F — Chlorinator Reading ✅
 
-Current pH or ORP reading from the RolaChem chlorinator's sensors (`0x0090`). The slot byte (byte 10) selects which value the message carries — same shape as [0x1D Setpoint](#0x1d--chlorinator-setpoint-).
+Current pH or ORP reading from the RolaChem chlorinator's sensors (`0x0090`). The slot byte (byte 10) selects which value the message carries — same shape as [0x1D Setpoint](#0x1d--chlorinator-setpoint-️).
 
 **Pattern:** `02 00 90 FF FF 80 00 1F 0F 3E`
 
@@ -1548,6 +1591,7 @@ Current pH or ORP reading from the RolaChem chlorinator's sensors (`0x0090`). Th
 
 - Byte 10: Slot (`0x01` = pH, `0x02` = ORP)
 - Bytes 11-12: Value (little-endian; pH × 10 or mV depending on slot)
+- Byte 13: Data checksum (sum of bytes 10–12)
 
 **Notes:**
 
@@ -1574,7 +1618,7 @@ Unicast from the Touchscreen (`0x0050`) to Internal Channels (`0x006F`) carrying
 **Data Fields:**
 
 - Byte 10: Valve-active bitmask — bit 0 = valve 1, bit 1 = valve 2 (`0x00` = none active)
-- Byte 11: Data checksum (equals byte 10)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 **Values:**
 
@@ -1601,7 +1645,7 @@ Broadcast from the Touchscreen (`0x0050`) carrying system configuration includin
 
 **Pattern:** `02 00 50 FF FF 80 00 26 0E 04`
 
-**Example — Celsius:**
+**Example (Celsius):**
 
 ```
 02 00 50 FF FF 80 00 26 0E 04 01 06 07 03
@@ -1609,7 +1653,7 @@ Broadcast from the Touchscreen (`0x0050`) carrying system configuration includin
                                  ^^ Unknown
 ```
 
-**Example — Fahrenheit:**
+**Example (Fahrenheit):**
 
 ```
 02 00 50 FF FF 80 00 26 0E 04 11 06 17 03
@@ -1629,8 +1673,9 @@ Broadcast from the Touchscreen (`0x0050`) carrying system configuration includin
   - Bit 1: `0` = heat, `1` = cooler-only
   - Bit 0: Unknown — always `1` in observed samples
 - Byte 11: Unknown (consistently `0x06`)
+- Byte 12: Data checksum (sum of bytes 10–11)
 
-**Observed Byte 10 values:**
+**Values (byte 10):**
 
 | Value  | Binary       | Meaning                                                   |
 |--------|--------------|-----------------------------------------------------------|
@@ -1666,7 +1711,7 @@ The count does not track the number of *configured* valves. Configuring a single
 - **[0x28 Valve Control Command](#0x28--valve-control-command-) from the Gateway:** answered ~130 ms later.
 - **Pool/Spa mode change:** appears exactly once, ~670–680 ms after the `0x15`, so the Touchscreen republishes valve state as a deliberate step of a mode change. When the mode change also switches the heater, it lands just before the [0x1A](#0x1a--heater-toggle-command-)/[0x41](#0x41--heater-target-state-️) pair. On an install with no zones this is the only time `0x27` is seen, in its zero-slot form.
 
-**Example — No valve zones configured:**
+**Example (No valve zones configured):**
 
 ```
 02 00 50 FF FF 80 00 27 0D 04 00 00 03
@@ -1674,7 +1719,7 @@ The count does not track the number of *configured* valves. Configuring a single
                                  ^^ Data checksum
 ```
 
-**Example — Only Valve 1 configured, Off:**
+**Example (Only Valve 1 configured, Off):**
 
 ```
 02 00 50 FF FF 80 00 27 13 0A 02 01 00 00 00 00 00 03 03
@@ -1683,7 +1728,7 @@ The count does not track the number of *configured* valves. Configuring a single
                                           ^^^^^^^^ Valve 2: not configured
 ```
 
-**Example — Both valves configured, both Off:**
+**Example (Both valves configured, both Off):**
 
 ```
 02 00 50 FF FF 80 00 27 13 0A 02 01 00 00 01 00 00 04 03
@@ -1696,7 +1741,7 @@ The count does not track the number of *configured* valves. Configuring a single
                                                 ^^ Valve 2 active (0x00 = Inactive)
 ```
 
-**Example — Valve 1 On and active:**
+**Example (Valve 1 On and active):**
 
 ```
 02 00 50 FF FF 80 00 27 13 0A 02 01 02 01 01 00 00 07 03
@@ -1704,7 +1749,7 @@ The count does not track the number of *configured* valves. Configuring a single
                                        ^^ Valve 1 active: 0x01 = Active
 ```
 
-**Example — Valve 2 On and active:**
+**Example (Valve 2 On and active):**
 
 ```
 02 00 50 FF FF 80 00 27 13 0A 02 01 00 00 01 02 01 07 03
@@ -1720,9 +1765,9 @@ The count does not track the number of *configured* valves. Configuring a single
   - Byte 12: State (`0x00` = Off, `0x01` = Auto, `0x02` = On)
   - Byte 13: Active (`0x00` = Inactive, `0x01` = Active)
 - Bytes 14–16: Valve 2 entry (same layout as bytes 11–13)
-- Final data byte: data checksum (sum of the data bytes before it)
+- Last byte before END: Data checksum (sum of bytes 10 onwards)
 
-**State Values:**
+**Values (state byte):**
 
 - `0x00`: Off
 - `0x01`: Auto (only for valves configured with Auto mode)
@@ -1762,7 +1807,7 @@ Sent by the Internet Gateway (`0x00F0`) to set a valve to a specific state direc
 
 - Byte 10: Valve index, 0-based (`0x00`=Valve 1, `0x01`=Valve 2)
 - Byte 11: Target state (`0x00`=Off, `0x01`=Auto, `0x02`=On)
-- Byte 12: Data checksum = (byte 10 + byte 11) & 0xFF
+- Byte 12: Data checksum (sum of bytes 10–11)
 
 **Notes:**
 
@@ -1790,7 +1835,7 @@ Broadcast by the Connect 10 (`0x0062`) when one of its Valve buttons is pressed.
 **Data Fields:**
 
 - Byte 10: Valve index, 0-based (`0x00` = Valve 1, `0x01` = Valve 2) — same indexing as [0x28](#0x28--valve-control-command-)
-- Byte 11: Data checksum (equals byte 10 since it is the only data byte)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 **Notes:**
 
@@ -1829,9 +1874,9 @@ The Connect 10's Auto button sends All Auto (`0x81`). When the controller is in 
 - Bytes 1-2: Source — Internet Gateway (`0x00F0`) or Connect 10 Controller (`0x0062`)
 - Bytes 3-4: `00 50` — Destination (Touchscreen = `0x0050`) — **not broadcast**
 - Byte 10: Favourite value (see table below)
-- Byte 11: Data checksum (equals byte 10 since it is the only data byte)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
-**Favourite Values:**
+**Values:**
 
 | Value  | Meaning       | Label register (slot `0x03`) | Enable register (slot `0x03`) |
 |--------|---------------|------------------------------|-------------------------------|
@@ -1876,6 +1921,7 @@ Unicast message sent by the Connect 10 Controller (`0x0062`) directly to the Tou
 
 - Byte 10: `0x02` — meaning unknown
 - Byte 11: `0x00` — meaning unknown
+- Byte 12: Data checksum (sum of bytes 10–11)
 
 **Notes:**
 
@@ -1924,7 +1970,7 @@ solar configuration has been touched.
 - Byte 13: Unknown (`0x00` observed).
 - Byte 14: Unknown. Observed alongside byte 15 as `04`/`07`, `03`/`06` and `02`/`04`; the first two fit (differential − 3) but the `02`/`04` capture does not, so no relationship is established
 - Byte 15: Temperature differential in °C
-- Byte 16: Data checksum
+- Byte 16: Data checksum (sum of bytes 10–15)
 
 **Notes:**
 
@@ -1957,7 +2003,7 @@ Broadcast from the Touchscreen (`0x0050`) when the solar temperature setpoint is
 **Data Fields:**
 
 - Byte 10: Solar setpoint in °C
-- Byte 11: Data checksum (equals byte 10)
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 **Notes:**
 
@@ -1975,9 +2021,9 @@ Second water-temperature reading broadcast by the Connect 10 Controller (`0x0062
 
 Confirmed by paired captures: across 3,862 pairs, a connected `0x31` byte always equals the `0x16` byte in the same broadcast cycle, and whenever a `0x31` byte reads as not connected, the `0x16` byte reads `0x00`. Neither changes when the display scale is switched to Fahrenheit — both are always °C.
 
-**Why "unclamped" (theory):** both CMDs appear to carry the output of the same thermistor-to-°C conversion — not a raw thermistor value, since a connected reading matches `0x16` exactly across 14–30°C, which raw counts from a non-linear NTC thermistor would not. They differ only in how an out-of-range result is handled. An open-circuit (unwired) thermistor has near-infinite resistance, which converts to an extremely cold temperature. Read as a signed byte, the `0x31` not-connected values are about −90 to −71°C, consistent with that conversion passed through unclamped, wandering with electrical noise; `0x16` clamps the same result to a floor of `0x00`. This fits all captures but is unconfirmed: a genuine sub-zero reading (signed negative in `0x31`, `0x00` in `0x16`) or a shorted sensor would confirm or rule it out.
-
 **Pattern:** `02 00 62 FF FF 80 00 31 0E 21`
+
+**Example:**
 
 ```
 02 00 62 FF FF 80 00 31 0E 21 1E A6 C4 03
@@ -1989,11 +2035,13 @@ Confirmed by paired captures: across 3,862 pairs, a connected `0x31` byte always
 
 - Byte 10: Current water temperature 1 in °C (`>= 0x80` = not connected)
 - Byte 11: Current water temperature 2 in °C (`>= 0x80` = not connected)
+- Byte 12: Data checksum (sum of bytes 10–11)
 
 **Notes:**
 
 - Both `0x16` and `0x31` are routed through the same `handle_temp_reading()` (dispatched on the CMD byte). `0x16` is the canonical source — it updates the source device's temperatures and publishes to MQTT. `0x31` is not published, to avoid dual MQTT updates for the same reading (the Connect 10 broadcasts `0x16` first and `0x31` ~70 ms later); its bytes are kept to tell a `0x16` zero that means "not connected" from a genuine 0°C.
 - Byte 10 has been observed decreasing as pool water cools (30→25°C), confirming it as the current temperature.
+- **Why "unclamped" (theory):** both CMDs appear to carry the output of the same thermistor-to-°C conversion — not a raw thermistor value, since a connected reading matches `0x16` exactly across 14–30°C, which raw counts from a non-linear NTC thermistor would not. They differ only in how an out-of-range result is handled. An open-circuit (unwired) thermistor has near-infinite resistance, which converts to an extremely cold temperature. Read as a signed byte, the `0x31` not-connected values are about −90 to −71°C, consistent with that conversion passed through unclamped, wandering with electrical noise; `0x16` clamps the same result to a floor of `0x00`. This fits all captures but is unconfirmed: a genuine sub-zero reading (signed negative in `0x31`, `0x00` in `0x16`) or a shorted sensor would confirm or rule it out.
 
 ---
 
@@ -2016,6 +2064,12 @@ Sent by the Touchscreen (`0x0050`) directly to the Internet Gateway (`0x00F0`) f
                                  ^^ Interface index (item 0x01 only)
 ```
 
+**Data Fields:**
+
+- Byte 10: Item (`0x01`–`0x05`; `0x03` = Reconnect)
+- Byte 11: Interface index, item `0x01` only (`0x00` = Wired, `0x01` = WiFi)
+- Last byte before END: Data checksum (sum of bytes 10 onwards)
+
 **Items:**
 
 | Byte 10 | Extra bytes          | Reply ([0x37](#0x37--internet-gateway-info-️))                                                        |
@@ -2025,11 +2079,6 @@ Sent by the Touchscreen (`0x0050`) directly to the Internet Gateway (`0x00F0`) f
 | `0x03`  | —                    | None — Reconnect command (see notes)                                                                  |
 | `0x04`  | —                    | [Serial Number](#serial-number-len-0x11-️)                                                           |
 | `0x05`  | —                    | [Firmware Version](#firmware-version-item-0x05-)                                                    |
-
-**Data Fields:**
-
-- Byte 10: Item (`0x01`–`0x05`; `0x03` = Reconnect)
-- Byte 11: Interface index, item `0x01` only (`0x00` = Wired, `0x01` = WiFi)
 
 **Notes:**
 
@@ -2084,6 +2133,7 @@ Serial number of the internet gateway module.
 
 - Byte 10: Item ID, always `0x04`
 - Bytes 11-14: Serial number (32-bit little endian)
+- Byte 15: Data checksum (sum of bytes 10–14)
 
 ---
 
@@ -2093,13 +2143,13 @@ State, IP address and signal strength of one of the Gateway's network interfaces
 
 **Pattern:** `02 00 F0 FF FF 80 00 37 15 BC`
 
-**Example — WiFi enabled and initialised, not linked (on startup, or while reconnecting):**
+**Example (WiFi enabled and initialised, not linked, on startup or while reconnecting):**
 
 ```
 02 00 F0 FF FF 80 00 37 15 BC 01 01 01 03 00 00 00 00 00 06 03
 ```
 
-**Example — WiFi linked, with an IP address:**
+**Example (WiFi linked, with an IP address):**
 
 ```
 02 00 F0 FF FF 80 00 37 15 BC 01 01 01 07 C0 A8 00 17 2B B4 03
@@ -2111,7 +2161,7 @@ State, IP address and signal strength of one of the Gateway's network interfaces
                                                       ^^ Signal level (43)
 ```
 
-**Example — Wired interface enabled and initialised, not linked, in reply to a `0x36` request for it:**
+**Example (Wired interface enabled and initialised, not linked, in reply to a `0x36` request for it):**
 
 ```
 02 00 F0 FF FF 80 00 37 15 BC 01 00 00 03 00 00 00 00 00 04 03
@@ -2130,6 +2180,7 @@ State, IP address and signal strength of one of the Gateway's network interfaces
   - Observed: `0x07` (WiFi linked) and `0x03` (WiFi or Wired not linked), matching the screen's Yes/No rows
 - Bytes 14-17: IP address (4 bytes, standard order)
 - Byte 18: WiFi signal level (0-100). Reads `0x00` on the wired interface, which the Touchscreen shows as N/A
+- Byte 19: Data checksum (sum of bytes 10–18)
 
 ---
 
@@ -2139,7 +2190,7 @@ Status of the gateway's internet connection.
 
 **Pattern:** `02 00 F0 FF FF 80 00 37 0F B6`
 
-**Example — Communicating with server:**
+**Example (Communicating with server):**
 
 ```
 02 00 F0 FF FF 80 00 37 0F B6 02 01 80 83 03
@@ -2152,6 +2203,7 @@ Status of the gateway's internet connection.
 
 - Byte 10: Item ID, always `0x02`
 - Bytes 11-12: Communications status code (little endian)
+- Byte 13: Data checksum (sum of bytes 10–12)
 
 **Status Codes:**
 
@@ -2191,6 +2243,7 @@ The Gateway's firmware version, the same value it broadcasts in [0x0A](#0x0a--fi
 - Byte 10: Item ID, always `0x05`
 - Byte 11: Major version
 - Byte 12: Minor version
+- Byte 13: Data checksum (sum of bytes 10–12)
 
 ---
 
@@ -2200,9 +2253,9 @@ The controller uses a unified register-based system for configuration and state.
 
 > See [Appendix A](#appendix-a-register-dispatch-table) for the full register dispatch table, examples by register type, register ID mappings, and the firmware dispatch implementation.
 
-**Base Pattern:** `02 00 50 FF FF 80 00 38`
+**Pattern:** `02 00 50 FF FF 80 00 38`
 
-**Complete Structure:**
+**Frame Layout:**
 
 ```
 02 00 50 FF FF 80 00 38 [LENGTH] [HEADER_CHECKSUM] [REG_ID] [SLOT] [DATA...] [DATA_CHECKSUM] 03
@@ -2230,6 +2283,7 @@ The controller uses a unified register-based system for configuration and state.
 - Byte 10 (REG_ID): Register identifier (which setting/channel/zone)
 - Byte 11 (SLOT): Data slot — defines data type and format
 - Byte 12+: Data payload (varies by register and slot)
+- Last byte before END (DATA_CHECKSUM): Sum of bytes 10 onwards, masked to 8 bits
 
 **Notes:**
 
@@ -2328,6 +2382,7 @@ Timer schedule configuration. Each timer has a start time, stop time, and a days
   - Bit 6: Sunday
   - `0x7F` = every day (all 7 bits set)
   - `0x00` = disabled / not configured
+- Byte 17: Data checksum (sum of bytes 10–16)
 
 **Timer Register Mapping:**
 
@@ -2353,7 +2408,7 @@ Assigns human-readable names to channels, lighting zones, and valves as null-ter
 
 **Pattern:** `02 00 50 FF FF 80 00 38 1A 22` (LENGTH=0x1A=26, for longer names) or `38 16 1E` (LENGTH=0x16=22, for shorter names / valve labels)
 
-**Example — Channel Name:**
+**Example (Channel Name):**
 
 ```
 02 00 50 FF FF 80 00 38 1A 22 7C 02 46 69 6C 74 65 72 20 50 75 6D 70 00 A6 03
@@ -2362,7 +2417,7 @@ Assigns human-readable names to channels, lighting zones, and valves as null-ter
                                     F  i  l  t  e  r     P  u  m  p  (null terminated)
 ```
 
-**Example — Valve 1:**
+**Example (Valve 1):**
 
 ```
 02 00 50 FF FF 80 00 38 16 1E D0 02 56 61 6C 76 65 20 31 00 21 03
@@ -2371,7 +2426,7 @@ Assigns human-readable names to channels, lighting zones, and valves as null-ter
                                     V  a  l  v  e     1  \0  (null-terminated ASCII string)
 ```
 
-**Example — Valve 2:**
+**Example (Valve 2):**
 
 ```
 02 00 50 FF FF 80 00 38 16 1E D1 02 56 61 6C 76 65 20 32 00 23 03
@@ -2385,6 +2440,7 @@ Assigns human-readable names to channels, lighting zones, and valves as null-ter
 - Byte 10: Register ID (e.g. `0x7C`–`0x83` for channels 1–8; `0xD0`–`0xD7` for valves 1–8)
 - Byte 11: Slot ID
 - Byte 12+: Null-terminated ASCII string
+- Last byte before END: Data checksum (sum of bytes 10 onwards)
 
 **Notes:**
 
@@ -2399,7 +2455,7 @@ Sent to poll a single controller register; the Touchscreen (`0x0050`) usually re
 
 **Pattern:** `02 00 F0 FF FF 80 00 39 0E B7`
 
-**Example — Request for register 0x88:**
+**Example (Request for register 0x88):**
 
 ```
 02 00 F0 FF FF 80 00 39 0E B7 88 02 8A 03
@@ -2411,6 +2467,7 @@ Sent to poll a single controller register; the Touchscreen (`0x0050`) usually re
 
 - Byte 10: Register ID to read
 - Byte 11: Slot ID
+- Byte 12: Data checksum (sum of bytes 10–11)
 
 **Observed Behaviour:**
 
@@ -2453,7 +2510,7 @@ Writes a single controller register. This is the write counterpart to the [0x39 
 - Byte 10: Register ID
 - Byte 11: Slot
 - Byte 12: Value to write (1 byte for equipment registers; a variable-length string for the slot `0x07` WiFi credentials)
-- Last data byte: Data checksum (sum of bytes 10 through the end of the value)
+- Last byte before END: Data checksum (sum of bytes 10 onwards)
 
 **Notes:**
 
@@ -2469,7 +2526,7 @@ Writes a single controller register. This is the write counterpart to the [0x39 
 
 Sets a light zone's state (Off/Auto/On).
 
-**Example — Turn ON spa light (Zone 2):**
+**Example (Turn ON spa light, Zone 2):**
 
 ```
 02 00 F0 FF FF 80 00 3A 0F B9 C1 01 02 C4 03
@@ -2479,7 +2536,7 @@ Sets a light zone's state (Off/Auto/On).
                                        ^^ Checksum (0xC1 + 0x01 + 0x02 = 0xC4)
 ```
 
-**Example — Turn OFF spa light (Zone 2):**
+**Example (Turn OFF spa light, Zone 2):**
 
 ```
 02 00 F0 FF FF 80 00 3A 0F B9 C1 01 00 C2 03
@@ -2500,7 +2557,7 @@ Sets a light zone's state (Off/Auto/On).
 - `0xC6`: Light Zone 7
 - `0xC7`: Light Zone 8
 
-**State Values:** `0x00` = Off, `0x01` = Auto, `0x02` = On
+**Values (byte 12):** `0x00` = Off, `0x01` = Auto, `0x02` = On
 
 ---
 
@@ -2508,7 +2565,7 @@ Sets a light zone's state (Off/Auto/On).
 
 Sets a light zone's color — a write to the same Light Zone Color register that the Touchscreen reports via [`0x38` broadcasts](#appendix-a-register-dispatch-table). Observed from the Viron Chlorinator (`0x0084`) when a color is picked in the chlorinator's app; also confirmed working when injected with the Gateway source address (`0x00F0`) — the controller applies the write and the touchscreen updates to the new color.
 
-**Example — Set Zone 1 to Blue (Gateway-sourced, Delta light type, confirmed by injection):**
+**Example (Set Zone 1 to Blue, Gateway-sourced, Delta light type, confirmed by injection):**
 
 ```
 02 00 F0 FF FF 80 00 3A 0F B9 D0 01 05 D6 03
@@ -2518,7 +2575,7 @@ Sets a light zone's color — a write to the same Light Zone Color register that
                                        ^^ Checksum (0xD0 + 0x01 + 0x05 = 0xD6)
 ```
 
-**Example — Set Zone 1 to Magenta (Chlorinator-sourced):**
+**Example (Set Zone 1 to Magenta, Chlorinator-sourced):**
 
 ```
 02 00 84 FF FF 80 00 3A 0F 4D D0 01 0D DE 03
@@ -2558,7 +2615,7 @@ These are the values carried by the `0x38` register broadcasts, [CMD 0x07](#0x07
 
 Turns Heater 1 on or off (register `0xE6`). Heater 2 uses the analogous register `0xE9` — see [Appendix A](#appendix-a-register-dispatch-table) for the full Heater 2 register set (`0xE9` state, `0xEA` pool setpoint, `0xEB` spa setpoint).
 
-**Example — Turn Heater On:**
+**Example (Turn Heater On):**
 
 ```
 02 00 F0 FF FF 80 00 3A 0F B9 E6 00 01 E7 03
@@ -2568,7 +2625,7 @@ Turns Heater 1 on or off (register `0xE6`). Heater 2 uses the analogous register
                                        ^^ Checksum (0xE6 + 0x00 + 0x01 = 0xE7)
 ```
 
-**Example — Turn Heater Off:**
+**Example (Turn Heater Off):**
 
 ```
 02 00 F0 FF FF 80 00 3A 0F B9 E6 00 00 E6 03
@@ -2578,7 +2635,7 @@ Turns Heater 1 on or off (register `0xE6`). Heater 2 uses the analogous register
                                        ^^ Checksum (0xE6 + 0x00 + 0x00 = 0xE6)
 ```
 
-**State Values:** `0x00` = Off, `0x01` = On
+**Values (byte 12):** `0x00` = Off, `0x01` = On
 
 **Notes:**
 
@@ -2595,7 +2652,7 @@ When the Gateway's WiFi network is changed from the Touchscreen, the Touchscreen
 | `0xD0`   | `0x07` | WiFi SSID (ASCII)     |
 | `0xD1`   | `0x07` | WiFi password (ASCII) |
 
-**Example — Set SSID to `ssidname`:**
+**Example (Set SSID to `ssidname`):**
 
 ```
 02 00 50 00 F0 80 00 3A 16 12 D0 07 73 73 69 64 6E 61 6D 65 2B 03
@@ -2607,7 +2664,7 @@ When the Gateway's WiFi network is changed from the Touchscreen, the Touchscreen
                                                             ^^ Checksum (sum of bytes 10–19)
 ```
 
-**Example — Set password to `ssidpwd`:**
+**Example (Set password to `ssidpwd`):**
 
 ```
 02 00 50 00 F0 80 00 3A 15 11 D1 07 73 73 69 64 70 77 64 D6 03
@@ -2659,9 +2716,9 @@ Observed in pump reporting firmware v5.1.
 
 - Bytes 10–11: Pump speed in RPM, **big-endian** `uint16` (e.g. `04 65` = 0x0465 = 1125 RPM)
 - Bytes 12–13 (V2 only): Pump power in Watts, **big-endian** `uint16` (e.g. `00 D9` = 0x00D9 = 217 W)
-- Byte 12 (V1) / Byte 14 (V2): Data checksum
+- Byte 12 (V1) / Byte 14 (V2): Data checksum (sum of bytes 10–11 / 10–13)
 
-**Observed speed values:**
+**Values (bytes 10–11):**
 
 | Bytes 10–11 | RPM  | Notes                         |
 |-------------|------|-------------------------------|
@@ -2701,6 +2758,7 @@ Resynchronizes a light zone's light. Broadcast by the Touchscreen (`0x0050`); ob
 **Data Fields:**
 
 - Byte 10: Zone index (`0x00` to `0x07` for zones 1-8, matching [CMD 0x06](#0x06--lighting-zone-configuration-))
+- Byte 11: Data checksum (equals byte 10, the only payload byte)
 
 **Notes:**
 
@@ -2755,7 +2813,7 @@ Current time from the Touchscreen's (`0x0050`) internal clock. Broadcast periodi
                                        → 08:57 on Saturday
 ```
 
-**Example — Minute rollover:**
+**Example (Minute rollover):**
 
 ```
 02 00 50 FF FF 80 00 FD 0F DC 3B 08 05 48 03  → 05:08:59
@@ -2767,6 +2825,7 @@ Current time from the Touchscreen's (`0x0050`) internal clock. Broadcast periodi
 - Byte 10: Minutes (0–59)
 - Byte 11: Hours (0–23, 24-hour format)
 - Byte 12: Day of Week (`0` = Monday → `6` = Sunday)
+- Byte 13: Data checksum (sum of bytes 10–12)
 
 **Notes:**
 
@@ -2876,7 +2935,7 @@ The register ID and slot together determine the message meaning. The slot distin
   | `0xE5` | 2 bytes | Highest ORP measured | mV |
   | `0xE6` | 1 byte  | Previous day cell load | % |
 
-  pH uses the same × 10 scaling as [0x1D](#0x1d--chlorinator-setpoint-) and [0x1F](#0x1f--chlorinator-reading-). Matched against the chlorinator's own statistics on the zagnuts install: `84 09 00 00` = 2436 h, `3F 04 00 00` = 1087 h, `2A 00` = 4.2, `60 00` = 9.6, `64 00` = 100 mV, `41 03` = 833 mV and `21` = 33%, the values it reported for each field. Across an overnight capture the pH and ORP extremes stayed static. Both running-time counters ticked up by one hour during the morning pump run (`0xE0` 2436 → 2437, `0xE1` 1087 → 1088) and held still while the pump was off. `0xE6` changed once, from 33% to 41%, between 23:40 and 08:48 local time, which spans local midnight as a previous-day value should. The chlorinator has a Reset Statistics action, but how these registers respond to it has not been captured.
+  pH uses the same × 10 scaling as [0x1D](#0x1d--chlorinator-setpoint-️) and [0x1F](#0x1f--chlorinator-reading-). Matched against the chlorinator's own statistics on the zagnuts install: `84 09 00 00` = 2436 h, `3F 04 00 00` = 1087 h, `2A 00` = 4.2, `60 00` = 9.6, `64 00` = 100 mV, `41 03` = 833 mV and `21` = 33%, the values it reported for each field. Across an overnight capture the pH and ORP extremes stayed static. Both running-time counters ticked up by one hour during the morning pump run (`0xE0` 2436 → 2437, `0xE1` 1087 → 1088) and held still while the pump was off. `0xE6` changed once, from 33% to 41%, between 23:40 and 08:48 local time, which spans local midnight as a previous-day value should. The chlorinator has a Reset Statistics action, but how these registers respond to it has not been captured.
 - **`0xE9`/slot `0x0B` — tentative ⚠️**: a 2-byte little-endian value followed by 2 bytes that have only ever read `00 00`. Answered by the Viron Chlorinator (`0x0084`) rather than the Touchscreen, in response to the Internet Gateway's [0x39](#0x39--register-read-request-) poll. The value is a linear countdown in units of 1/5 second — **300 units = 1 minute**. Measured across 13 consecutive reads in one capture: 12700 → 5500 over 24 minutes, a rate of 298 units/minute with a residual spread of only 275 units (55 s), which is the one-minute quantisation expected from a value the chlorinator refreshes once a minute. Extrapolating the zero-crossing and cross-referencing the Touchscreen clock ([0xFD](#0xfd--controller-daytimeclock-)) shows the countdown targeting a fixed wall-clock time (~10:45 in that capture). What it counts down *to* is unknown — that install's only configured timer runs 09:00–13:00 daily, so it is not the timer's stop time. A separate capture from the same install reads `00 00 00 00` at 15:36–15:40, outside the timer window, consistent with the counter only running while the equipment does. On the other install the Gateway polls this register every cycle but the chlorinator never answers it.
 - **`0xEA`/slot `0x0B` — tentative ⚠️**: same payload shape and source as `0xE9`/slot `0x0B` above — a 2-byte little-endian value followed by 2 bytes that have only ever read `00 00`, answered by the Viron Chlorinator (`0x0084`) in response to the Gateway's [0x39](#0x39--register-read-request-) poll (`02 00 F0 FF FF 80 00 39 0E B7 EA 0B F5 03`). Two installs report different but entirely static values: `94 11 00 00` = 4500 (141 responses over ~18.5 hours) and `28 23 00 00` = 9000 (18 responses across three captures). It reads as a stored setting rather than a live measurement — 4500 would be a plausible salt level in ppm, but 9000 is high for the same units, so the meaning is unconfirmed. The Gateway polls it back-to-back with `0xE9` (~1.5 s apart, every cycle), but the two are not related as total and remaining: `0xEA` held at 9000 while `0xE9` swept 12700 → 0, including passing straight through 9000 with no effect.
 - **`0x20` (Active Favourite) — confirmed ✅**: slot `0x03` is the Favourite slot, and `0x20` sits immediately before the Favourite Enable block (`0x21`–`0x28`). Reports which favourite is currently active, using the same value space as CMD [`0x2A`](#0x2a--favourite-control-command-): `0x00`=Pool, `0x01`=Spa, `0x02`–`0x07`=user Favourites 1–6; `0xFF` = no favourite active. The All Off/All Auto command values (`0x80`/`0x81`) never appear here — the controller does not remember them as states: All Off reports as `0x00` (it is implemented as Pool mode with all channels off; the accompanying [0x14 Mode](#0x14--mode-spapool-) broadcast also says Pool) and All Auto reports as `0xFF`. Broadcast ~1 s after a gateway-commanded activation ([0x2A](#0x2a--favourite-control-command-)), when an active favourite is knocked out by a manual channel change, and in the periodic ~8-minute register dump — but **not** when a favourite is activated at the touchscreen itself (the new value then only appears in the next dump). A [0x15 Mode Toggle](#0x15--mode-toggle-command-spapool-) counts as activating the Pool or Spa favourite: read back 5–10 s later, it set `0x20` to `0x01` on a switch to Spa and `0x00` on a switch to Pool. Switching the heater outside a mode change knocks the favourite out just as a channel change does: in Spa, an injected [0x1A heater toggle](#0x1a--heater-toggle-command-) that switched the heater off took `0x20` from `0x01` to `0xFF` (see `test/samples/active_favourite.txt`).
