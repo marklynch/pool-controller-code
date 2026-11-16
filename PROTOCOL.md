@@ -360,13 +360,15 @@ Reports a lighting zone's current color — the CMD companion to [0x06 Lighting 
 
 Firmware-version announcement (`{major, minor}` payload) broadcast by multiple devices on the bus. CMD byte (`0x0A`) and payload layout are identical across every observed source — the source address selects which device is announcing its firmware. Dispatched in code by a single source-agnostic handler.
 
-**Common pattern:** `02 00 ?? FF FF 80 00 0A 0E ??` (first `??` is the source LO byte; last `??` is the header checksum)
+**Pattern:** `02 <SRC_HI> <SRC_LO> FF FF 80 00 0A 0E <HDR_CK>`
+
+A broadcast frame with data and LENGTH `0x0E`: 14 bytes in total, carrying a 2-byte payload. Every sender uses the same header apart from its own source address in bytes 1–2. The header checksum (byte 9) changes with the source, and works out to `(0x98 + SRC_HI + SRC_LO) & 0xFF`, because the fixed header bytes sum to `0x98`. The table below gives each source's full header.
 
 **Data Fields:**
 
 - Byte 10: Major version number
 - Byte 11: Minor version number
-- Byte 12: Standard frame data checksum (`major + minor`)
+- Byte 12: Data checksum, `(major + minor) & 0xFF`. This is the standard [data checksum](#checksum-calculation) over the two payload bytes and carries no version information of its own
 
 **Known sources and observed samples:**
 
@@ -388,7 +390,9 @@ Firmware-version announcement (`{major, minor}` payload) broadcast by multiple d
 02 00 F0 FF FF 80 00 0A 0E 88 05 01 06 03
                               ^^ Major version (5)
                                  ^^ Minor version (1)
-                                    → Version 5.1
+                                    ^^ Data checksum (0x05 + 0x01 = 0x06)
+                                       ^^ END
+                              → Version 5.1
 ```
 
 **Notes:**
@@ -739,9 +743,9 @@ Status broadcast emitted by multiple devices, each sending its own alongside its
 
 The Touchscreen's own device status. Like the other devices in this family, it is sent alongside the device's [0x0A](#0x0a--firmware-version-) firmware version: ~120 ms after the Touchscreen's `0x0A`, at the head of its status sequence (`0x0A` → `0x12` → `0x05` → `0x06` → … → `0x0D` → `0x0B`), about every 60 s and in change bursts.
 
-Pattern: `02 00 50 FF FF 80 00 12 0E F0`
+**Pattern:** `02 00 50 FF FF 80 00 12 0E F0`
 
-Example:
+**Example:**
 
 ```
 02 00 50 FF FF 80 00 12 0E F0 05 00 05 03
@@ -750,11 +754,12 @@ Example:
                                     ^^ Data checksum
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Bit 0 is always set. Bits 2–3 hold a value of 0–2 (3 never seen); bits 1 and 4–7 are always clear. Meaning unknown ⚠️
 - Byte 11: Always `0x00` in observed samples
 
-Observed values of byte 10:
+**Observed values of byte 10:**
 
 | Value  | Bits 3–2 | Where seen |
 |--------|----------|------------|
@@ -772,9 +777,9 @@ On ninkasi and skymuster the value moves between `0x01` and `0x09` with the Filt
 
 Broadcast by the main controller (`0x0062`) reporting the inbuilt heater's on/off state and the controller's service mode.
 
-Pattern: `02 00 62 FF FF 80 00 12 0F 03`
+**Pattern:** `02 00 62 FF FF 80 00 12 0F 03`
 
-Examples:
+**Examples:**
 
 ```
 02 00 62 FF FF 80 00 12 0F 03 00 01 08 09 03   Heater On
@@ -785,7 +790,8 @@ Examples:
                                     ^^ Unknown (0x00 or 0x08 observed)
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Unknown — `0x00` on most installs; `0x04` on the skymuster install (HiNRG gas heater `0x0072`), including while that external heater was running with the heater bit in byte 11 still clear ⚠️
 - Byte 11: Status bitfield:
   - Bit 0: Heater state (`0` = Off, `1` = On)
@@ -794,7 +800,7 @@ Data fields:
   - Bits 3–7: Unknown
 - Byte 12: Unknown (maybe bitmask or interlock?) — `0x08` or `0x00`. It differs between captures from the same install (the round 8 reference install shows `0x08` in some captures and `0x00` in others, such as round 8 `run_3`–`run_6`), and is always `0x00` on ninkasi ⚠️
 
-Timing and the controller's mode buttons:
+**Timing and the controller's mode buttons:**
 
 - **Sent on change, otherwise about every 60 s.** Pressing Service on the Connect 10 produced a frame with bit 1 set in the same second.
 - **Auto clears service mode.** Pressing Auto sent a frame with bit 1 cleared, then ~70 ms later the [0x2A](#0x2a--favourite-control-command-) All Auto (`0x81`) command to the Touchscreen.
@@ -808,9 +814,9 @@ Timing and the controller's mode buttons:
 
 Status broadcast from the Active i25 Evo (Genus) heat pump. Same LENGTH and payload shape as the gas heaters below — byte 11 is the only varying byte, and the data checksum (byte 14) equals it — and bits 0 (Heater On) and 1 (Pressure / Flow) carry the same meaning. The upper status bits do **not** follow the gas-heater table: a heat pump has no gas valve or flame, and the observed values suggest bit 4 plays a different role here (see below).
 
-Pattern: `02 00 70 FF FF 80 00 12 10 12`
+**Pattern:** `02 00 70 FF FF 80 00 12 10 12`
 
-Examples:
+**Examples:**
 
 ```
 02 00 70 FF FF 80 00 12 10 12 00 00 00 00 00 03   Off, no water flow
@@ -821,12 +827,13 @@ Examples:
                                  ^^ Status byte
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Always `0x00` in all observed samples
 - Byte 11: Status byte — see table below
 - Bytes 12–13: Always `0x00` in all observed samples
 
-Observed status values:
+**Observed status values:**
 
 | Value  | Bit 4 | Bit 2 | Bit 1 <br> Pressure / Flow | Bit 0 <br> Heater On | Meaning |
 |--------|-------|-------|-------|-------|---------|
@@ -836,7 +843,7 @@ Observed status values:
 | `0x07` | 0     | 1     | 1     | 1     | Starting up? — bit 2 is Gas Valve on the gas heaters; its meaning for a heat pump is unconfirmed |
 | `0x13` | 1     | 0     | 1     | 1     | Heating? — observed ~360 ms after the Gateway's [Heater Control](#heater-control-register-0xe6-slot-0x00-) On write, so bit 4 is believed to mean actively heating (compressor running), **not** the gas heaters' Locked Out; unconfirmed |
 
-Notes:
+**Notes:**
 - Bit 3 (Flame on the gas heaters) has never been observed set — consistent with a heat pump having no burner.
 - `handle_genus_heater_status` accepts only the observed value set; any other status byte, or a non-zero byte 10/12/13, is recorded as an "undocumented" entry on the Unknown Messages page.
 - Bit 0 updates Heater 1 state (the Gateway drives the Genus via register `0xE6`, Heater 1 On/Off).
@@ -845,13 +852,15 @@ Notes:
 
 #### Gas Heaters: Viron (`0x0071`), HiNRG (`0x0072`) & ICI (`0x0074`) ✅
 
-Pattern (`0x0071`): `02 00 71 FF FF 80 00 12 10 13` (Viron Gas Heater)
-Pattern (`0x0072`): `02 00 72 FF FF 80 00 12 10 14` (HiNRG Gas Heater)
-Pattern (`0x0074`): `02 00 74 FF FF 80 00 12 10 16` (ICI Gas Heater)
+**Patterns:**
+
+- Viron Gas Heater (`0x0071`): `02 00 71 FF FF 80 00 12 10 13`
+- HiNRG Gas Heater (`0x0072`): `02 00 72 FF FF 80 00 12 10 14`
+- ICI Gas Heater (`0x0074`): `02 00 74 FF FF 80 00 12 10 16`
 
 All three send the same four-byte payload; only the source address (and so the header checksum) differs. The examples below are from the ICI Gas Heater (`0x0074`).
 
-Examples:
+**Examples:**
 
 ```
 02 00 74 FF FF 80 00 12 10 16 00 00 00 00 00 03   Idle / off
@@ -868,13 +877,14 @@ Viron Gas Heater (`0x0071`) example:
 02 00 71 FF FF 80 00 12 10 13 00 0F 00 00 0F 03   Heater Lit and Running
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Always `0x00` in all observed samples
 - Byte 11: Status byte — see table below
 - Byte 12: Always `0x00` in all observed samples
 - Byte 13: Always `0x00` in all observed samples
 
-Observed status values (payload[1]):
+**Observed status values (payload[1]):**
 
 | Value  | Bits 7–5 Diagnostics | Bit 4 <br> Locked Out | Bit 3 <br> Flame | Bit 2 <br> Gas Valve | Bit 1 <br> Pressure / Flow | Bit 0 <br> Heater On | Meaning |
 |--------|---------|-------|-------|-------|-------|-------|---------|
@@ -887,7 +897,7 @@ Observed status values (payload[1]):
 | `0x12` | X       | 1     | 0     | 0     | 1     | 0     | Cooling Down (Heater Off, Pump Forced On)|
 | `0x13` | X       | 1     | 0     | 0     | 1     | 1     | Locked Out (Heater On, Pump Forced On) |
 
-Some notes:
+**Notes:**
 
  - 'Heater On' is required for 'Gas Valve' to open.
  - 'Pressure / Flow' is required for 'Gas Valve' to open.
@@ -911,9 +921,9 @@ Payload[1] is the only byte that varies; bytes 10, 12, and 13 are always `0x00`.
 
 Broadcast by the VX 11S v3 on the same ~60-second cycle as its CMD `0x1D` chlorine output level message. The single payload byte is always `0x00` in all observed captures (normal operation), so the frame always ends `00 00 03`. Meaning unknown — may carry status or warning flags.
 
-Pattern: `02 00 81 FF FF 80 00 12 0D 20`
+**Pattern:** `02 00 81 FF FF 80 00 12 0D 20`
 
-Example:
+**Example:**
 
 ```
 02 00 81 FF FF 80 00 12 0D 20  00 00  03
@@ -922,7 +932,8 @@ Example:
                                byte 11: data checksum (sum of byte 10 = 0x00)
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Unknown — always `0x00` in observed captures; suspected status/warning flags (see [CMD 0x1D slot 0x00 notes](#0x1d--chlorinator-setpoint-))
 - Byte 11: Data checksum (equals byte 10)
 
@@ -934,22 +945,24 @@ Handler: `handle_vx11s_status` — log-only, no state update (meaning unknown); 
 
 Carries a 1-byte status whose meaning is unknown. Both chlorinator address variants (mutually exclusive; see [Device Addresses](#device-addresses)) emit this with the same structure — the header checksum differs (`0x23` vs `0x2F`) purely because the source byte changes.
 
-Patterns:
+**Patterns:**
+
 - Variant A (`0x0090` RolaChem): `02 00 90 FF FF 80 00 12 0D 2F`
 - Variant B (`0x0084` Viron): `02 00 84 FF FF 80 00 12 0D 23`
 
-Examples:
+**Examples:**
 
 ```
 02 00 90 FF FF 80 00 12 0D 2F 01 01 03   RolaChem 0x0090, status = 0x01
 02 00 84 FF FF 80 00 12 0D 23 02 02 03   Viron 0x0084, status = 0x02
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Status value. Meaning unknown ⚠️
 - Byte 11: Data checksum (equals byte 10 — only one data byte)
 
-Observed values:
+**Observed values:**
 
 | Value  | Source   | Where seen |
 |--------|----------|------------|
@@ -975,9 +988,9 @@ On the RolaChem the value moved from `0x01` to `0x00` in the burst headed by a [
 
 Firmware version broadcast by the Internet Gateway on startup. One byte longer than the other variants because it carries an embedded data-level checksum in addition to the standard frame checksum.
 
-Pattern: `02 00 F0 FF FF 80 00 12 0F 91`
+**Pattern:** `02 00 F0 FF FF 80 00 12 0F 91`
 
-Example:
+**Example:**
 
 ```
 02 00 F0 FF FF 80 00 12 0F 91 05 01 06 0C 03
@@ -987,12 +1000,13 @@ Example:
                                        → Version 5.1
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Major version number
 - Byte 11: Minor version number
-- Byte 12: Embedded checksum — sum of bytes 10 and 11 (`major + minor`)
+- Byte 12: Data checksum (sum of bytes 10–11)
 
-Observed samples:
+**Observed samples:**
 
 | Sample (bytes 10–12) | Major | Minor | Embedded checksum |
 |----------------------|-------|-------|-------------------|
@@ -1159,9 +1173,9 @@ All variants are handled by the unified `handle_temp_reading()`, which selects t
 
 #### Connect 10 Controller (`0x0062`) ✅
 
-Pattern: `02 00 62 FF FF 80 00 16 0E 06`
+**Pattern:** `02 00 62 FF FF 80 00 16 0E 06`
 
-Example:
+**Example:**
 
 ```
 02 00 62 FF FF 80 00 16 0E 06 19 00 19 03
@@ -1169,7 +1183,8 @@ Example:
                                  ^^ Current water temperature 2 in °C (0x00 in this sample)
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Current water temperature 1 in °C
 - Byte 11: Current water temperature 2 in °C — second sensor reading; often `0x00` in installations with only one sensor wired.
 
@@ -1181,12 +1196,14 @@ The touchscreen mirrors this reading into register `0x30`/slot `0x01` (same 2-by
 
 When an Active i25 Evo (Genus), Viron Gas Heater, HiNRG Gas Heater or ICI Gas Heater is fitted it broadcasts its own current water-temperature reading on the same CMD but with a shorter LENGTH (`0x0D`) and only one data byte.
 
-Pattern (`0x0070`): `02 00 70 FF FF 80 00 16 0D 13`
-Pattern (`0x0071`): `02 00 71 FF FF 80 00 16 0D 14`
-Pattern (`0x0072`): `02 00 72 FF FF 80 00 16 0D 15`
-Pattern (`0x0074`): `02 00 74 FF FF 80 00 16 0D 17`
+**Patterns:**
 
-Example:
+- Genus Heater (`0x0070`): `02 00 70 FF FF 80 00 16 0D 13`
+- Viron Gas Heater (`0x0071`): `02 00 71 FF FF 80 00 16 0D 14`
+- HiNRG Gas Heater (`0x0072`): `02 00 72 FF FF 80 00 16 0D 15`
+- ICI Gas Heater (`0x0074`): `02 00 74 FF FF 80 00 16 0D 17`
+
+**Example:**
 
 ```
 02 00 70 FF FF 80 00 16 0D 13 12 12 03
@@ -1194,7 +1211,8 @@ Example:
                                  ^^ Data checksum (equals byte 10 — only one data byte)
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Current water temperature in °C
 - Byte 11: Data checksum (equals byte 10)
 
@@ -1218,15 +1236,15 @@ Setpoint broadcast. CMD `0x17` is shared across two sources with different paylo
 | `0x0072` HiNRG Heater | `0x0E` | 2 bytes — Spa setpoint °C, Pool setpoint °C | ✅     | `handle_heater_temp_setting`      |
 | `0x0074` ICI Gas Heater | `0x0E` | 2 bytes — Spa setpoint °C, Pool setpoint °C | ✅     | `handle_heater_temp_setting`      |
 
-The same setpoints are also broadcast individually via the register system — see the [Register-based variant](#register-based-temperature-setpoints) below.
+The same setpoints are also broadcast individually via the register system — see the [Register-based variant](#register-based-temperature-setpoints-) below.
 
 ---
 
 #### Touchscreen (`0x0050`) ✅
 
-Pattern: `02 00 50 FF FF 80 00 17 10 F7`
+**Pattern:** `02 00 50 FF FF 80 00 17 10 F7`
 
-Example:
+**Example:**
 
 ```
 02 00 50 FF FF 80 00 17 10 F7 25 1D 63 54 F9 03
@@ -1236,7 +1254,8 @@ Example:
                                        ^^ Pool setpoint °F (0x54 = 84°F)
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Spa setpoint temperature (°C)
 - Byte 11: Pool setpoint temperature (°C)
 - Byte 12: Spa setpoint temperature (°F)
@@ -1250,12 +1269,14 @@ Temperature scale (Celsius vs Fahrenheit) is set by [0x26 Configuration](#0x26--
 
 When an Active i25 Evo (Genus), Viron Gas Heater, HiNRG Gas Heater or ICI Gas Heater is fitted it broadcasts its own setpoints using the same CMD but a shorter LENGTH and a different payload — both heater setpoints in a single frame, °C only.
 
-Pattern (`0x0070`): `02 00 70 FF FF 80 00 17 0E 15` (Genus Heater)
-Pattern (`0x0071`): `02 00 71 FF FF 80 00 17 0E 16` (Viron Gas Heater)
-Pattern (`0x0072`): `02 00 72 FF FF 80 00 17 0E 17` (HiNRG Gas Heater)
-Pattern (`0x0074`): `02 00 74 FF FF 80 00 17 0E 19` (ICI Gas Heater)
+**Patterns:**
 
-Example:
+- Genus Heater (`0x0070`): `02 00 70 FF FF 80 00 17 0E 15`
+- Viron Gas Heater (`0x0071`): `02 00 71 FF FF 80 00 17 0E 16`
+- HiNRG Gas Heater (`0x0072`): `02 00 72 FF FF 80 00 17 0E 17`
+- ICI Gas Heater (`0x0074`): `02 00 74 FF FF 80 00 17 0E 19`
+
+**Example:**
 
 ```
 02 00 70 FF FF 80 00 17 0E 15 18 1B 33 03
@@ -1264,28 +1285,29 @@ Example:
                                     ^^ Data checksum (0x18 + 0x1B = 0x33)
 ```
 
-Data fields:
+**Data Fields:**
+
 - Byte 10: Spa setpoint (°C)
 - Byte 11: Pool setpoint (°C)
 - Byte 12: Data checksum (sum of bytes 10–11)
 
 Both setpoints are carried in a single broadcast; these heaters never send them separately. The actual current water temperature is reported separately via [0x16](#0x16--water-temperature-reading-) (Genus Heater variant).
 
-**The frame does not name a heater slot**, and the sending device cannot be assumed to be Heater 1: on the two-heater install in [Appendix A](#appendix-a-register-dispatch-table) the Genus heat pump's values track the Heater 2 registers (`0xEA`/`0xEB`), not Heater 1's. The only association between a heater device and a slot observed so far is which register trio the device answers — see [Non-Touchscreen Responders](#non-touchscreen-responders). On a single-heater install the question does not arise, since Heater 1 is the only configured slot.
+**The frame does not name a heater slot**, and the sending device cannot be assumed to be Heater 1: on the two-heater install in [Appendix A](#appendix-a-register-dispatch-table) the Genus heat pump's values track the Heater 2 registers (`0xEA`/`0xEB`), not Heater 1's. The only association between a heater device and a slot observed so far is which register trio the device answers — see [Non-Touchscreen Responders](#non-touchscreen-responders-️). On a single-heater install the question does not arise, since Heater 1 is the only configured slot.
 
-Of the two ways a setpoint reaches the bus, this is the only one sent unprompted on a schedule. The [register form](#register-based-temperature-setpoints) below appears in reply to a [0x39](#0x39--register-read-request-) read request, after a register write, and in the Touchscreen's periodic register dump — so on a bus with no Internet Gateway issuing reads, and a Touchscreen that does not send CMD `0x17` itself, a setpoint changed at the Touchscreen or on the heater's own panel appears only in this broadcast. An ICI Gas Heater repeats it roughly every 60 s as part of a status burst: CMD `0x12` → `0x16` → `0x17` → `0x0A`, about 370 ms apart. Captured Genus frames follow its own CMD `0x16` and a Gateway setpoint change; whether the Genus also repeats them on a schedule has not been established.
+Of the two ways a setpoint reaches the bus, this is the only one sent unprompted on a schedule. The [register form](#register-based-temperature-setpoints-) below appears in reply to a [0x39](#0x39--register-read-request-) read request, after a register write, and in the Touchscreen's periodic register dump — so on a bus with no Internet Gateway issuing reads, and a Touchscreen that does not send CMD `0x17` itself, a setpoint changed at the Touchscreen or on the heater's own panel appears only in this broadcast. An ICI Gas Heater repeats it roughly every 60 s as part of a status burst: CMD `0x12` → `0x16` → `0x17` → `0x0A`, about 370 ms apart. Captured Genus frames follow its own CMD `0x16` and a Gateway setpoint change; whether the Genus also repeats them on a schedule has not been established.
 
 A heater not plumbed to both circuits reports `0x0A` (10°C) for the unused circuit — the same unused-circuit default the registers carry (see the `0xEB` default note in [Appendix A](#appendix-a-register-dispatch-table)). 10°C is also the lowest setpoint the controller accepts, so in this frame a genuinely unused circuit and a real 10°C setpoint are indistinguishable.
 
 ---
 
-#### Register-based Temperature Setpoints
+#### Register-based Temperature Setpoints ✅
 
 The controller also broadcasts pool and spa setpoints as individual register messages (one per message, Celsius only) using CMD `0x38` — see [0x38 Register Data](#0x38--register-data-️) and [Appendix A](#appendix-a-register-dispatch-table) for the full register dispatch system.
 
-Pattern: `02 00 50 FF FF 80 00 38 0F 17`
+**Pattern:** `02 00 50 FF FF 80 00 38 0F 17`
 
-Examples:
+**Examples:**
 
 ```
 02 00 50 FF FF 80 00 38 0F 17 E7 00 1D 04 03   Pool setpoint = 29°C (register 0xE7)
@@ -1295,7 +1317,7 @@ Examples:
                                     ^^ Temperature in °C
 ```
 
-The Touchscreen is not always the source: on some installs the heater device answers for these registers instead — see [Non-Touchscreen Responders](#non-touchscreen-responders). The register ID identifies the heater slot either way (`0xE7`/`0xE8` = Heater 1, `0xEA`/`0xEB` = Heater 2), so these frames are the authoritative per-heater setpoint source regardless of who sends them — unlike the heater's own CMD `0x17` broadcast above, which carries both circuits in one frame with an unused-circuit default and no indication of which heater slot it belongs to (see [0x17](#0x17--temperature-settings-)).
+The Touchscreen is not always the source: on some installs the heater device answers for these registers instead — see [Non-Touchscreen Responders](#non-touchscreen-responders-️). The register ID identifies the heater slot either way (`0xE7`/`0xE8` = Heater 1, `0xEA`/`0xEB` = Heater 2), so these frames are the authoritative per-heater setpoint source regardless of who sends them — unlike the heater's own CMD `0x17` broadcast above, which carries both circuits in one frame with an unused-circuit default and no indication of which heater slot it belongs to (see [0x17](#0x17--temperature-settings-)).
 
 ---
 
@@ -1305,8 +1327,10 @@ Inter-device unicast sent by the controller (Touchscreen `0x0050` or Viron Chlor
 
 It is only sent to control the pump when its channel is active/on - this command cannnot be used to turn a pump channel on or off. 
 
-**Pattern:** `02 00 50 00 A0 80 00 18 0D 97` (Touchscreen)
-**Pattern:** `02 00 84 00 A0 80 00 18 0D CB` (Chlorinator)
+**Patterns:**
+
+- Touchscreen: `02 00 50 00 A0 80 00 18 0D 97`
+- Chlorinator: `02 00 84 00 A0 80 00 18 0D CB`
 
 **Examples:**
 ```
@@ -2172,7 +2196,7 @@ The Gateway's firmware version, the same value it broadcasts in [0x0A](#0x0a--fi
 
 ### 0x38 — Register Data ⚠️
 
-The controller uses a unified register-based system for configuration and state. Usually broadcast by the Touchscreen (`0x0050`), whose register messages share the base pattern `02 00 50 FF FF 80 00 38` — only the register ID, slot, and data payload vary. **The Touchscreen is not the only responder**: the Genus (`0x0070`), HiNRG (`0x0072`) and ICI (`0x0074`) heaters have been observed answering Heater 1 registers themselves (see [Non-Touchscreen Responders](#non-touchscreen-responders) below), so the source address varies while the payload layout does not.
+The controller uses a unified register-based system for configuration and state. Usually broadcast by the Touchscreen (`0x0050`), whose register messages share the base pattern `02 00 50 FF FF 80 00 38` — only the register ID, slot, and data payload vary. **The Touchscreen is not the only responder**: the Genus (`0x0070`), HiNRG (`0x0072`) and ICI (`0x0074`) heaters have been observed answering Heater 1 registers themselves (see [Non-Touchscreen Responders](#non-touchscreen-responders-️) below), so the source address varies while the payload layout does not.
 
 > See [Appendix A](#appendix-a-register-dispatch-table) for the full register dispatch table, examples by register type, register ID mappings, and the firmware dispatch implementation.
 
@@ -2211,7 +2235,7 @@ The controller uses a unified register-based system for configuration and state.
 
 - The header checksum formula `HEADER_CHECKSUM = LENGTH + 8` holds for register messages **from the Touchscreen**, because bytes 0–7 (`02 00 50 FF FF 80 00 38`) always sum to 776 ≡ 8 (mod 256). This is a consequence of that base pattern, not a separate rule — the general rule is `HEADER_CHECKSUM = LENGTH + (sum(bytes 0–7) & 0xFF)`, and the offset changes with the source address (for the ICI Gas Heater's `02 00 74 FF FF 80 00 38`, bytes 0–7 sum to 812 ≡ `0x2C`, giving `HEADER_CHECKSUM = LENGTH + 0x2C`).
 
-#### Non-Touchscreen Responders
+#### Non-Touchscreen Responders ⚠️
 
 A heater device can answer the [0x39](#0x39--register-read-request-) read requests for heater registers itself, with the Touchscreen silent. On an install with an ICI Gas Heater (`0x0074`):
 
@@ -2258,13 +2282,13 @@ It also answers the Heater Water Temperature register, in slot `0x01`:
 02 00 70 FF FF 80 00 38 10 38 2C 01 18 00 45 03   Genus Heater answers: 24°C
 ```
 
-Notes:
+**Notes:**
 
 - **The register ID still identifies the data.** `(register, slot)` means the same thing whoever sends it, so a response needs no source-specific handling — `0xE7`/`0xE8` are Heater 1's setpoints and `0xEA`/`0xEB` are Heater 2's regardless of which device answers. The firmware already dispatches CMD `0x38` source-agnostically on `(reg_id, slot)`, so these frames decode correctly as-is.
 - **Which device answers is install-dependent and not yet understood.** The mechanism by which a heater knows to respond has not been identified. In the ICI capture nothing answered the Heater 2 requests (`0xEA`/`0xEB`) at all, which is indistinguishable from Heater 2 not being configured.
 - Whether the Touchscreen responds for heater setpoints on other installs is unconfirmed — more captures wanted (see [issue #101](https://github.com/marklynch/pool-controller-code/issues/101)).
 
-#### Timer Registers (Slot 0x04)
+#### Timer Registers (Slot `0x04`) ⚠️
 
 Timer schedule configuration. Each timer has a start time, stop time, and a days-of-week bitmask. Up to 16 timers are supported (registers `0x08`–`0x17`).
 
@@ -2323,7 +2347,7 @@ Timer schedule configuration. Each timer has a start time, stop time, and a days
 - Timers are not broadcast by the touchscreen, but the internet gateway requests these 16 timer registers regularly.
 - Assumption of 16 timers based on how the gateway calls it — but potentially could be 8 as can only verify 8 timers on existing touchscreen.
 
-#### Label Registers (Slot 0x02/0x03)
+#### Label Registers (Slot `0x02`/`0x03`) ✅
 
 Assigns human-readable names to channels, lighting zones, and valves as null-terminated ASCII strings.
 
@@ -2371,7 +2395,7 @@ Assigns human-readable names to channels, lighting zones, and valves as null-ter
 
 ### 0x39 — Register Read Request ✅
 
-Sent to poll a single controller register; the Touchscreen (`0x0050`) usually replies with the matching [0x38 Register Data](#0x38--register-data-️) response — though it is not always the responder, and the Genus (`0x0070`), HiNRG (`0x0072`) and ICI (`0x0074`) heaters have been observed answering for their own registers (see [Non-Touchscreen Responders](#non-touchscreen-responders)). Primarily emitted by the Internet Gateway (`0x00F0`), but the Genus Heater (`0x0070`) has also been observed sending the same `{reg_id, slot_id}` request — the decoder handles CMD `0x39` source-agnostically.
+Sent to poll a single controller register; the Touchscreen (`0x0050`) usually replies with the matching [0x38 Register Data](#0x38--register-data-️) response — though it is not always the responder, and the Genus (`0x0070`), HiNRG (`0x0072`) and ICI (`0x0074`) heaters have been observed answering for their own registers (see [Non-Touchscreen Responders](#non-touchscreen-responders-️)). Primarily emitted by the Internet Gateway (`0x00F0`), but the Genus Heater (`0x0070`) has also been observed sending the same `{reg_id, slot_id}` request — the decoder handles CMD `0x39` source-agnostically.
 
 **Pattern:** `02 00 F0 FF FF 80 00 39 0E B7`
 
@@ -2760,7 +2784,7 @@ The register ID and slot together determine the message meaning. The slot distin
 | Register Range  | Slot   | Purpose                | Data Format                                      |
 |-----------------|--------|------------------------|--------------------------------------------------|
 | `0x00`–`0x07` ⚠️| `0x04` | Unknown                | 1-byte, only `0x00` observed — including on installs that have timers configured. Polled by the Internet Gateway in the same contiguous slot-`0x04` scan as the timers, and answered by the touchscreen. |
-| `0x08`–`0x17`  | `0x04` | Timers 1–16            | start/stop time + days bitmask — read-only; writes ignored by controller (see [0x38 Timer Registers](#timer-registers-slot-0x04))   |
+| `0x08`–`0x17`  | `0x04` | Timers 1–16            | start/stop time + days bitmask — read-only; writes ignored by controller (see [0x38 Timer Registers](#timer-registers-slot-0x04-️))   |
 | `0x20`         | `0x03` | Active Favourite       | CMD `0x2A` value of the active favourite (`0x00`=Pool … `0x07`=Favourite 6); `0xFF` = none active — see note below |
 | `0x21`–`0x28`  | `0x03` | Favourite Enable       | 1-byte flag (`0x01`=enabled, `0x00`=disabled). Maps to CMD `0x2A` values `0x00`–`0x07` in order. Pool (`0x21`) and Spa (`0x22`) follow the separate pool/spa modes setting (`0x64`): `0x01` with it on, `0x00` with it off. |
 | `0x26`–`0x2D`  | `0x02` | Valve Configured       | 1-byte flag (`0x01`=valve zone configured, `0x00`=not configured). `0x26`=Valve 1 … `0x2D`=Valve 8 — see note below |
@@ -2838,7 +2862,7 @@ The register ID and slot together determine the message meaning. The slot distin
   | Reference, second heater configured with no channel | `0xCD` | `00 FF 00` | no `0xFB` channel |
 
   Both are answered only while their heater uses a channel: `0xCA` only while Heater 1 is Connect Inbuilt (not with Genus or no heater), and `0xCD` only while `0xCC` = `0x01`, since a second heater is always Connect Inbuilt. `0xFF` means a heater configured without a channel assigned yet. The channel has not yet been seen to change as a heater is moved to another channel.
-- **Unanswered heater registers**: with no heater configured, or with Genus selected and no Genus heater on the bus, the Touchscreen stopped answering `0xC9`, `0xCA` and the `0xE6`–`0xEB` setpoint and state registers, though `0xC8` still answers. On installs with a bus-controlled heater, the heater itself can answer some of these (see [Non-Touchscreen Responders](#non-touchscreen-responders)).
+- **Unanswered heater registers**: with no heater configured, or with Genus selected and no Genus heater on the bus, the Touchscreen stopped answering `0xC9`, `0xCA` and the `0xE6`–`0xEB` setpoint and state registers, though `0xC8` still answers. On installs with a bus-controlled heater, the heater itself can answer some of these (see [Non-Touchscreen Responders](#non-touchscreen-responders-️)).
 - **`0xEB` default**: when the second heater isn't plumbed to spa, `0xEB` reads `0x0A` (10°C) — an unused default at the minimum setpoint rather than a live value.
 - **`0xE0`–`0xE6`/slot `0x0B` (chlorinator statistics)**: a contiguous block of the chlorinator's own statistics, answered by the Viron Chlorinator (`0x0084`) in response to the Internet Gateway's [0x39](#0x39--register-read-request-) poll. All values are little-endian, at three widths:
 
@@ -2859,7 +2883,7 @@ The register ID and slot together determine the message meaning. The slot distin
 - **`0xF0` (Multicolor Light Type) — confirmed ✅**: system-wide multicolor light model selection from the touchscreen's light setup. Confirmed by UI experiment: setting the light type to SLX multicolor rebroadcasts `0x00`, Delta rebroadcasts `0x01`, and with no multicolor light configured the register reads `0xFF` (none selected — same sentinel convention as Active Favourite `0x20`). A single global register, not per-zone (no `0xF1`–`0xF3` siblings exist, and the Gateway's periodic polling requests `0xF0` only), sitting at the front of the slot-`0x01` system-config block (`0xF4` channel count, `0xF5`–`0xFC` channel categories). Only the SLX and Delta indexes have been mapped; other models in the setup list presumably take further values. The selected model determines which subset of the shared color code table applies to the Light Zone Color registers and [CMD 0x07](#0x07--lighting-zone-color-broadcast-️) — full table in [Light Zone Color Control](#light-zone-color-control-register-0xd00xd7-slot-0x01-️).
 - **Light zone families — 8 zones confirmed ✅**: the six slot-`0x01` per-zone blocks (`0x90` enabled, `0xA0` multicolor, `0xB0` name, `0xC0` state, `0xD0` color, `0xE0` active) each span 8 zones. An install with more than four light zones exercises the upper half: its Touchscreen reports `0xC4`–`0xC7` (state, all `0x00`) and `0xD4`–`0xD7` (color, all `0x05`) for zones 5–8, and its Internet Gateway polls the upper-half siblings `0x96`, `0xA5` and `0xB5`–`0xB7` via [0x39](#0x39--register-read-request-) in the same cycle as the lower four. Responses to those enabled/multicolor/name polls have not themselves been captured yet, so only the state and color blocks are directly confirmed across zones 5–8.
 - **`0x26`–`0x2D` (Valve Configured) — confirmed ✅**: per-valve-zone counterpart of Light Zone Enabled (`0x90`–`0x97`), matching the configured flag of each slot in the [0x27 Valve State Broadcast](#0x27--valve-state-broadcast-). Every install with no valve zones reads `0x00` for all eight. On an install with only Valve 1 configured, `0x26` reads `0x01` and `0x27` reads `0x00`; with both configured, `0x26` and `0x27` both read `0x01`. In the capture where the second valve was configured, both were rebroadcast as `0x01` about 60 s later, in the same burst as the Valve Labels (`0xD0`–`0xD7`, slot `0x02`). The block is 8 registers wide, and the Internet Gateway polls all eight, but CMD `0x27` only ever carries two slots, so `0x28`–`0x2D` (Valves 3–8) have only been seen as `0x00`. `0x26`–`0x28` overlap the slot-`0x03` Favourite Enable range and are told apart by slot as usual.
-- **`0xE8`–`0xF7` / slot `0x03` (Timer Configured) — confirmed ✅**: one flag per timer, the counterpart of the [Timer Registers](#timer-registers-slot-0x04) (`0x08`–`0x17`, slot `0x04`) in the same order: `0x01` while the timer is configured, `0x00` when it is not. Across installs it reads `0x01` for exactly the timers with a non-zero schedule, including a gap (Timers 1 and 3 configured, `0xE8`=`0x01`, `0xE9`=`0x00`, `0xEA`=`0x01`). Confirmed by experiment: with Timer 1 configured a `0x39` read of `0xE8` returned `0x01`; after disabling Timer 1 at the Touchscreen it returned `0x00`, and Timer 1's schedule (`0x08`/`0x04`) read back as all zeros. The Touchscreen's periodic dump only includes the configured timers; the Internet Gateway polls the whole `0xE8`–`0xFF` block and gets `0x00` for the rest. The flag says nothing about which outputs a timer drives: timers that switch different channels both read `0x01`. Overlaps the slot-`0x00` heater registers (`0xE8`–`0xEB`), told apart by slot as usual.
+- **`0xE8`–`0xF7` / slot `0x03` (Timer Configured) — confirmed ✅**: one flag per timer, the counterpart of the [Timer Registers](#timer-registers-slot-0x04-️) (`0x08`–`0x17`, slot `0x04`) in the same order: `0x01` while the timer is configured, `0x00` when it is not. Across installs it reads `0x01` for exactly the timers with a non-zero schedule, including a gap (Timers 1 and 3 configured, `0xE8`=`0x01`, `0xE9`=`0x00`, `0xEA`=`0x01`). Confirmed by experiment: with Timer 1 configured a `0x39` read of `0xE8` returned `0x01`; after disabling Timer 1 at the Touchscreen it returned `0x00`, and Timer 1's schedule (`0x08`/`0x04`) read back as all zeros. The Touchscreen's periodic dump only includes the configured timers; the Internet Gateway polls the whole `0xE8`–`0xFF` block and gets `0x00` for the rest. The flag says nothing about which outputs a timer drives: timers that switch different channels both read `0x01`. Overlaps the slot-`0x00` heater registers (`0xE8`–`0xEB`), told apart by slot as usual.
 - **`0xE0`–`0xE7` / slot `0x02` (Valve State) — confirmed ✅**: one register per valve zone, holding the same Off/Auto/On value as the state byte of that valve's slot in the [0x27 Valve State Broadcast](#0x27--valve-state-broadcast-). Confirmed by experiment on the reference install with two valve zones, reading `0xE0` and `0xE1` after each change at the Touchscreen: both Off read `00`/`00`; Valve 1 Auto `01`/`00`; Valve 1 On `02`/`00`; Valve 2 On `02`/`02`; Valve 1 Off (Valve 2 already Off) `00`. Each register changed as soon as its own valve did, and only for that valve. The Touchscreen answers all eight even while no valve zone is configured, and the value is not cleared then: installs with no valves read `01`/`01` (zagnuts, ninkasi, skymuster, and the reference install in rounds 1–4) or `00`/`00`, and on the reference install `0xE1` once changed from `00` to `01` while no valve was configured. Whether a configured valve keeps its state when it is unconfigured has not been tested. CMD `0x27` only ever carries two slots, so `0xE2`–`0xE7` (Valves 3–8) have only been seen as `0x00`. Overlaps the slot-`0x01` Light Zone Active range (`0xE0`–`0xE7`), told apart by slot as usual.
 - **`0xD0`–`0xD7` / slot `0x02` (Valve Labels)**: an 8-register block, the same width as Valve Configured (`0x26`–`0x2D`). The Internet Gateway polls exactly `0xD0`–`0xD7` (never `0xCF` or `0xD8`) and the Touchscreen answers all eight on every install. `0xD0`/`0xD1` always hold a label, even with no valve zones configured: the defaults `Valve 1`/`Valve 2`, or the user's names. `0xD2`–`0xD7` have only ever returned a single `0x00` byte, read as an empty string for Valves 3–8. No capture has a non-empty one, and CMD `0x27` only ever carries two slots.
 - **`0x90`–`0x97` (Light Zone Enabled)**: 1-byte flag reporting whether the light zone is configured in the controller: `0x01` = configured/present, `0x00` = not configured. Sits in the same slot-`0x01` per-zone register family as the other light-zone blocks (`0xA0` multicolor, `0xB0` name, `0xC0` state, `0xD0` color, `0xE0` active). Enabled zones are rebroadcast regularly; disabled zones are only broadcast at startup or after a configuration change. `0x90`–`0x93` overlaps the slot-`0x02` Channel State range — distinguished by slot as usual.
