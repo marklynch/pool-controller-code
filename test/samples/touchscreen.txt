@@ -4,7 +4,7 @@ I (12:29:10.087) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 0A 0E E8 03 07 0A 03
 I (12:29:10.089) MSG_DECODER: [Touch Screen -> Broadcast] Firmware version - 3.7
 02 00 50 FF FF 80 00 0A 0E E8 03 07 0A 03 
 I (12:29:10.207) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 12 0E F0 01 00 01 03 
-I (12:29:10.209) MSG_DECODER: [Touch Screen -> Broadcast] Touchscreen status - 0x01 (bits 3-2 = 0)
+I (12:29:10.209) MSG_DECODER: [Touch Screen -> Broadcast] Touchscreen status - 0x01 (meaning unknown)
 02 00 50 FF FF 80 00 12 0E F0 01 00 01 03 
 I (12:29:10.327) MSG_DECODER: RX MSG: 02 00 50 FF FF 80 00 05 0D E2 00 00 03 
 I (12:29:10.329) MSG_DECODER: [Touch Screen -> Broadcast] Touchscreen unknown (CMD 0x05): 0x00
