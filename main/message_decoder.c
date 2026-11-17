@@ -2110,12 +2110,12 @@ static bool handle_touchscreen_status(
     uint8_t data_byte2 = payload[1];
 
     if ((data_byte1 != 0x01 && data_byte1 != 0x05 && data_byte1 != 0x09) || data_byte2 != 0x00) {
-        ESP_LOGW(TAG, "%s Touchscreen status - UNEXPECTED VALUE: Byte1: 0x%02X (%d), Byte2: 0x%02X (%d) (expected 0x01|0x05|0x09 0x00)",
-                 addr_info, data_byte1, data_byte1, data_byte2, data_byte2);
+        ESP_LOGW(TAG, "%s Touchscreen status - UNEXPECTED VALUE: Byte 10: 0x%02X, Byte 11: 0x%02X (expected 0x01|0x05|0x09 0x00)",
+                 addr_info, data_byte1, data_byte2);
         record_undocumented(data, len);
     } else {
-        ESP_LOGI(TAG, "%s Touchscreen status - 0x%02X (bits 3-2 = %d)",
-                 addr_info, data_byte1, (data_byte1 >> 2) & 0x03);
+        ESP_LOGI(TAG, "%s Touchscreen status - 0x%02X (meaning unknown)",
+                 addr_info, data_byte1);
     }
 
     return true;

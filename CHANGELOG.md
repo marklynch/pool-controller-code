@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
+- Updated the Touchscreen status log line to say its value's meaning is unknown (e.g. `Touchscreen status - 0x05 (meaning unknown)`) instead of showing a guessed bit field (`bits 3-2 = 1`). Its unexpected-value warning now names the bytes as byte 10 and byte 11, matching PROTOCOL.md
 ### Fixed
 ### Removed
 ### Deprecated
