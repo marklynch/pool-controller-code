@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include "config.h"
 
+#define FRAMING_END_BYTE               0x03  // Last byte of every frame
+
 typedef enum {
     FRAMING_NEED_MORE_DATA,        // incomplete, wait for more bytes
     FRAMING_NO_START_BYTE,         // no 0x02 found, buffer cleared

@@ -214,7 +214,7 @@ framing_result_t framing_process_next(framing_buffer_t *fb, uint8_t *out_frame, 
     }
 
     // Verify end byte (0x03)
-    if (fb->buffer[msg_len - 1] != 0x03) {
+    if (fb->buffer[msg_len - 1] != FRAMING_END_BYTE) {
         ESP_LOGW(TAG, "Invalid end byte (expected 03, got %02X) at length %d, resyncing by 1 byte",
                  fb->buffer[msg_len - 1], msg_len);
         framing_resync_one_byte(fb, out_frame, out_len, msg_len);

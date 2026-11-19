@@ -25,7 +25,7 @@ Requires ESP-IDF v5.5+ with environment sourced (`. $IDF_PATH/export.sh`).
 
 - **main.c**: Application entry point and startup sequencing. Startup does not block on the network — it waits a bounded `WIFI_STARTUP_WAIT_MS` for an address, then brings up the bus bridge and local services regardless
 - **wifi_provisioning.c/.h**: WiFi station lifecycle, reconnect backoff, mDNS, HTTP server startup, and the rescue portal. A supervisor task owns portal start/stop, since switching WiFi mode from the event-loop task can wedge it
-- **bus.c/.h**: UART bus interface — init, read, and hex-string send (`bus_init`, `bus_read`, `bus_send_message`). Sends wait for a quiet bus (listen-before-talk), then verify their own echo and back off/retry on a collision
+- **bus.c/.h**: UART bus interface — init, read, and hex-string send (`bus_init`, `bus_read`, `bus_send_message`). Sends wait for a quiet bus (listen-before-talk: a short silence after a frame's `0x03` end byte, a longer one otherwise, so a device pausing mid-frame isn't talked over), then verify their own echo and back off/retry on a collision
 - **tcp_bridge.c/.h**: TCP server (port 7373) that bridges UART data to/from network clients
 - **message_decoder.c/.h**: Pattern-matching decoder for protocol messages
 - **pool_state.c/.h**: Global pool state structure and definitions

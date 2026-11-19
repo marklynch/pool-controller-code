@@ -112,7 +112,8 @@
 
 // Bus TX collision avoidance (listen-before-talk) and detection (echo check).
 // At 9600 baud one byte takes ~1.04 ms on the wire.
-#define BUS_TX_IDLE_MS                 5       // Bus must be silent this long before we transmit (~5 byte times)
+#define BUS_TX_IDLE_MS                 5       // Bus must be silent this long after a frame end (0x03) before we transmit (~5 byte times)
+#define BUS_TX_IDLE_NO_END_MS          50      // Silence needed instead when the last byte wasn't 0x03: a device pausing mid-frame, or a frame cut short
 #define BUS_TX_IDLE_JITTER_MS          5       // Plus a random 0..N ms so two waiting senders don't start together
 #define BUS_TX_QUIET_TIMEOUT_MS        1000    // Give up waiting for a quiet bus after this and transmit anyway
 #define BUS_TX_ECHO_TIMEOUT_MS         50      // How long after TX completes to wait for our own echo

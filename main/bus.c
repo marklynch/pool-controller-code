@@ -48,6 +48,7 @@ static SemaphoreHandle_t s_tx_lock;  // One transmitter (and one armed echo) at 
 static uint8_t  s_rx_stash[BUS_RX_STASH_SIZE];
 static size_t   s_rx_stash_len;
 static uint32_t s_rx_pulled;
+static uint8_t  s_rx_last_byte;  // Most recently pulled byte (0 before any)
 
 static echo_state_t s_echo_state = ECHO_IDLE;
 static uint8_t  s_echo_expected[BUS_MESSAGE_MAX_SIZE];
@@ -94,46 +95,55 @@ static void rx_pull_locked(void)
         echo_observe_locked(&s_rx_stash[s_rx_stash_len], n, s_rx_pulled);
         s_rx_pulled += n;
         s_rx_stash_len += n;
+        s_rx_last_byte = s_rx_stash[s_rx_stash_len - 1];
     }
 }
 
-// Stream offset of the next byte to arrive. It changes whenever a byte is
-// received, whether or not anyone has pulled it yet.
-static uint32_t rx_received_count(void)
+// Pull what has arrived and return the stream offset of the next byte to
+// arrive. *at_frame_end is true when the last byte received was a frame end
+// (0x03) — false too if bytes remain unpulled, as their last isn't known.
+static uint32_t rx_poll(bool *at_frame_end)
 {
     size_t buffered = 0;
     xSemaphoreTake(s_rx_lock, portMAX_DELAY);
+    rx_pull_locked();
     uart_get_buffered_data_len(BUS_UART_NUM, &buffered);
     uint32_t count = s_rx_pulled + buffered;
+    *at_frame_end = buffered == 0 && s_rx_last_byte == FRAMING_END_BYTE;
     xSemaphoreGive(s_rx_lock);
     return count;
 }
 
-// Wait until no byte has been received for the idle window (plus jitter).
+// Wait until the bus has been silent for the idle window (plus jitter). The
+// window is short after a frame end (0x03), and longer otherwise, so we don't
+// mistake a device's pause between bytes for the end of its frame. A 0x03
+// inside a payload can still pass for a frame end, but only if the sender
+// also pauses right after it.
 // Sleeps a tick whenever traffic is seen, so a busy bus doesn't spin the CPU.
 // Returns false if the bus never went quiet within BUS_TX_QUIET_TIMEOUT_MS.
 static bool wait_for_quiet_bus(void)
 {
     int64_t deadline = esp_timer_get_time() + (int64_t)BUS_TX_QUIET_TIMEOUT_MS * 1000;
-    int64_t window_us = (int64_t)BUS_TX_IDLE_MS * 1000 +
-                        esp_random() % (BUS_TX_IDLE_JITTER_MS * 1000 + 1);
-    uint32_t last = rx_received_count();
+    int64_t jitter_us = esp_random() % (BUS_TX_IDLE_JITTER_MS * 1000 + 1);
+    bool at_frame_end;
+    uint32_t last = rx_poll(&at_frame_end);
     int64_t quiet_since = esp_timer_get_time();
 
     for (;;) {
         esp_rom_delay_us(BUS_IDLE_POLL_US);
-        uint32_t now_count = rx_received_count();
+        uint32_t now_count = rx_poll(&at_frame_end);
         int64_t now = esp_timer_get_time();
         if (now_count != last) {
             if (now >= deadline) {
                 return false;
             }
             vTaskDelay(1);
-            last = rx_received_count();
+            last = rx_poll(&at_frame_end);
             quiet_since = esp_timer_get_time();
             continue;
         }
-        if (now - quiet_since >= window_us) {
+        int64_t idle_ms = at_frame_end ? BUS_TX_IDLE_MS : BUS_TX_IDLE_NO_END_MS;
+        if (now - quiet_since >= idle_ms * 1000 + jitter_us) {
             return true;
         }
     }
@@ -318,8 +328,8 @@ int bus_send_bytes(const uint8_t *data, size_t len)
     for (int attempt = 1; attempt <= BUS_TX_MAX_ATTEMPTS; attempt++) {
         // Listen before talk: don't start on top of another device's frame
         if (!wait_for_quiet_bus()) {
-            ESP_LOGW(TAG, "Bus not quiet for %d ms within %d ms, transmitting anyway",
-                     BUS_TX_IDLE_MS, BUS_TX_QUIET_TIMEOUT_MS);
+            ESP_LOGW(TAG, "Bus not quiet within %d ms, transmitting anyway",
+                     BUS_TX_QUIET_TIMEOUT_MS);
         }
 
         echo_arm(data, len);
