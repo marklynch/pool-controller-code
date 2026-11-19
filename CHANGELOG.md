@@ -7,20 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [TODO]
-- Solar is partly supported now
-- Add basic controls without home assistant.
-- Optimise for homekit via Homekit Bridge
-
 ## [Unreleased]
 ### Added
+### Changed
+### Fixed
+### Removed
+### Deprecated
+### Security
+
+## [1.22.1] - 2026-11-20
 ### Changed
 - Updated the Touchscreen status log line to say its value's meaning is unknown (e.g. `Touchscreen status - 0x05 (meaning unknown)`) instead of showing a guessed bit field (`bits 3-2 = 1`). Its unexpected-value warning now names the bytes as byte 10 and byte 11, matching PROTOCOL.md
 ### Fixed
 - The bridge's own transmissions (e.g. its periodic firmware version broadcast) no longer cut into other devices' frames. Before sending, it used to wait for just 5 ms of silence, which some devices (notably the Viron Heater) leave between bytes partway through a frame. It now needs that 5 ms only after a frame's `0x03` end byte, and 50 ms of silence otherwise. The damaged frames showed up as header-checksum and bad-end-byte errors on the Debug Log page, mixed with fragments of the bridge's own frame
-### Removed
-### Deprecated
-### Security
 
 ## [1.22.0] - 2026-11-14
 ### Added
