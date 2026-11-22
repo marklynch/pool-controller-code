@@ -427,10 +427,10 @@ static const char DEVICE_PAGE_TAIL[] =
     "</section>"
     "<section class='card danger'><h2><i class='i i-alert' aria-hidden='true'></i>Danger zone</h2>"
     "<div class='action-row'><span>Restart the device without changing the firmware.</span>"
-    "<button type='button' id='rebootBtn' class='outline' data-variant='danger'>Reboot</button></div>"
+    "<button type='button' id='rebootBtn' class='outline' data-variant='danger'>Restart</button></div>"
     "<div class='action-row'><span>Re-create this device's Home Assistant entities with the current "
     "entity ID naming. Dashboards, automations and history using the old IDs will need updating. "
-    "The device restarts to republish them.</span>"
+    "Resetting restarts the device.</span>"
     "<button type='button' id='haResetBtn' class='outline' data-variant='danger'>Reset entities</button></div>"
     "<div id='dangerStatus' role='alert' hidden class='mt-2'></div>"
     "</section></div>"
@@ -444,21 +444,21 @@ static const char DEVICE_PAGE_TAIL[] =
     "(function(){"
     "const s=document.getElementById('dangerStatus');"
     "document.getElementById('rebootBtn').addEventListener('click',function(){"
-    "if(!confirm('Reboot the device now?'))return;"
+    "if(!confirm('Restart the device now?'))return;"
     // A network error means the device restarted before the response
     // arrived, so treat it the same as success.
     "fetch('/reboot',{method:'POST'}).then(r=>r.json()).then(function(){"
-    "rebootReload(s,'Reboot requested.');"
-    "}).catch(function(){rebootReload(s,'Reboot requested.');});});"
+    "restartReload(s);"
+    "}).catch(function(){restartReload(s);});});"
     "document.getElementById('haResetBtn').addEventListener('click',function(){"
-    "if(!confirm('Delete and re-create the Home Assistant entities? Their entity IDs will change.'))return;"
+    "if(!confirmRestart('Delete and re-create the Home Assistant entities? Their entity IDs will change.'))return;"
     "showAlert(s,'Clearing entities...');"
     // The device restarts once the entities are cleared, so a failed
     // request means the same thing here as it does for a reboot.
     "fetch('/ha-reset',{method:'POST'}).then(r=>r.json()).then(function(d){"
-    "if(d.success){rebootReload(s,'Entities cleared.');}"
+    "if(d.success){restartReload(s,'Entities cleared.');}"
     "else{showAlert(s,'Error: '+d.message,'danger');}"
-    "}).catch(function(){rebootReload(s,'Entities cleared.');});});"
+    "}).catch(function(){restartReload(s,'Entities cleared.');});});"
     "})();"
     "</script>";
 
@@ -541,7 +541,7 @@ static esp_err_t device_get_handler(httpd_req_t *req)
 // HTML page for WiFi provisioning
 static const char WIFI_PAGE_HEAD[] =
     "<div class='page-head'><h1>WiFi</h1></div>"
-    "<p class='lead'>Choose the network this device joins. It restarts to connect.</p>"
+    "<p class='lead'>Choose the network this device joins. Connecting restarts the device.</p>"
     "<div class='chips'>";
 
 // Shown under the chip when the current signal is weak
@@ -550,8 +550,8 @@ static const char WIFI_WEAK_NOTE[] =
     "Weak signal. Below " STR(WIFI_RSSI_WEAK_DBM) " dBm the connection can drop out; moving the device "
     "or the access point closer, or adding a WiFi extender, should help.</div>";
 
+// Follows the <form> opening tag, which the handler sends with the mDNS host
 static const char WIFI_PAGE_FORM[] =
-    "<form id='wifiForm' class='card narrow'>"
     "<div data-field>"
         "<label for='ssid'>Network</label>"
         "<select id='ssid' name='ssid' required>"
@@ -590,10 +590,14 @@ static const char WIFI_PAGE_FORM[] =
     "document.getElementById('wifiForm').onsubmit=function(e){"
         "e.preventDefault();const ssid=document.getElementById('ssid').value;"
         "const pass=document.getElementById('password').value;"
-        "showStatus('Connecting to '+ssid+'...',false);"
+        "if(!confirmRestart('Connect to '+ssid+'?'))return false;"
+        "const st=document.getElementById('status');showAlert(st,'Saving\\u2026');"
+        // The device comes back on the chosen network, likely at a new
+        // address, so open it by its mDNS name rather than reloading here.
+        "const host=this.dataset.host;"
         "fetch('/provision',{method:'POST',headers:{'Content-Type':'application/json'},"
         "body:JSON.stringify({ssid:ssid,password:pass})}).then(r=>r.json()).then(data=>{"
-        "if(data.success){showStatus('Connected! Device will restart.',false);}"
+        "if(data.success){restartReload(st,'Saved.',host?'http://'+host+'.local/':'');}"
         "else{showStatus('Failed: '+data.message,true);}}).catch(e=>{"
         "showStatus('Error: '+e,true);});return false;};"
     "scanWiFi();"
@@ -608,6 +612,9 @@ static esp_err_t wifi_get_handler(httpd_req_t *req)
     send_wifi_chip(req, &conn, NULL);
     send_str(req, "</div>");
     send_str(req, conn.wifi_weak ? WIFI_WEAK_NOTE : NULL);
+    send_str(req, "<form id='wifiForm' class='card narrow' data-host='");
+    send_str(req, wifi_get_mdns_hostname());   // generated name: no escaping needed
+    send_str(req, "'>");
     send_str(req, WIFI_PAGE_FORM);
     send_page_end(req);
     conn_status_free(&conn);
@@ -835,7 +842,7 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Credentials saved to NVS successfully");
 
     // Send success response
-    send_json(req, "{\"success\":true,\"message\":\"Connected! Device will restart...\"}");
+    send_json(req, "{\"success\":true,\"message\":\"Saved\"}");
 
     // Restart device to apply new credentials
     vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
@@ -1410,7 +1417,7 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
     const char *html_start =
         "<div class='page-head'><h1>MQTT</h1></div>"
         "<p class='lead'>Publish pool state to an MQTT broker, with Home Assistant discovery. "
-        "The device restarts to apply changes.</p>"
+        "Saving restarts the device.</p>"
         "<form id='mqttForm' class='card narrow'>";
 
     char *broker_esc   = html_escape(config.broker);
@@ -1458,6 +1465,7 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         "<script>"
         "document.getElementById('mqttForm').addEventListener('submit',function(e){"
         "e.preventDefault();"
+        "if(!confirmRestart('Save the MQTT settings?'))return;"
         "const data={enabled:document.getElementById('enabled').checked,"
         "broker:document.getElementById('broker').value,"
         "port:parseInt(document.getElementById('port').value)||1883,"
@@ -1465,8 +1473,8 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         "password:document.getElementById('password').value};"
         "fetch('/mqtt_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})"
         ".then(r=>r.json()).then(d=>{"
-        "showAlert(document.getElementById('status'),d.message,d.success?'success':'danger');"
-        "if(d.success)setTimeout(()=>window.location.reload(),2000);"
+        "const s=document.getElementById('status');"
+        "if(d.success)restartReload(s,'Saved.');else showAlert(s,d.message,'danger');"
         "}).catch(()=>{"
         "showAlert(document.getElementById('status'),'Failed to save configuration','danger');});"
         "});"
@@ -1540,7 +1548,7 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
     }
 
     // Send success response
-    send_json(req, "{\"success\":true,\"message\":\"MQTT config saved! Device will restart...\"}");
+    send_json(req, "{\"success\":true,\"message\":\"Saved\"}");
 
     // Restart device to apply new MQTT config
     vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
@@ -1609,7 +1617,7 @@ static const char FIRMWARE_PAGE_GITHUB[] =
     "vs.hidden=bC.hidden=bI.hidden=true;return;}"
     "if(d.state==='success'){p.hidden=false;p.value=100;"
     "vs.hidden=bC.hidden=bI.hidden=true;"
-    "if(!rebooting){rebooting=true;rebootReload(s);}return;}"
+    "if(!rebooting){rebooting=true;restartReload(s,'Update installed.');}return;}"
     "p.hidden=true;"
     // Hidden while a check runs, so a second click can't start a second poll loop.
     "bC.hidden=d.state==='checking';"
@@ -1641,7 +1649,7 @@ static const char FIRMWARE_PAGE_GITHUB[] =
     "poll('?refresh=1');});"
     "bI.addEventListener('click',function(){"
     "const v=vs.value;if(!v)return;"
-    "if(!confirm('Download and install firmware '+v+' from GitHub?'))return;"
+    "if(!confirmRestart('Download and install firmware '+v+' from GitHub?'))return;"
     "fetch('/update/github?version='+encodeURIComponent(v),{method:'POST'}).then(r=>r.json()).then(function(d){"
     "if(d.success){if(!polling)poll();}"
     "else{showAlert(s,'Error: '+(d.message||'could not start'),'danger');}});});"
@@ -1670,7 +1678,7 @@ static const char FIRMWARE_PAGE_TAIL[] =
     "</form>"
     "</section>"
     "<p class='small muted'><i class='i i-alert' aria-hidden='true'></i> "
-    "Keep the device powered during an update.</p>"
+    "Installing an update restarts the device. Keep it powered until this page reloads.</p>"
     "</div>"
     "<script>"
     "(function(){"
@@ -1686,6 +1694,7 @@ static const char FIRMWARE_PAGE_TAIL[] =
     "e.preventDefault();"
     "const file=document.getElementById('firmware').files[0];"
     "if(!file){alert('Please select a file');return;}"
+    "if(!confirmRestart('Install '+file.name+'?'))return;"
     "const status=document.getElementById('status');"
     "const progressBar=document.getElementById('progressBar');"
     "const progressText=document.getElementById('progressText');"
@@ -1705,7 +1714,7 @@ static const char FIRMWARE_PAGE_TAIL[] =
     "const resp=JSON.parse(xhr.responseText);"
     "if(resp.success){"
     "progressBar.hidden=true;progressText.hidden=true;"
-    "rebootReload(status);"
+    "restartReload(status,'Update installed.');"
     "}else{"
     "showAlert(status,'Error: '+resp.message,'danger');"
     "}}else{"
@@ -1864,7 +1873,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
 
     ESP_LOGI(TAG, "OTA update successful!");
 
-    send_json(req, "{\"success\":true,\"message\":\"Update successful! Rebooting...\"}");
+    send_json(req, "{\"success\":true,\"message\":\"Update installed\"}");
 
     // Restart after a delay
     vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_DELAY_MS));
@@ -2004,7 +2013,7 @@ static esp_err_t reboot_post_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "Reboot requested via web UI");
 
-    send_json(req, "{\"success\":true,\"message\":\"Rebooting...\"}");
+    send_json(req, "{\"success\":true,\"message\":\"Restarting\"}");
 
     vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
     esp_restart();

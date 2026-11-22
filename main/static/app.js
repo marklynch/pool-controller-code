@@ -10,22 +10,29 @@ function showAlert(el, msg, variant) {
   el.hidden = false;
 }
 
-// Shared by the GitHub, manual-upload, reboot and entity-reset flows: count
-// down while the device reboots, then reload the page.
-function rebootReload(el, msg) {
-  msg = msg || 'Update successful!';
-  let countdown = 15;
-  const show = () => showAlert(el, msg + ' Rebooting... reload in ' + countdown + ' seconds', 'success');
+// Every action that restarts the device asks first with confirmRestart(),
+// then shows restartReload() once the device has accepted it.
+
+// Confirm an action that restarts the device: `question`, then a line saying
+// so. Returns true to go ahead.
+function confirmRestart(question) {
+  return confirm(question + '\n\nThe device will restart.');
+}
+
+// Count down while the device restarts, then reload this page, or open `url`
+// when the device comes back at a different address (after a WiFi change).
+// `msg` says what was done, e.g. "Saved."; it may be omitted.
+function restartReload(el, msg, url) {
+  const lead = msg ? msg + ' ' : '';
+  let n = 15;
+  const show = () => showAlert(el, lead + 'The device is restarting; this page ' +
+    (url ? 'opens ' + url : 'reloads') + ' in ' + n + ' s.', 'success');
   show();
   const timer = setInterval(function () {
-    countdown--;
-    if (countdown > 0) {
-      show();
-    } else {
-      clearInterval(timer);
-      showAlert(el, msg + ' Rebooting... reloading now...', 'success');
-      window.location.reload();
-    }
+    if (--n > 0) { show(); return; }
+    clearInterval(timer);
+    showAlert(el, lead + 'The device is restarting; ' + (url ? 'opening ' + url : 'reloading') + '\u2026', 'success');
+    if (url) location.href = url; else location.reload();
   }, 1000);
 }
 
