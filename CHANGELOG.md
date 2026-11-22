@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added a web UI dashboard as the home page, with cards for temperature, water chemistry, equipment, lighting, timers and the devices seen on the bus, plus WiFi, MQTT, uptime and firmware status chips. It refreshes every 15 seconds while the tab is visible (#164)
 - Added a Device page to the web UI with the system details, bus and memory counts, usage reporting, reboot and the Home Assistant entity reset, which move there from the Firmware page (#164)
+- Added a weak WiFi signal warning to the web UI: below -75 dBm the dashboard WiFi chip turns amber and reads "(weak)", the WiFi page shows a warning and marks weak networks in its list, and the Device page notes it beside the signal strength (#164)
 ### Changed
 - Redesigned the web UI with a pool-blue theme that follows the system light/dark setting, and grouped the navigation into Dashboard, Settings and Diagnostics. Buttons follow one scheme, and Status JSON and Unknown messages now download their JSON as a timestamped file instead of opening it (#164)
 - Updated the web UI to show dates and times in one format on every page (e.g. `22/11/2026, 13:00:54 GMT+11`), and the Device page and the Debug log download header to describe message counts and resyncs the same way. Resyncs now list every non-zero reason, including unexpected ones, and buffer overflows read "buffer-overflow" (#164)

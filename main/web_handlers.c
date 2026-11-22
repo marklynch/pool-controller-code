@@ -222,6 +222,7 @@ static void format_uptime(char *buf, size_t len)
 typedef struct {
     char *ssid_esc;         // NULL when the station isn't connected
     int8_t rssi;
+    bool wifi_weak;         // Connected, but RSSI below WIFI_RSSI_WEAK_DBM
     bool mqtt_enabled;
     bool mqtt_connected;
     char *broker_esc;
@@ -237,6 +238,7 @@ static void conn_status_load(conn_status_t *st)
         ssid[sizeof(ssid) - 1] = '\0';
         st->ssid_esc = html_escape(ssid);
         st->rssi = ap_info.rssi;
+        st->wifi_weak = ap_info.rssi < WIFI_RSSI_WEAK_DBM;
     }
     mqtt_config_t mqtt_config = {0};
     st->mqtt_enabled = mqtt_load_config(&mqtt_config) && mqtt_config.enabled;
@@ -248,6 +250,32 @@ static void conn_status_free(conn_status_t *st)
 {
     free(st->ssid_esc);
     free(st->broker_esc);
+}
+
+// The WiFi status chip: green when connected, amber when the signal is weak,
+// red when not connected. A link to `href`, or plain when href is NULL (on
+// the WiFi page itself).
+static void send_wifi_chip(httpd_req_t *req, const conn_status_t *conn, const char *href)
+{
+    if (href) {
+        send_str(req, "<a class='chip' href='");
+        send_str(req, href);
+        send_str(req, "'>");
+    } else {
+        send_str(req, "<span class='chip'>");
+    }
+    if (conn->ssid_esc) {
+        char rssi[24];
+        snprintf(rssi, sizeof(rssi), ", %d dBm", conn->rssi);
+        send_str(req, conn->wifi_weak ? "<span class='dot warn'></span>WiFi "
+                                      : "<span class='dot ok'></span>WiFi ");
+        send_str(req, conn->ssid_esc);
+        send_str(req, rssi);
+        send_str(req, conn->wifi_weak ? " (weak)" : NULL);
+    } else {
+        send_str(req, "<span class='dot bad'></span>WiFi not connected");
+    }
+    send_str(req, href ? "</a>" : "</span>");
 }
 
 static const char DASHBOARD_PAGE_HEAD[] =
@@ -352,22 +380,12 @@ static esp_err_t home_get_handler(httpd_req_t *req)
     conn_status_load(&conn);
     char uptime[32];
     format_uptime(uptime, sizeof(uptime));
-    char num[16];
 
     send_page_start(req, "Dashboard", PAGE_HOME);
     send_str(req, DASHBOARD_PAGE_HEAD);
 
     // Connection chips, rendered here since /status doesn't carry them
-    if (conn.ssid_esc) {
-        snprintf(num, sizeof(num), "%d", conn.rssi);
-        send_str(req, "<a class='chip' href='/wifi'><span class='dot ok'></span>WiFi ");
-        send_str(req, conn.ssid_esc);
-        send_str(req, ", ");
-        send_str(req, num);
-        send_str(req, " dBm</a>");
-    } else {
-        send_str(req, "<a class='chip' href='/wifi'><span class='dot bad'></span>WiFi not connected</a>");
-    }
+    send_wifi_chip(req, &conn, "/wifi");
     if (!conn.mqtt_enabled) {
         send_str(req, "<a class='chip' href='/mqtt_config'><span class='dot'></span>MQTT off</a>");
     } else if (conn.mqtt_connected) {
@@ -474,7 +492,7 @@ static esp_err_t device_get_handler(httpd_req_t *req)
     if (conn.ssid_esc) {
         send_str(req, "<dt>WiFi</dt><dd>");
         send_str(req, conn.ssid_esc);
-        snprintf(buf, sizeof(buf), " (%d dBm)</dd>", conn.rssi);
+        snprintf(buf, sizeof(buf), " (%d dBm%s)</dd>", conn.rssi, conn.wifi_weak ? ", weak" : "");
         send_str(req, buf);
     } else {
         send_kv(req, "WiFi", "Not connected");
@@ -521,9 +539,18 @@ static esp_err_t device_get_handler(httpd_req_t *req)
 // ======================================================
 
 // HTML page for WiFi provisioning
-static const char WIFI_PAGE[] =
+static const char WIFI_PAGE_HEAD[] =
     "<div class='page-head'><h1>WiFi</h1></div>"
     "<p class='lead'>Choose the network this device joins. It restarts to connect.</p>"
+    "<div class='chips'>";
+
+// Shown under the chip when the current signal is weak
+static const char WIFI_WEAK_NOTE[] =
+    "<div role='alert' data-variant='warning' class='narrow mb-4'>"
+    "Weak signal. Below " STR(WIFI_RSSI_WEAK_DBM) " dBm the connection can drop out; moving the device "
+    "or the access point closer, or adding a WiFi extender, should help.</div>";
+
+static const char WIFI_PAGE_FORM[] =
     "<form id='wifiForm' class='card narrow'>"
     "<div data-field>"
         "<label for='ssid'>Network</label>"
@@ -554,7 +581,7 @@ static const char WIFI_PAGE[] =
         "poll().then(data=>{"
             "s.innerHTML='';"
             "data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
-            "o.text=n.ssid+' ('+n.rssi+' dBm)'+(n.current?' \\u2713':'');"
+            "o.text=n.ssid+' ('+n.rssi+' dBm'+(n.rssi<" STR(WIFI_RSSI_WEAK_DBM) "?', weak':'')+')'+(n.current?' \\u2713':'');"
             "if(n.current)o.selected=true;s.appendChild(o);});})"
         ".catch(e=>{"
             "s.innerHTML='<option value=\"\">No networks found</option>';"
@@ -574,7 +601,17 @@ static const char WIFI_PAGE[] =
 
 static esp_err_t wifi_get_handler(httpd_req_t *req)
 {
-    return send_static_page(req, "WiFi", PAGE_WIFI, WIFI_PAGE);
+    conn_status_t conn;
+    conn_status_load(&conn);
+    send_page_start(req, "WiFi", PAGE_WIFI);
+    send_str(req, WIFI_PAGE_HEAD);
+    send_wifi_chip(req, &conn, NULL);
+    send_str(req, "</div>");
+    send_str(req, conn.wifi_weak ? WIFI_WEAK_NOTE : NULL);
+    send_str(req, WIFI_PAGE_FORM);
+    send_page_end(req);
+    conn_status_free(&conn);
+    return ESP_OK;
 }
 
 // ======================================================
@@ -2395,7 +2432,7 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "const f=st.firmware||{},m=st.memory||{};"
         "h.push('Firmware:  '+f.version+' (IDF '+f.idf_version+'), built '+f.compile_time);"
         "h.push('Uptime:    '+fmtDur(st.current_ms||0)+'   Free heap: '+m.free_heap+' (min '+m.min_free_heap+')'"
-        "+'   WiFi RSSI: '+known(st.wifi_rssi,v=>v+' dBm'+(v<" STR(WEB_LOG_RSSI_WEAK_DBM) "?' (weak)':'')));"
+        "+'   WiFi RSSI: '+known(st.wifi_rssi,v=>v+' dBm'+(v<" STR(WIFI_RSSI_WEAK_DBM) "?' (weak)':'')));"
         "h.push('System:    heaters '+known(st.heaters_configured,String)+', solar '+known(st.has_solar,yn)"
         "+', separate pool/spa modes '+known(st.separate_pool_spa_modes,yn));"
         "const devs=st.devices||[];h.push('','Devices:');"

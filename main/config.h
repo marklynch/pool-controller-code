@@ -78,6 +78,7 @@
 #define WIFI_SCAN_POLL_MS              1000    // Web UI interval between /scan polls while a scan runs
 #define WEB_DASHBOARD_REFRESH_MS       15000   // Web UI dashboard re-fetches /status this often while the tab is visible
 #define WIFI_SCAN_MAX_AGE_MS           30000   // A scan started longer ago than this is stale (or stuck) and is redone
+#define WIFI_RSSI_WEAK_DBM             -75     // Web UI flags WiFi RSSI below this as weak (dashboard, WiFi and Device pages, Debug log download): dropouts become likely
 
 // ======================================================
 // Pool Hardware Limits
@@ -155,7 +156,6 @@
 #define WEB_LOG_KEEPALIVE_MS           20000   // Page sends a keepalive this often to stay off httpd's LRU purge
 #define WEB_LOG_BROWSER_MAX_LINES      50000   // Page keeps at most this many lines, dropping the oldest
 #define WEB_LOG_DISPLAY_MAX_LINES      2000    // Page renders at most this many of the matching lines
-#define WEB_LOG_RSSI_WEAK_DBM          -75     // Download header flags WiFi RSSI below this as "(weak)": dropouts become likely
 
 // TCP keepalive — reap a silently dead client (one that never sends FIN/RST)
 // so the single client slot is freed. Worst-case detection time is roughly
