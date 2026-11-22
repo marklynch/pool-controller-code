@@ -19,7 +19,7 @@
 
 // HTTP Server
 #define HTTP_SERVER_PORT               80
-#define HTTP_MAX_URI_HANDLERS          28      // Number of endpoint handlers (25 registered; spare for growth)
+#define HTTP_MAX_URI_HANDLERS          28      // Number of endpoint handlers (26 registered; spare for growth)
 #define HTTP_RECV_TIMEOUT_SEC          10      // Timeout for receiving requests
 #define HTTP_SEND_TIMEOUT_SEC          10      // Timeout for sending responses
 #define HTTP_STACK_SIZE                8192    // Stack size for HTTP server task
@@ -76,6 +76,7 @@
 #define WIFI_SCAN_TIME_MAX_MS          300     // Maximum scan time per channel
 #define WIFI_SCAN_MAX_RESULTS          20      // Maximum number of scan results to return
 #define WIFI_SCAN_POLL_MS              1000    // Web UI interval between /scan polls while a scan runs
+#define WEB_DASHBOARD_REFRESH_MS       15000   // Web UI dashboard re-fetches /status this often while the tab is visible
 #define WIFI_SCAN_MAX_AGE_MS           30000   // A scan started longer ago than this is stale (or stuck) and is redone
 
 // ======================================================
