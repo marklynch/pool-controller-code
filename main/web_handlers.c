@@ -383,7 +383,7 @@ static const char DEVICE_PAGE_HEALTH[] =
     "<dt>Resyncs</dt><dd id='resyncs'>&hellip;</dd>"
     "<dt>Memory</dt><dd id='mem'>&hellip;</dd>"
     "</dl></section>"
-    "<section class='card'><h2>Anonymous usage reporting</h2>";
+    "<section class='card'><h2><i class='i i-chart' aria-hidden='true'></i>Anonymous usage reporting</h2>";
 
 static const char DEVICE_PAGE_TAIL[] =
     "</section>"
@@ -498,7 +498,7 @@ static esp_err_t device_get_handler(httpd_req_t *req)
 
     send_str(req, DEVICE_PAGE_HEALTH);
     send_settings_toggle(req, "usageReport", "/usage_report",
-                         "Participate in anonymous usage reporting",
+                         "Share anonymous usage",
                          usage_report_get_enabled(), USAGE_REPORT_DESC);
     send_str(req, DEVICE_PAGE_TAIL);
     send_page_end(req);
@@ -1327,13 +1327,14 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 static const char STATUS_VIEW_PAGE[] =
     "<div class='page-head'><h1>Status JSON</h1>"
     "<div class='actions'>"
-    "<button type='button' id='copy-btn' class='outline'>Copy</button>"
-    "<a href='/status' class='button outline'>Raw JSON</a>"
+    "<button type='button' id='copy-btn' class='outline'><i class='i i-copy' aria-hidden='true'></i><span>Copy</span></button>"
+    "<a href='/status' id='dl-json' class='button outline' download><i class='i i-download' aria-hidden='true'></i>Download</a>"
     "</div></div>"
     "<p id='time-info' class='lead' hidden></p>"
     "<div id='status-error' role='alert' data-variant='danger' hidden></div>"
     "<pre class='json'><code id='status-content'>Loading status...</code></pre>"
     "<script>"
+    "bindJsonDownload('dl-json','pool-controller-status');"
     "fetch('/status').then(r=>r.json()).then(data=>{"
     "document.getElementById('status-content').textContent=JSON.stringify(data,null,2);"
     "let localTime='NTP not synced';"
@@ -1354,7 +1355,7 @@ static const char STATUS_VIEW_PAGE[] =
     "const sel=getSelection(),rg=document.createRange();"
     "rg.selectNodeContents(document.getElementById('status-content'));"
     "sel.removeAllRanges();sel.addRange(rg);const ok=document.execCommand('copy');sel.removeAllRanges();"
-    "const b=this;b.textContent=ok?'Copied':'Copy failed';setTimeout(()=>{b.textContent='Copy';},1500);});"
+    "const b=this.querySelector('span');b.textContent=ok?'Copied':'Copy failed';setTimeout(()=>{b.textContent='Copy';},1500);});"
     "</script>";
 
 static esp_err_t status_view_get_handler(httpd_req_t *req)
@@ -1387,7 +1388,7 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         ? "Leave empty to keep current password" : "Leave empty if not required";
     static const char html_fields_fmt[] =
         "<div data-field>"
-            "<label><input type='checkbox' id='enabled' role='switch' name='enabled'%s> Enable MQTT</label>"
+            "<label class='switch-row'><input type='checkbox' id='enabled' role='switch' name='enabled'%s> Enable MQTT</label>"
         "</div>"
         "<div data-field>"
             "<label for='broker'>Broker host or IP</label>"
@@ -2255,8 +2256,9 @@ static esp_err_t unknown_msgs_clear_handler(httpd_req_t *req)
 static const char UNKNOWN_MSGS_PAGE[] =
     "<div class='page-head'><h1>Unknown messages</h1>"
     "<div class='actions'>"
-    "<a href='/unknown_msgs' class='button outline'>Raw JSON</a>"
-    "<button id='clear-btn' class='outline' data-variant='danger'>Clear</button>"
+    "<a href='/unknown_msgs' id='dl-json' class='button outline' download><i class='i i-download' aria-hidden='true'></i>Download</a>"
+    "<span class='sep' aria-hidden='true'></span>"
+    "<button id='clear-btn' class='outline' data-variant='danger'><i class='i i-trash' aria-hidden='true'></i>Clear</button>"
     "</div></div>"
     "<p class='lead'><span id='unk-count'></span>Unrecognized and error frames captured from the bus, "
     "newest first (up to " STR(UNKNOWN_BUFFER_CAPACITY) " kept). Select a row to see the full frame.</p>"
@@ -2268,6 +2270,7 @@ static const char UNKNOWN_MSGS_PAGE[] =
     "<tbody id='unk-tbody'></tbody></table>"
     "</div>"
     "<script>"
+    "bindJsonDownload('dl-json','pool-controller-unknown-msgs');"
     "function fmtTime(ts){"
     "if(!ts||ts<=0)return'Unknown';"
     "const d=new Date(ts*1000);"
@@ -2340,18 +2343,21 @@ static esp_err_t unknown_msgs_view_handler(httpd_req_t *req)
 static esp_err_t log_view_handler(httpd_req_t *req)
 {
     const char *page_content =
-        "<div class='page-head'><h1>Debug log</h1></div>"
+        "<div class='page-head'><h1>Debug log</h1>"
+        "<div class='actions'>"
+        "<button id='pause-btn' class='outline'><i id='pause-icon' class='i i-pause' aria-hidden='true'></i><span>Pause</span></button>"
+        "<button id='dl-btn' class='outline'><i class='i i-download' aria-hidden='true'></i>Download</button>"
+        "<span class='sep' aria-hidden='true'></span>"
+        "<button id='clear-btn' class='outline' data-variant='danger'><i class='i i-trash' aria-hidden='true'></i>Clear</button>"
+        "</div></div>"
         "<p class='lead'>Live firmware log, including an <code>RX MSG</code> line for every bus frame. "
         "The capture is kept in this page only, and is lost on reload. Download it to attach to a bug report. "
         "Hex frames entered below the log are sent to the bus as-is.</p>"
         "<div class='toolbar'>"
-        "<button id='pause-btn' class='outline'>Pause</button>"
-        "<button id='dl-btn'>Download</button>"
-        "<button id='clear-btn' class='outline' data-variant='danger'>Clear</button>"
         "<input id='filter' type='search' placeholder='Filter, e.g. RX MSG'>"
+        "<small class='muted'><span id='log-dot' class='dot' style='display:inline-block;margin-right:0.4rem'></span>"
+        "<span id='log-status'>Connecting\u2026</span></small>"
         "</div>"
-        "<p class='small muted' style='margin:0 0 0.5rem'><span id='log-dot' class='dot' style='display:inline-block;margin-right:0.4rem'></span>"
-        "<span id='log-status'>Connecting\u2026</span></p>"
         // Per-level line colours (app.css .lE/.lW/...) key on the ESP-IDF
         // "X (time) TAG: ..." prefix; markers are gaps the page inserted or
         // the device reported.
@@ -2423,7 +2429,9 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "if(ok)txHex.removeAttribute('aria-invalid');else txHex.setAttribute('aria-invalid','true');"
         "if(ok&&ws&&ws.readyState===1)ws.send('" WEB_LOG_TX_PREFIX "'+v);});"
         "document.getElementById('pause-btn').addEventListener('click',function(){"
-        "paused=!paused;this.textContent=paused?'Resume':'Pause';if(!paused)render();status();});"
+        "paused=!paused;this.querySelector('span').textContent=paused?'Resume':'Pause';"
+        "document.getElementById('pause-icon').className='i i-'+(paused?'play':'pause');"
+        "if(!paused)render();status();});"
         "document.getElementById('clear-btn').addEventListener('click',function(){"
         "if(lines.length&&!confirm('Discard the '+lines.length+' captured lines?'))return;"
         "lines.length=0;bytes=0;trimmed=0;gaps=0;reconnects=0;captureStart=new Date();render();status();});"
@@ -2490,8 +2498,7 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "catch(e){return{err:e.message||String(e)};}}"
         "document.getElementById('dl-btn').addEventListener('click',async function(){"
         "const d=new Date();const[s,unk]=await Promise.all([getJson('/status'),getJson('/unknown_msgs')]);"
-        "const name='pool-controller-log-'+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+'-'"
-        "+p2(d.getHours())+p2(d.getMinutes())+p2(d.getSeconds())+'.txt';"
+        "const name=stampedName('pool-controller-log','txt',d);"
         "const text=header(s.data||null,s.err,unk,d)+lines.join('\\n')+(lines.length?'\\n':'')+partial;"
         "const url=URL.createObjectURL(new Blob([text],{type:'text/plain'}));"
         "const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();"

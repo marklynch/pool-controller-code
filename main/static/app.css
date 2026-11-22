@@ -76,6 +76,13 @@
 .i-clock { --i: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 3'/%3E%3C/svg%3E"); }
 .i-alert { --i: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'/%3E%3C/svg%3E"); }
 
+.i-copy { --i: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='8' y='8' width='12' height='12' rx='2'/%3E%3Cpath d='M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2'/%3E%3C/svg%3E"); }
+.i-trash { --i: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3'/%3E%3C/svg%3E"); }
+.i-pause { --i: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6' y='5' width='4' height='14' rx='1'/%3E%3Crect x='14' y='5' width='4' height='14' rx='1'/%3E%3C/svg%3E"); }
+.i-play { --i: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4v16l13-8z'/%3E%3C/svg%3E"); }
+
+.i-chart { --i: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h16M7 16v-4M12 16V8M17 16v-7'/%3E%3C/svg%3E"); }
+
 /* ---- Shell: sidebar, top bar (narrow screens only) ---- */
 .brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: var(--foreground); }
 .brand .i { width: 1.5em; height: 1.5em; color: var(--primary); }
@@ -103,6 +110,8 @@ main { padding: 1.5rem clamp(1rem, 3vw, 2rem) 3rem; max-width: 72rem; width: 100
 .page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; margin-bottom: 1rem; }
 .page-head h1 { margin: 0; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .page-head .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+/* Thin divider that sets a destructive button apart, last in the row */
+.page-head .actions .sep { width: 1px; align-self: stretch; margin: 0.25rem 0.25rem; background: var(--border); }
 .lead { color: var(--muted-foreground); margin: -0.5rem 0 1rem; font-size: var(--text-7); }
 .narrow { max-width: 34rem; }
 .muted { color: var(--muted-foreground); }
@@ -151,6 +160,7 @@ a.chip:hover { color: var(--foreground); }
 .action-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0; border-top: 1px solid var(--border); font-size: var(--text-7); }
 .action-row:first-of-type { border-top: 0; padding-top: 0; }
 .switch-row { display: flex; align-items: center; gap: 0.6rem; font-size: var(--text-7); }
+.switch-row input[role=switch] { flex: none; }
 .switch-row + p { margin: 0.4rem 0 0; font-size: var(--text-8); color: var(--muted-foreground); }
 
 .dropzone { position: relative; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1.25rem; border: 1px dashed var(--input); border-radius: var(--radius-medium); color: var(--muted-foreground); font-size: var(--text-7); cursor: pointer; text-align: center; }

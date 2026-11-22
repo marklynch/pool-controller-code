@@ -52,3 +52,19 @@ function bindToggle(id, url) {
       .finally(function () { c.disabled = false; });
   });
 }
+
+// File name for a download: <prefix>-YYYYMMDD-HHMMSS.<ext>, in local time
+// at `d` (default now).
+function stampedName(prefix, ext, d) {
+  d = d || new Date();
+  const p2 = n => String(n).padStart(2, '0');
+  return prefix + '-' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '-' +
+    p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds()) + '.' + ext;
+}
+
+// Make the link `id` save its same-origin JSON target as a timestamped file
+// rather than opening it. The name is set at click time, so it's current.
+function bindJsonDownload(id, prefix) {
+  const a = document.getElementById(id);
+  a.addEventListener('click', function () { a.download = stampedName(prefix, 'json'); });
+}
