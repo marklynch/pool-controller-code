@@ -9,8 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Added a web UI dashboard as the home page, with cards for temperature, water chemistry, equipment, lighting, timers and the devices seen on the bus, plus WiFi, MQTT, uptime and firmware status chips. It refreshes every 15 seconds while the tab is visible (#164)
+- Added a Device page to the web UI with the system details, bus and memory counts, usage reporting, reboot and the Home Assistant entity reset, which move there from the Firmware page (#164)
 ### Changed
+- Redesigned the web UI with a pool-blue theme that follows the system light/dark setting, and grouped the navigation into Dashboard, Settings and Diagnostics. Buttons follow one scheme, and Status JSON and Unknown messages now download their JSON as a timestamped file instead of opening it (#164)
 ### Fixed
+- Fixed the web UI header logo sometimes failing to load on first visit (#164)
 - Fixed timer and favourite changes made at the Touchscreen never reaching Home Assistant or the web UI on installs without an Internet Gateway, until the bridge restarted (#155). The Touchscreen doesn't announce these edits on the bus, so with no gateway present the bridge now re-reads those registers every 20 minutes
 ### Removed
 ### Deprecated
