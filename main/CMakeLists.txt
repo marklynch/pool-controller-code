@@ -33,7 +33,8 @@ idf_component_register(
     EMBED_TXTFILES
         "static/favicon.svg"
         "static/oat.min.css"
-        "static/oat.min.js"
+        "static/app.css"
+        "static/app.js"
     EMBED_FILES
         "static/favicon.png"
     REQUIRES

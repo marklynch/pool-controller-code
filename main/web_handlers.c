@@ -71,305 +71,466 @@ static char *html_escape(const char *input)
     return out;
 }
 
+// Sends a complete JSON response.
+static esp_err_t send_json(httpd_req_t *req, const char *json)
+{
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
 // ======================================================
-// Common HTML Page Parts (Header and footer)
+// Common HTML Page Parts (shell, navigation, footer)
 // ======================================================
 
-// Dynamic functions for page header, navigation, and footer
-char *get_page_header(const char *title) {
-    const char *fmt = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+// Pages with a sidebar entry; indexes NAV_ITEMS.
+typedef enum {
+    PAGE_HOME,
+    PAGE_WIFI,
+    PAGE_MQTT,
+    PAGE_FIRMWARE,
+    PAGE_DEVICE,
+    PAGE_STATUS,
+    PAGE_UNKNOWN,
+    PAGE_LOG,
+    PAGE_COUNT
+} web_page_t;
+
+// Sidebar entries, in display order. A non-NULL group starts a new labelled
+// section above that entry.
+static const struct {
+    const char *group;
+    const char *uri;
+    const char *icon;   // app.css .i-<icon> class
+    const char *label;
+} NAV_ITEMS[PAGE_COUNT] = {
+    [PAGE_HOME]     = { NULL,          "/",                  "gauge",    "Dashboard" },
+    [PAGE_WIFI]     = { "Settings",    "/wifi",              "wifi",     "WiFi" },
+    [PAGE_MQTT]     = { NULL,          "/mqtt_config",       "mqtt",     "MQTT" },
+    [PAGE_FIRMWARE] = { NULL,          "/update",            "download", "Firmware" },
+    [PAGE_DEVICE]   = { NULL,          "/device",            "cpu",      "Device" },
+    [PAGE_STATUS]   = { "Diagnostics", "/status_view",       "braces",   "Status JSON" },
+    [PAGE_UNKNOWN]  = { NULL,          "/unknown_msgs_view", "help",     "Unknown messages" },
+    [PAGE_LOG]      = { NULL,          "/log_view",          "terminal", "Debug log" },
+};
+
+// Sends `s` as one chunk of a chunked response. NULL and empty strings are
+// skipped: a zero-length chunk would end the response.
+static void send_str(httpd_req_t *req, const char *s)
+{
+    if (s && s[0] != '\0') {
+        httpd_resp_send_chunk(req, s, HTTPD_RESP_USE_STRLEN);
+    }
+}
+
+// Short hash of this build's ELF, appended to app.css/app.js links so each
+// build's pages fetch that build's assets rather than a cached older copy.
+static const char *asset_version(void)
+{
+    static char ver[9];
+    if (ver[0] == '\0') {
+        esp_app_get_elf_sha256(ver, sizeof(ver));
+    }
+    return ver;
+}
+
+// Streams the document head, top bar, sidebar and the opening <main>. `title`
+// is inserted unescaped, so pass only fixed strings.
+static void send_page_start(httpd_req_t *req, const char *title, web_page_t page)
+{
+    const char *ver = asset_version();
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    send_str(req,
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta name='color-scheme' content='light dark'>"
         "<link rel='icon' type='image/png' href='/static/favicon.png'>"
         "<link rel='icon' type='image/svg+xml' href='/static/favicon.ico'>"
         "<link rel='apple-touch-icon' href='/static/favicon.png'>"
+        // Oat themes on data-theme; follow the OS setting, before first paint
+        "<script>(function(){const m=matchMedia('(prefers-color-scheme: dark)');"
+        "const s=()=>document.documentElement.dataset.theme=m.matches?'dark':'light';"
+        "s();m.addEventListener('change',s);})();</script>"
         "<link rel='stylesheet' href='/static/oat.min.css'>"
-        "<script src='/static/oat.min.js' defer></script>"
-        "<title>%s</title></head><body><div data-sidebar-layout>";
-    int n = snprintf(NULL, 0, fmt, title);
-    if (n < 0) return NULL;
-
-    char *header = malloc((size_t)n + 1);
-    if (!header) return NULL;
-
-    snprintf(header, (size_t)n + 1, fmt, title);
-    return header;
-}
-
-char *get_page_nav(const char page) {
-    const esp_app_desc_t *app_desc = esp_app_get_description();
-    const char *fmt =
+        "<link rel='stylesheet' href='/static/app.css?v=");
+    send_str(req, ver);
+    send_str(req, "'><script src='/static/app.js?v=");
+    send_str(req, ver);
+    send_str(req, "'></script><title>");
+    send_str(req, title);
+    send_str(req,
+        " - Pool Controller</title></head><body><div data-sidebar-layout>"
         "<nav data-topnav>"
-        "<button data-sidebar-toggle aria-label='Toggle menu' class='outline'>☰</button>"
-        "<img src='/static/favicon.ico' alt='Logo' style='height:1.6em;'>"
-        "<span>Pool Controller</span>"
+        "<button data-sidebar-toggle aria-label='Toggle menu' class='outline'>&#9776;</button>"
+        "<span class='brand'><i class='i i-pool' aria-hidden='true'></i>Pool Controller</span>"
         "</nav>"
         "<aside data-sidebar>"
-        "<nav><ul>"
-        "<li><a href='/'" "%s" ">Home</a></li>"
-        "<li><a href='/wifi'" "%s" ">WiFi Config</a></li>"
-        "<li><a href='/mqtt_config'" "%s" ">MQTT Config</a></li>"
-        "<li><a href='/status_view'" "%s" ">Status</a></li>"
-        "<li><a href='/unknown_msgs_view'" "%s" ">Unknown Messages</a></li>"
-        "<li><a href='/log_view'" "%s" ">Debug Log</a></li>"
-        "<li><a href='/update'" "%s" ">Firmware Update</a></li>"
-        "</ul></nav>"
-        "<footer><small>%s</small></footer>"
-        "</aside>"
-        "<main class='p-4'>";
-    const char *cur = " aria-current='page'";
-    const char *none = "";
-    int n = snprintf(NULL, 0, fmt,
-        page == 'h' ? cur : none,
-        page == 'w' ? cur : none,
-        page == 'm' ? cur : none,
-        page == 's' ? cur : none,
-        page == 'x' ? cur : none,
-        page == 'l' ? cur : none,
-        page == 'u' ? cur : none,
-        app_desc->version);
-    if (n < 0) return NULL;
-
-    char *nav = malloc((size_t)n + 1);
-    if (!nav) return NULL;
-
-    snprintf(nav, (size_t)n + 1, fmt,
-        page == 'h' ? cur : none,
-        page == 'w' ? cur : none,
-        page == 'm' ? cur : none,
-        page == 's' ? cur : none,
-        page == 'x' ? cur : none,
-        page == 'l' ? cur : none,
-        page == 'u' ? cur : none,
-        app_desc->version);
-    return nav;
+        "<header class='brand'><i class='i i-pool' aria-hidden='true'></i>Pool Controller</header>"
+        "<nav><ul>");
+    for (int i = 0; i < PAGE_COUNT; i++) {
+        if (NAV_ITEMS[i].group) {
+            send_str(req, "<li class='nav-group'>");
+            send_str(req, NAV_ITEMS[i].group);
+            send_str(req, "</li>");
+        }
+        send_str(req, "<li><a href='");
+        send_str(req, NAV_ITEMS[i].uri);
+        send_str(req, i == (int)page ? "' aria-current='page'>" : "'>");
+        send_str(req, "<i class='i i-");
+        send_str(req, NAV_ITEMS[i].icon);
+        send_str(req, "' aria-hidden='true'></i>");
+        send_str(req, NAV_ITEMS[i].label);
+        send_str(req, "</a></li>");
+    }
+    send_str(req, "</ul></nav><footer><small>");
+    send_str(req, esp_app_get_description()->version);
+    send_str(req, "</small></footer></aside><main>");
 }
 
-char *get_page_footer(void) {
-    const char *str = "</main></div></body></html>";
-    size_t len = strlen(str);
-    char *footer = malloc(len + 1);
-    if (!footer) return NULL;
-    memcpy(footer, str, len + 1);
-    return footer;
+// Closes the page opened by send_page_start and ends the chunked response.
+static void send_page_end(httpd_req_t *req)
+{
+    send_str(req, "</main></div></body></html>");
+    httpd_resp_send_chunk(req, NULL, 0);
+}
+
+// A page whose whole body is one fixed string.
+static esp_err_t send_static_page(httpd_req_t *req, const char *title, web_page_t page,
+                                  const char *body)
+{
+    send_page_start(req, title, page);
+    send_str(req, body);
+    send_page_end(req);
+    return ESP_OK;
 }
 
 // ======================================================
-// Home Page Handler
+// Dashboard (Home) Page Handler
 // ======================================================
+
+static void format_uptime(char *buf, size_t len)
+{
+    uint32_t uptime_s = (uint32_t)((uint64_t)xTaskGetTickCount() * portTICK_PERIOD_MS / 1000);
+    uint32_t d = uptime_s / 86400, h = (uptime_s % 86400) / 3600;
+    uint32_t m = (uptime_s % 3600) / 60, s = uptime_s % 60;
+    if (d > 0)      snprintf(buf, len, "%lud %luh %lum", (unsigned long)d, (unsigned long)h, (unsigned long)m);
+    else if (h > 0) snprintf(buf, len, "%luh %lum %lus", (unsigned long)h, (unsigned long)m, (unsigned long)s);
+    else            snprintf(buf, len, "%lum %lus", (unsigned long)m, (unsigned long)s);
+}
+
+// Connection state shown by the dashboard chips and the Device page. Strings
+// are HTML-escaped copies on the heap; release with conn_status_free().
+typedef struct {
+    char *ssid_esc;         // NULL when the station isn't connected
+    int8_t rssi;
+    bool wifi_weak;         // Connected, but RSSI below WIFI_RSSI_WEAK_DBM
+    bool mqtt_enabled;
+    bool mqtt_connected;
+    char *broker_esc;
+} conn_status_t;
+
+static void conn_status_load(conn_status_t *st)
+{
+    *st = (conn_status_t){0};
+    wifi_ap_record_t ap_info = {0};
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        char ssid[33];
+        memcpy(ssid, ap_info.ssid, sizeof(ssid) - 1);
+        ssid[sizeof(ssid) - 1] = '\0';
+        st->ssid_esc = html_escape(ssid);
+        st->rssi = ap_info.rssi;
+        st->wifi_weak = ap_info.rssi < WIFI_RSSI_WEAK_DBM;
+    }
+    mqtt_config_t mqtt_config = {0};
+    st->mqtt_enabled = mqtt_load_config(&mqtt_config) && mqtt_config.enabled;
+    st->mqtt_connected = mqtt_client_is_connected();
+    st->broker_esc = html_escape(mqtt_config.broker);
+}
+
+static void conn_status_free(conn_status_t *st)
+{
+    free(st->ssid_esc);
+    free(st->broker_esc);
+}
+
+// The WiFi status chip: green when connected, amber when the signal is weak,
+// red when not connected. A link to `href`, or plain when href is NULL (on
+// the WiFi page itself).
+static void send_wifi_chip(httpd_req_t *req, const conn_status_t *conn, const char *href)
+{
+    if (href) {
+        send_str(req, "<a class='chip' href='");
+        send_str(req, href);
+        send_str(req, "'>");
+    } else {
+        send_str(req, "<span class='chip'>");
+    }
+    if (conn->ssid_esc) {
+        char rssi[24];
+        snprintf(rssi, sizeof(rssi), ", %d dBm", conn->rssi);
+        send_str(req, conn->wifi_weak ? "<span class='dot warn'></span>WiFi "
+                                      : "<span class='dot ok'></span>WiFi ");
+        send_str(req, conn->ssid_esc);
+        send_str(req, rssi);
+        send_str(req, conn->wifi_weak ? " (weak)" : NULL);
+    } else {
+        send_str(req, "<span class='dot bad'></span>WiFi not connected");
+    }
+    send_str(req, href ? "</a>" : "</span>");
+}
+
+static const char DASHBOARD_PAGE_HEAD[] =
+    "<div class='page-head'>"
+    "<h1>Pool <span id='mode'></span></h1>"
+    "<small id='updated' class='muted'></small>"
+    "</div>"
+    "<div class='chips'>";
+
+static const char DASHBOARD_PAGE_BODY[] =
+    "<a id='fw-chip' class='chip' href='/update' hidden></a>"
+    "</div>"
+    "<div id='err' role='alert' data-variant='danger' hidden class='mb-4'></div>"
+    "<div id='cards' class='cards'><p class='muted'>Loading&hellip;</p></div>"
+    "<script>"
+    "(function(){"
+    "const $=id=>document.getElementById(id);"
+    "const esc=s=>{const e=document.createElement('i');e.textContent=s;return e.innerHTML;};"
+    "const pill=s=>'<span class=\"pill '+(s==='Off'?'off':/^Auto/.test(s)?'auto':'')+'\">'+esc(s)+'</span>';"
+    // k is escaped here; v is HTML the caller has built (escaping any device strings)
+    "const row=(k,v,sub,mono)=>'<li><span>'+esc(k)+(sub?'<span class=\"sub'+(mono?' mono':'')+'\">'+esc(sub)+'</span>':'')+'</span><span>'+v+'</span></li>';"
+    "const rows=r=>r?'<ul class=\"rows\">'+r+'</ul>':'';"
+    "const card=(icon,title,body)=>'<section class=\"card\"><h2><i class=\"i i-'+icon+'\" aria-hidden=\"true\"></i>'+title+'</h2>'+body+'</section>';"
+    "function render(d){"
+    // Readings are always °C on the bus; the scale only sets how the
+    // Touchscreen displays them, so convert to match it.
+    "const F=d.temperature.scale==='Fahrenheit';"
+    "const t=v=>F?Math.round(v*9/5+32)+'°F':v+'°C';"
+    "const out=[];"
+    // Temperature: the first connected sensor large, the rest and the heaters as rows
+    "const temps=[];"
+    "d.devices.forEach(dv=>{if(!('temperature1' in dv))return;const multi='temperature2' in dv;"
+    "[1,2].forEach(n=>{if(n===2&&!multi)return;"
+    "temps.push({name:dv.name+(multi?' sensor '+n:''),on:dv['temperature'+n+'_connected'],v:dv['temperature'+n]});});});"
+    "const main=temps.find(x=>x.on);let h='',r='';"
+    "if(main)h+='<div class=\"big\">'+t(main.v)+'</div><p class=\"muted small\">'+esc(main.name)+'</p>';"
+    "temps.forEach(x=>{if(x!==main)r+=row(x.name,x.on?t(x.v):'<span class=\"muted\">Not connected</span>');});"
+    "d.heaters.forEach(ht=>{const sp='pool_setpoint' in ht?(F"
+    "?'Pool '+ht.pool_setpoint_f+'°F · Spa '+ht.spa_setpoint_f+'°F'"
+    ":'Pool '+ht.pool_setpoint+'°C · Spa '+ht.spa_setpoint+'°C'):'';"
+    "r+=row('Heater '+(ht.index+1),ht.state?pill(ht.state):'',sp);});"
+    "h+=rows(r);if(h)out.push(card('temp','Temperature',h));"
+    // Water chemistry
+    "const c=d.chlorinator;h='';r='';"
+    "const met=(v,u,lbl,sp)=>'<div class=\"metric\"><b>'+(v!=null?v+(u?'<small> '+u+'</small>':''):'—')+'</b>'"
+    "+'<span class=\"muted small\">'+lbl+(sp!=null?' · target '+sp:'')+'</span></div>';"
+    "const ph=v=>v!=null?v.toFixed(1):v;"
+    "if(c.ph_reading!=null||c.ph_setpoint!=null||c.orp_reading!=null||c.orp_setpoint!=null)"
+    "h+='<div class=\"metrics\">'+met(ph(c.ph_reading),'','pH',ph(c.ph_setpoint))+met(c.orp_reading,'mV','ORP',c.orp_setpoint)+'</div>';"
+    "const rng=(lo,hi,u)=>(lo!=null?lo+u:'—')+' – '+(hi!=null?hi+u:'—');"
+    "if(c.ph_lowest!=null||c.ph_highest!=null)r+=row('pH range measured',rng(c.ph_lowest,c.ph_highest,''));"
+    "if(c.orp_lowest!=null||c.orp_highest!=null)r+=row('ORP range measured',rng(c.orp_lowest,c.orp_highest,' mV'));"
+    "if(c.cell_running_time!=null)r+=row('Cell running time',c.cell_running_time+' h');"
+    "if(c.low_salt_cell_running_time!=null)r+=row('Low salt cell running time',c.low_salt_cell_running_time+' h');"
+    "if(c.previous_day_cell_load!=null)r+=row('Previous day cell load',c.previous_day_cell_load+'%');"
+    "if(c.chlor_output_level!=null)r+=row('Chlorine output level',c.chlor_output_level);"
+    "h+=rows(r);if(h)out.push(card('droplet','Water chemistry',h));"
+    // Equipment
+    "r='';const p=d.pump||{};"
+    "d.channels.forEach(x=>r+=row(x.name||x.type,pill(x.state)));"
+    "(d.valves||[]).forEach(x=>r+=row(x.name,pill(x.state)));"
+    "if(p.speed_rpm!=null)r+=row('Pump speed',p.speed_rpm+' rpm');"
+    "if(p.power_watts!=null)r+=row('Pump power',p.power_watts+' W');"
+    "if(r)out.push(card('fan','Equipment',rows(r)));"
+    // Lighting
+    "r='';"
+    "d.lighting.forEach(z=>{let s=z.state;if(z.active&&z.color)s+=' · '+z.color;r+=row(z.name||'Zone '+z.zone,pill(s));});"
+    "if(d.multicolor_light_type)r+=row('Multicolor light type',esc(d.multicolor_light_type));"
+    "if(r)out.push(card('bulb','Lighting',rows(r)));"
+    // Timers
+    "r='';"
+    "(d.timers||[]).forEach(x=>r+=row(x.start+' – '+x.stop,'<span class=\"mono small muted\">'+esc(x.days)+'</span>','Timer '+x.num));"
+    "if(r)out.push(card('clock','Timers',rows(r)));"
+    // Devices seen on the bus, this bridge included
+    "r='';"
+    "d.devices.forEach(dv=>r+=row(dv.name,dv.firmware_version?'v'+esc(dv.firmware_version):"
+    "'<span class=\"muted\">—</span>',dv.address,true));"
+    "if(r)out.push(card('cpu','Devices',rows(r)));"
+    "$('cards').innerHTML=out.length?out.join(''):"
+    "'<p class=\"muted\">No pool data yet. Readings appear here as the controller reports them on the bus.</p>';"
+    "$('mode').innerHTML=(d.mode?'<span class=\"pill auto\">'+esc(d.mode)+' mode</span>':'')+(d.service_mode?' <span class=\"pill warn\">Service mode</span>':'');"
+    "const age=d.time_since_last_update;"
+    "$('updated').textContent=!age||age==='Never'?'No bus data yet':'Bus updated '+age;}"
+    "let busy=false;"
+    "function load(){if(busy||document.hidden)return;busy=true;"
+    "fetch('/status').then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})"
+    ".then(d=>{render(d);$('err').hidden=true;})"
+    ".catch(e=>showAlert($('err'),\"Couldn't load pool status: \"+e.message,'danger'))"
+    ".finally(()=>{busy=false;});}"
+    "load();setInterval(load," STR(WEB_DASHBOARD_REFRESH_MS) ");"
+    "document.addEventListener('visibilitychange',load);"
+    "fetch('/update/check').then(r=>r.json()).then(u=>{const c=$('fw-chip');"
+    "if(u.update_available)c.innerHTML='<span class=\"dot warn\"></span>Update available: '+esc(u.latest);"
+    "else if(u.checked)c.innerHTML='<span class=\"dot ok\"></span>Firmware up to date';"
+    "else return;c.hidden=false;}).catch(()=>{});"
+    "})();"
+    "</script>";
 
 static esp_err_t home_get_handler(httpd_req_t *req)
 {
+    conn_status_t conn;
+    conn_status_load(&conn);
+    char uptime[32];
+    format_uptime(uptime, sizeof(uptime));
+
+    send_page_start(req, "Dashboard", PAGE_HOME);
+    send_str(req, DASHBOARD_PAGE_HEAD);
+
+    // Connection chips, rendered here since /status doesn't carry them
+    send_wifi_chip(req, &conn, "/wifi");
+    if (!conn.mqtt_enabled) {
+        send_str(req, "<a class='chip' href='/mqtt_config'><span class='dot'></span>MQTT off</a>");
+    } else if (conn.mqtt_connected) {
+        send_str(req, "<a class='chip' href='/mqtt_config'><span class='dot ok'></span>MQTT connected</a>");
+    } else {
+        send_str(req, "<a class='chip' href='/mqtt_config'><span class='dot bad'></span>MQTT disconnected</a>");
+    }
+    send_str(req, "<a class='chip' href='/device'><i class='i i-clock' aria-hidden='true'></i>Up ");
+    send_str(req, uptime);
+    send_str(req, "</a>");
+
+    send_str(req, DASHBOARD_PAGE_BODY);
+    send_page_end(req);
+    conn_status_free(&conn);
+    return ESP_OK;
+}
+
+// ======================================================
+// Device Page Handler
+// ======================================================
+
+static void send_kv(httpd_req_t *req, const char *key, const char *value_html)
+{
+    send_str(req, "<dt>");
+    send_str(req, key);
+    send_str(req, "</dt><dd>");
+    send_str(req, value_html);
+    send_str(req, "</dd>");
+}
+
+static const char DEVICE_PAGE_HEALTH[] =
+    "<dt>Messages</dt><dd id='msgs'>&hellip;</dd>"
+    "<dt>Resyncs</dt><dd id='resyncs'>&hellip;</dd>"
+    "<dt>Memory</dt><dd id='mem'>&hellip;</dd>"
+    "</dl></section>"
+    "<section class='card'><h2><i class='i i-chart' aria-hidden='true'></i>Anonymous usage reporting</h2>";
+
+static const char DEVICE_PAGE_TAIL[] =
+    "</section>"
+    "<section class='card danger'><h2><i class='i i-alert' aria-hidden='true'></i>Danger zone</h2>"
+    "<div class='action-row'><span>Restart the device without changing the firmware.</span>"
+    "<button type='button' id='rebootBtn' class='outline' data-variant='danger'>Restart</button></div>"
+    "<div class='action-row'><span>Re-create this device's Home Assistant entities with the current "
+    "entity ID naming. Dashboards, automations and history using the old IDs will need updating. "
+    "Resetting restarts the device.</span>"
+    "<button type='button' id='haResetBtn' class='outline' data-variant='danger'>Reset entities</button></div>"
+    "<div id='dangerStatus' role='alert' hidden class='mt-2'></div>"
+    "</section></div>"
+    "<script>"
+    "fetch('/status').then(r=>r.json()).then(d=>{"
+    "if(d.message_counts)document.getElementById('msgs').textContent=messageSummary(d.message_counts);"
+    "if(d.resyncs)document.getElementById('resyncs').textContent=resyncSummary(d.resyncs);"
+    "const m=d.memory;"
+    "if(m)document.getElementById('mem').textContent=m.free_heap+' free (min '+m.min_free_heap+')';"
+    "}).catch(()=>{['msgs','resyncs','mem'].forEach(id=>document.getElementById(id).textContent='Unavailable');});"
+    "(function(){"
+    "const s=document.getElementById('dangerStatus');"
+    "document.getElementById('rebootBtn').addEventListener('click',function(){"
+    "if(!confirm('Restart the device now?'))return;"
+    // A network error means the device restarted before the response
+    // arrived, so treat it the same as success.
+    "fetch('/reboot',{method:'POST'}).then(r=>r.json()).then(function(){"
+    "restartReload(s);"
+    "}).catch(function(){restartReload(s);});});"
+    "document.getElementById('haResetBtn').addEventListener('click',function(){"
+    "if(!confirmRestart('Delete and re-create the Home Assistant entities? Their entity IDs will change.'))return;"
+    "showAlert(s,'Clearing entities...');"
+    // The device restarts once the entities are cleared, so a failed
+    // request means the same thing here as it does for a reboot.
+    "fetch('/ha-reset',{method:'POST'}).then(r=>r.json()).then(function(d){"
+    "if(d.success){restartReload(s,'Entities cleared.');}"
+    "else{showAlert(s,'Error: '+d.message,'danger');}"
+    "}).catch(function(){restartReload(s,'Entities cleared.');});});"
+    "})();"
+    "</script>";
+
+static const char USAGE_REPORT_DESC[] =
+    "<p>Help shape the project by showing how many devices run each "
+    "release. Twice a day this device shares a random install ID and its "
+    "firmware version, never anything about your pool, network or hardware. "
+    "<a href='" USAGE_REPORT_README_URL "' target='_blank'>What is shared</a></p>";
+
+// Forward declaration - shared with the firmware page below
+static void send_settings_toggle(httpd_req_t *req, const char *id, const char *url,
+                                 const char *label, bool checked, const char *desc_html);
+
+static esp_err_t device_get_handler(httpd_req_t *req)
+{
     const esp_app_desc_t *app_desc = esp_app_get_description();
+    char buf[160];
 
-    // WiFi AP info (SSID, RSSI)
-    wifi_ap_record_t ap_info = {0};
-    bool wifi_info_ok = (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
+    conn_status_t conn;
+    conn_status_load(&conn);
 
-    // MQTT status
-    bool mqtt_connected = mqtt_client_is_connected();
-    mqtt_config_t mqtt_config = {0};
-    bool mqtt_enabled = mqtt_load_config(&mqtt_config) && mqtt_config.enabled;
+    send_page_start(req, "Device", PAGE_DEVICE);
+    send_str(req, "<div class='page-head'><h1>Device</h1></div>"
+                  "<div class='cards'>"
+                  "<section class='card'><h2><i class='i i-cpu' aria-hidden='true'></i>System</h2><dl class='kv'>");
 
-    // Uptime
-    uint32_t uptime_s = (uint32_t)((uint64_t)xTaskGetTickCount() * portTICK_PERIOD_MS / 1000);
-    char uptime_str[32];
-    uint32_t d = uptime_s / 86400, h = (uptime_s % 86400) / 3600;
-    uint32_t m = (uptime_s % 3600) / 60, s = uptime_s % 60;
-    if (d > 0)      snprintf(uptime_str, sizeof(uptime_str), "%lud %luh %lum", (unsigned long)d, (unsigned long)h, (unsigned long)m);
-    else if (h > 0) snprintf(uptime_str, sizeof(uptime_str), "%luh %lum %lus", (unsigned long)h, (unsigned long)m, (unsigned long)s);
-    else            snprintf(uptime_str, sizeof(uptime_str), "%lum %lus", (unsigned long)m, (unsigned long)s);
+    const char *mdns_host = wifi_get_mdns_hostname();
+    snprintf(buf, sizeof(buf), "<a href='http://%s.local/'>%s.local</a>", mdns_host, mdns_host);
+    send_kv(req, "Hostname", buf);
+    send_kv(req, "IP address", wifi_get_device_ip());
+    if (conn.ssid_esc) {
+        send_str(req, "<dt>WiFi</dt><dd>");
+        send_str(req, conn.ssid_esc);
+        snprintf(buf, sizeof(buf), " (%d dBm%s)</dd>", conn.rssi, conn.wifi_weak ? ", weak" : "");
+        send_str(req, buf);
+    } else {
+        send_kv(req, "WiFi", "Not connected");
+    }
+    if (conn.mqtt_enabled) {
+        send_str(req, "<dt>MQTT</dt><dd>");
+        send_str(req, conn.mqtt_connected ? "Connected" : "Disconnected");
+        send_str(req, " (");
+        send_str(req, conn.broker_esc);
+        send_str(req, ")</dd>");
+    } else {
+        send_kv(req, "MQTT", "Disabled");
+    }
 
-    // Serial number
     char serial[DEVICE_SERIAL_LEN];
     device_get_serial(serial, sizeof(serial));
+    send_kv(req, "Serial", serial);
+    send_kv(req, "Firmware", app_desc->version);
+    send_kv(req, "Project", app_desc->project_name);
+    snprintf(buf, sizeof(buf), "%s %s", app_desc->date, app_desc->time);
+    send_kv(req, "Built", buf);
+    snprintf(buf, sizeof(buf), "v%" PRIu32 " (%s)", firmware_update_bootloader_version(),
+             firmware_update_bootloader_has_rollback()
+                 ? "update rollback" : "no update rollback - flash over USB to get it");
+    send_kv(req, "Bootloader", buf);
+    format_uptime(buf, sizeof(buf));
+    send_kv(req, "Uptime", buf);
+    send_str(req, "</dl></section>"
+                  "<section class='card'><h2><i class='i i-gauge' aria-hidden='true'></i>Bus and memory</h2><dl class='kv'>");
 
-    // mDNS hostname
-    const char *mdns_host = wifi_get_mdns_hostname();
+    send_str(req, DEVICE_PAGE_HEALTH);
+    send_settings_toggle(req, "usageReport", "/usage_report",
+                         "Share anonymous usage",
+                         usage_report_get_enabled(), USAGE_REPORT_DESC);
+    send_str(req, DEVICE_PAGE_TAIL);
+    send_page_end(req);
 
-    // System info table
-    static const char sys_table_fmt[] =
-        "<h1>Pool Controller</h1>"
-        "<h2>System</h2>"
-        "<table><tbody id='sys-body'>"
-        "<tr><th>Serial</th><td>%s</td></tr>"
-        "<tr><th>Firmware</th><td>%s</td></tr>"
-        "<tr><th>Project</th><td>%s</td></tr>"
-        "<tr><th>Built</th><td>%s %s</td></tr>"
-        "<tr><th>Bootloader</th><td>v%" PRIu32 " (%s)</td></tr>"
-        "<tr><th>Uptime</th><td>%s</td></tr>"
-        "<tr><th>IP Address</th><td>%s</td></tr>"
-        "<tr><th>Hostname</th><td><a href='http://%s.local/'>%s.local</a></td></tr>";
-    const char *device_ip = wifi_get_device_ip();
-    uint32_t bootloader_ver = firmware_update_bootloader_version();
-    const char *bootloader_note = firmware_update_bootloader_has_rollback()
-        ? "update rollback" : "no update rollback - flash over USB to get it";
-    int sys_table_len = snprintf(NULL, 0, sys_table_fmt,
-        serial,
-        app_desc->version, app_desc->project_name,
-        app_desc->date, app_desc->time,
-        bootloader_ver, bootloader_note,
-        uptime_str, device_ip,
-        mdns_host, mdns_host);
-    char *sys_table = (sys_table_len > 0) ? malloc((size_t)sys_table_len + 1) : NULL;
-    if (sys_table) {
-        snprintf(sys_table, (size_t)sys_table_len + 1, sys_table_fmt,
-            serial,
-            app_desc->version, app_desc->project_name,
-            app_desc->date, app_desc->time,
-            bootloader_ver, bootloader_note,
-            uptime_str, device_ip,
-            mdns_host, mdns_host);
-    }
-
-    // WiFi row
-    char wifi_ssid[33];
-    memcpy(wifi_ssid, ap_info.ssid, sizeof(wifi_ssid) - 1);
-    wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';
-    char *wifi_ssid_esc = html_escape(wifi_ssid);
-    static const char wifi_row_fmt[] = "<tr><th>WiFi</th><td>%s (%d dBm)</td></tr>";
-    static const char wifi_row_none[] = "<tr><th>WiFi</th><td>Not connected</td></tr>";
-    int wifi_row_len = wifi_info_ok ? snprintf(NULL, 0, wifi_row_fmt, wifi_ssid_esc ? wifi_ssid_esc : "", ap_info.rssi) : (int)sizeof(wifi_row_none) - 1;
-    char *wifi_row = (wifi_row_len > 0) ? malloc((size_t)wifi_row_len + 1) : NULL;
-    if (wifi_row) {
-        if (wifi_info_ok) {
-            snprintf(wifi_row, (size_t)wifi_row_len + 1, wifi_row_fmt, wifi_ssid_esc ? wifi_ssid_esc : "", ap_info.rssi);
-        } else {
-            memcpy(wifi_row, wifi_row_none, (size_t)wifi_row_len + 1);
-        }
-    }
-    free(wifi_ssid_esc);
-
-    // MQTT row
-    char *mqtt_broker_esc = html_escape(mqtt_config.broker);
-    static const char mqtt_row_fmt[] = "<tr><th>MQTT</th><td>%s (%s)</td></tr></tbody></table>";
-    static const char mqtt_row_disabled[] = "<tr><th>MQTT</th><td>Disabled</td></tr></tbody></table>";
-    const char *mqtt_state_str = mqtt_connected ? "Connected" : "Disconnected";
-    int mqtt_row_len = mqtt_enabled
-        ? snprintf(NULL, 0, mqtt_row_fmt, mqtt_state_str, mqtt_broker_esc ? mqtt_broker_esc : "")
-        : (int)sizeof(mqtt_row_disabled) - 1;
-    char *mqtt_row = (mqtt_row_len > 0) ? malloc((size_t)mqtt_row_len + 1) : NULL;
-    if (mqtt_row) {
-        if (mqtt_enabled) {
-            snprintf(mqtt_row, (size_t)mqtt_row_len + 1, mqtt_row_fmt, mqtt_state_str, mqtt_broker_esc ? mqtt_broker_esc : "");
-        } else {
-            memcpy(mqtt_row, mqtt_row_disabled, (size_t)mqtt_row_len + 1);
-        }
-    }
-    free(mqtt_broker_esc);
-
-    // Pool summary — loaded from /status via JS
-    static const char pool_section[] =
-        "<h2>Pool</h2>"
-        "<p id='pool-loading' class='text-lighter'>Loading...</p>"
-        "<table id='pool-table' hidden><tbody id='pool-body'></tbody></table>"
-        "<p id='time-info' class='text-lighter mt-2' hidden></p>"
-        "<div id='pool-error' role='alert' data-variant='danger' hidden></div>"
-        "<script>"
-        "fetch('/status').then(r=>r.json()).then(data=>{"
-        "const rows=[];"
-        "if(data.separate_pool_spa_modes!==null)rows.push(['Separate Pool/Spa Modes',data.separate_pool_spa_modes?'Yes':'No']);"
-        "if(data.mode!==null)rows.push(['Mode',data.mode]);"
-        // Readings are always \u00b0C on the bus; the scale only sets how the
-        // Touchscreen displays them, so convert to match it.
-        "const temp=data.temperature.scale==='Fahrenheit'"
-        "?v=>Math.round(v*9/5+32)+'\u00b0F':v=>v+'\u00b0C';"
-        "data.devices.forEach(d=>{"
-        "if(!('temperature1' in d))return;"
-        "const multi='temperature2' in d;"
-        "const sensor=(n,label)=>rows.push(d['temperature'+n+'_connected']"
-        "?[d.name+label,temp(d['temperature'+n])]"
-        ":[d.name+label,'Not connected','text-lighter']);"
-        "sensor(1,multi?' Temperature 1':' Temperature');"
-        "if(multi)sensor(2,' Temperature 2');});"
-        "data.heaters.forEach(h=>rows.push(['Heater '+(h.index+1),h.state]));"
-        "data.channels.forEach(ch=>rows.push([ch.name||ch.type,ch.state]));"
-        "data.lighting.forEach(lt=>{"
-        "let s=lt.state;if(lt.active&&lt.color)s+=': '+lt.color;"
-        "rows.push(['Lighting zone '+lt.zone,s]);});"
-        "if(data.multicolor_light_type)rows.push(['Multicolor Light Type',data.multicolor_light_type]);"
-        "const c=data.chlorinator;"
-        "const sp=(v,u)=>v!==null?' (setpoint '+v+u+')':'';"
-        "if(c.ph_reading!==null||c.ph_setpoint!==null)"
-        "rows.push(['pH',(c.ph_reading!==null?c.ph_reading:'\u2014')+sp(c.ph_setpoint,'')]);"
-        "if(c.orp_reading!==null||c.orp_setpoint!==null)"
-        "rows.push(['ORP',(c.orp_reading!==null?c.orp_reading+'mV':'\u2014')+sp(c.orp_setpoint,'mV')]);"
-        "const rng=(lo,hi,u)=>(lo!==null?lo+u:'\u2014')+' \u2013 '+(hi!==null?hi+u:'\u2014');"
-        "if(c.ph_lowest!==null||c.ph_highest!==null)"
-        "rows.push(['pH Range Measured',rng(c.ph_lowest,c.ph_highest,'')]);"
-        "if(c.orp_lowest!==null||c.orp_highest!==null)"
-        "rows.push(['ORP Range Measured',rng(c.orp_lowest,c.orp_highest,'mV')]);"
-        "if(c.cell_running_time!==null)rows.push(['Cell Running Time',c.cell_running_time+' h']);"
-        "if(c.low_salt_cell_running_time!==null)rows.push(['Low Salt Cell Running Time',c.low_salt_cell_running_time+' h']);"
-        "if(c.previous_day_cell_load!==null)rows.push(['Previous Day Cell Load',c.previous_day_cell_load+'%']);"
-        "if(c.chlor_output_level!==null)rows.push(['Chlorine Output Level',c.chlor_output_level]);"
-        "if(data.timers&&data.timers.length>0){"
-        "data.timers.forEach(t=>rows.push(['Timer '+t.num,t.start+' \u2013 '+t.stop+' ['+t.days+']']));}"
-        "const mc=data.message_counts;"
-        "if(mc){"
-        "const tot=mc.decoded+mc.unknown;"
-        "const pct=tot>0?(mc.decoded/tot*100).toFixed(1)+'%':'n/a';"
-        "const mtr=document.createElement('tr');"
-        "mtr.innerHTML='<th>Messages</th><td>'+mc.decoded+' decoded, '+mc.unknown+' unknown ('+pct+')</td>';"
-        "document.getElementById('sys-body').appendChild(mtr);}"
-        "const rs=data.resyncs;"
-        "if(rs){"
-        "const parts=[];"
-        "if(rs.no_start)parts.push(rs.no_start+' no-start');"
-        "if(rs.header_checksum)parts.push(rs.header_checksum+' header-checksum');"
-        "if(rs.bad_frame_type)parts.push(rs.bad_frame_type+' bad-frame-type');"
-        "if(rs.bad_length)parts.push(rs.bad_length+' bad-length');"
-        "if(rs.bad_end)parts.push(rs.bad_end+' bad-end');"
-        "if(rs.data_checksum)parts.push(rs.data_checksum+' data-checksum');"
-        "if(rs.buffer_overflow)parts.push(rs.buffer_overflow+' overflow');"
-        "const rtr=document.createElement('tr');"
-        "rtr.innerHTML='<th>Resyncs</th><td>'+(rs.total||0)+(parts.length?' ('+parts.join(', ')+')':'')+'</td>';"
-        "document.getElementById('sys-body').appendChild(rtr);}"
-        "const mem=data.memory;"
-        "if(mem){"
-        "const memtr=document.createElement('tr');"
-        "memtr.innerHTML='<th>Memory</th><td>'+mem.free_heap+' free (min '+mem.min_free_heap+')</td>';"
-        "document.getElementById('sys-body').appendChild(memtr);}"
-        "const tb=document.getElementById('pool-body');"
-        "rows.forEach(([k,v,cls])=>{"
-        "const tr=document.createElement('tr');"
-        "const th=document.createElement('th');th.textContent=k;"
-        "const td=document.createElement('td');td.textContent=v;"
-        "if(cls)td.className=cls;"
-        "tr.appendChild(th);tr.appendChild(td);"
-        "tb.appendChild(tr);});"
-        "document.getElementById('pool-loading').hidden=true;"
-        "document.getElementById('pool-table').removeAttribute('hidden');"
-        "if(data.time_since_last_update){"
-        "const ti=document.getElementById('time-info');"
-        "ti.textContent='Last update: '+data.time_since_last_update;"
-        "ti.removeAttribute('hidden');}"
-        "}).catch(e=>{"
-        "document.getElementById('pool-loading').hidden=true;"
-        "const err=document.getElementById('pool-error');"
-        "err.textContent='Failed to load pool status: '+e;"
-        "err.removeAttribute('hidden');});"
-        "</script>";
-
-    char page_title[] = "Home";
-    char *header = get_page_header(page_title);
-    char *nav = get_page_nav('h');
-    char *footer = get_page_footer();
-
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
-    if (sys_table) httpd_resp_send_chunk(req, sys_table, HTTPD_RESP_USE_STRLEN);
-    if (wifi_row)  httpd_resp_send_chunk(req, wifi_row,  HTTPD_RESP_USE_STRLEN);
-    if (mqtt_row)  httpd_resp_send_chunk(req, mqtt_row,  HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, pool_section, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-
-    free(mqtt_row);
-    free(wifi_row);
-    free(sys_table);
-    free(footer);
-    free(nav);
-    free(header);
+    conn_status_free(&conn);
     return ESP_OK;
 }
 
@@ -378,53 +539,65 @@ static esp_err_t home_get_handler(httpd_req_t *req)
 // ======================================================
 
 // HTML page for WiFi provisioning
-const char WIFI_PAGE[] =
-    "<h1>WiFi Configuration</h1>"
-    "<form id='wifiForm'>"
+static const char WIFI_PAGE_HEAD[] =
+    "<div class='page-head'><h1>WiFi</h1></div>"
+    "<p class='lead'>Choose the network this device joins. Connecting restarts the device.</p>"
+    "<div class='chips'>";
+
+// Shown under the chip when the current signal is weak
+static const char WIFI_WEAK_NOTE[] =
+    "<div role='alert' data-variant='warning' class='narrow mb-4'>"
+    "Weak signal. Below " STR(WIFI_RSSI_WEAK_DBM) " dBm the connection can drop out; moving the device "
+    "or the access point closer, or adding a WiFi extender, should help.</div>";
+
+// Follows the <form> opening tag, which the handler sends with the mDNS host
+static const char WIFI_PAGE_FORM[] =
     "<div data-field>"
-        "<label for='ssid'>WiFi Network</label>"
+        "<label for='ssid'>Network</label>"
         "<select id='ssid' name='ssid' required>"
             "<option value=''>Scanning...</option>"
         "</select>"
     "</div>"
     "<div data-field>"
         "<label for='password'>Password</label>"
-        "<input type='password' id='password' name='password' placeholder='Enter network password' maxlength='64' required>"
+        "<input type='password' id='password' name='password' placeholder='Network password' maxlength='64' required>"
     "</div>"
+    "<div class='toolbar'>"
     "<button type='submit'>Connect</button>"
-    "<button type='button' id='retryScan' hidden onclick='scanWiFi()'>Retry Scan</button>"
-    "<div id='status' role='alert' hidden class='mt-4'></div>"
+    "<button type='button' id='retryScan' class='outline' hidden onclick='scanWiFi()'>Scan again</button>"
+    "</div>"
+    "<div id='status' role='alert' hidden></div>"
     "</form>"
     "<script>"
-    "function showStatus(msg,isError){"
-        "const s=document.getElementById('status');"
-        "s.textContent=msg;"
-        "s.setAttribute('data-variant',isError?'danger':'success');"
-        "s.removeAttribute('hidden');}"
+    "function showStatus(msg,isError){showAlert(document.getElementById('status'),msg,isError?'danger':'success');}"
     // /scan answers 202 while the scan is still running; poll until the list arrives.
     "function scanWiFi(){"
         "const s=document.getElementById('ssid');"
         "s.innerHTML='<option value=\"\">Scanning...</option>';"
-        "document.getElementById('retryScan').setAttribute('hidden','');"
+        "document.getElementById('retryScan').hidden=true;"
         "const poll=()=>fetch('/scan')"
         ".then(r=>{if(r.status===202)return new Promise(ok=>setTimeout(ok," STR(WIFI_SCAN_POLL_MS) ")).then(poll);"
         "if(!r.ok)throw new Error('Scan failed ('+r.status+')');return r.json();});"
         "poll().then(data=>{"
             "s.innerHTML='';"
             "data.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;"
-            "o.text=n.ssid+' ('+n.rssi+' dBm)'+(n.current?' \\u2713':'');"
+            "o.text=n.ssid+' ('+n.rssi+' dBm'+(n.rssi<" STR(WIFI_RSSI_WEAK_DBM) "?', weak':'')+')'+(n.current?' \\u2713':'');"
             "if(n.current)o.selected=true;s.appendChild(o);});})"
         ".catch(e=>{"
             "s.innerHTML='<option value=\"\">No networks found</option>';"
             "showStatus(e.message,true);"
-            "document.getElementById('retryScan').removeAttribute('hidden');});}"
+            "document.getElementById('retryScan').hidden=false;});}"
     "document.getElementById('wifiForm').onsubmit=function(e){"
         "e.preventDefault();const ssid=document.getElementById('ssid').value;"
         "const pass=document.getElementById('password').value;"
-        "showStatus('Connecting to '+ssid+'...',false);"
+        "if(!confirmRestart('Connect to '+ssid+'?'))return false;"
+        "const st=document.getElementById('status');showAlert(st,'Saving\\u2026');"
+        // The device comes back on the chosen network, likely at a new
+        // address, so open it by its mDNS name rather than reloading here.
+        "const host=this.dataset.host;"
         "fetch('/provision',{method:'POST',headers:{'Content-Type':'application/json'},"
         "body:JSON.stringify({ssid:ssid,password:pass})}).then(r=>r.json()).then(data=>{"
-        "if(data.success){showStatus('Connected! Device will restart.',false);}"
+        "if(data.success){restartReload(st,'Saved.',host?'http://'+host+'.local/':'');}"
         "else{showStatus('Failed: '+data.message,true);}}).catch(e=>{"
         "showStatus('Error: '+e,true);});return false;};"
     "scanWiFi();"
@@ -432,19 +605,19 @@ const char WIFI_PAGE[] =
 
 static esp_err_t wifi_get_handler(httpd_req_t *req)
 {
-    char page_title[] = "WiFi Configuration";
-    char *header = get_page_header(page_title);
-    char *nav = get_page_nav('w');
-    char *footer = get_page_footer();
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, WIFI_PAGE, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-    free(footer);
-    free(nav);
-    free(header);
+    conn_status_t conn;
+    conn_status_load(&conn);
+    send_page_start(req, "WiFi", PAGE_WIFI);
+    send_str(req, WIFI_PAGE_HEAD);
+    send_wifi_chip(req, &conn, NULL);
+    send_str(req, "</div>");
+    send_str(req, conn.wifi_weak ? WIFI_WEAK_NOTE : NULL);
+    send_str(req, "<form id='wifiForm' class='card narrow' data-host='");
+    send_str(req, wifi_get_mdns_hostname());   // generated name: no escaping needed
+    send_str(req, "'>");
+    send_str(req, WIFI_PAGE_FORM);
+    send_page_end(req);
+    conn_status_free(&conn);
     return ESP_OK;
 }
 
@@ -480,8 +653,7 @@ static esp_err_t scan_send_results(httpd_req_t *req)
     esp_wifi_scan_get_ap_num(&ap_count);
 
     if (ap_count == 0) {
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_sendstr(req, "[]");
+        send_json(req, "[]");
         return ESP_OK;
     }
 
@@ -565,8 +737,7 @@ static esp_err_t scan_send_results(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json_resp, strlen(json_resp));
+    send_json(req, json_resp);
 
     cJSON_free(json_resp);
     free(ap_list);
@@ -614,8 +785,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     }
 
     httpd_resp_set_status(req, "202 Accepted");
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_sendstr(req, "{\"scanning\":true}");
+    send_json(req, "{\"scanning\":true}");
     return ESP_OK;
 }
 
@@ -655,9 +825,7 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
     }
 
     if (strlen(ssid) == 0) {
-        const char *resp = "{\"success\":false,\"message\":\"Invalid SSID\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Invalid SSID\"}");
         return ESP_OK;
     }
 
@@ -667,18 +835,14 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
     esp_err_t err = wifi_credentials_save(ssid, password);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to save credentials to NVS: %s", esp_err_to_name(err));
-        const char *resp = "{\"success\":false,\"message\":\"Failed to save credentials\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Failed to save credentials\"}");
         return ESP_OK;
     }
 
     ESP_LOGI(TAG, "Credentials saved to NVS successfully");
 
     // Send success response
-    const char *resp = "{\"success\":true,\"message\":\"Connected! Device will restart...\"}";
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"Saved\"}");
 
     // Restart device to apply new credentials
     vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
@@ -1192,88 +1356,51 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json_resp, strlen(json_resp));
+    send_json(req, json_resp);
 
     cJSON_free(json_resp);
     return ESP_OK;
 }
 
 // ======================================================
-// Status View Handler (HTML formatted view)
+// Status JSON Page Handler
 // ======================================================
+
+static const char STATUS_VIEW_PAGE[] =
+    "<div class='page-head'><h1>Status JSON</h1>"
+    "<div class='actions'>"
+    "<button type='button' id='copy-btn' class='outline'><i class='i i-copy' aria-hidden='true'></i><span>Copy</span></button>"
+    "<a href='/status' id='dl-json' class='button outline' download><i class='i i-download' aria-hidden='true'></i>Download</a>"
+    "</div></div>"
+    "<p id='time-info' class='lead' hidden></p>"
+    "<div id='status-error' role='alert' data-variant='danger' hidden></div>"
+    "<pre class='json'><code id='status-content'>Loading status...</code></pre>"
+    "<script>"
+    "bindJsonDownload('dl-json','pool-controller-status');"
+    "fetch('/status').then(r=>r.json()).then(data=>{"
+    "document.getElementById('status-content').textContent=JSON.stringify(data,null,2);"
+    "let localTime='NTP not synced';"
+    "if(data.current_time&&data.current_time!=='NTP not synced'){"
+    "localTime=fmtDateTime(new Date(data.current_time.replace(' UTC','Z').replace(' ','T')));}"
+    "const ti=document.getElementById('time-info');"
+    "ti.textContent='Device time '+localTime+' \u00b7 last bus update '+data.time_since_last_update;"
+    "ti.hidden=false;"
+    "}).catch(e=>{"
+    "showAlert(document.getElementById('status-error'),'Error loading status: '+e,'danger');"
+    "document.getElementById('status-content').textContent='';"
+    "});"
+    "document.getElementById('copy-btn').addEventListener('click',function(){"
+    // navigator.clipboard needs a secure context, which a plain-http
+    // device page isn't, so copy through a selection instead.
+    "const sel=getSelection(),rg=document.createRange();"
+    "rg.selectNodeContents(document.getElementById('status-content'));"
+    "sel.removeAllRanges();sel.addRange(rg);const ok=document.execCommand('copy');sel.removeAllRanges();"
+    "const b=this.querySelector('span');b.textContent=ok?'Copied':'Copy failed';setTimeout(()=>{b.textContent='Copy';},1500);});"
+    "</script>";
 
 static esp_err_t status_view_get_handler(httpd_req_t *req)
 {
-    const char *status_view_page =
-        "<h1>Pool Controller Status</h1>"
-        "<p class='text-right'><small><a href='/status'>View raw JSON</a></small></p>"
-        "<div id='status-error' role='alert' data-variant='danger' hidden></div>"
-        "<pre><code id='status-content'>Loading status...</code></pre>"
-        "<p id='time-info' class='text-lighter mt-4' hidden></p>"
-        "<script>"
-        "fetch('/status').then(r=>r.json()).then(data=>{"
-        "const fmt=(obj,indent=0)=>{"
-        "const pad=' '.repeat(indent);"
-        "let out='';"
-        "for(const[k,v]of Object.entries(obj)){"
-        "if(v===null){out+=pad+k+': null\\n';}"
-        "else if(Array.isArray(v)){"
-        "out+=pad+k+': [\\n';"
-        "v.forEach(item=>{"
-        "if(typeof item==='object'){out+=fmt(item,indent+2)+',\\n';}"
-        "else{out+=pad+'  '+JSON.stringify(item)+',\\n';}"
-        "});"
-        "out+=pad+']\\n';"
-        "}else if(typeof v==='object'){"
-        "out+=pad+k+': {\\n'+fmt(v,indent+2)+pad+'}\\n';"
-        "}else if(typeof v==='string'){"
-        "out+=pad+k+': \"'+v+'\"\\n';"
-        "}else{"
-        "out+=pad+k+': '+v+'\\n';"
-        "}"
-        "}"
-        "return out;"
-        "};"
-        "document.getElementById('status-content').textContent=fmt(data);"
-        "const ti=document.getElementById('time-info');"
-        "let localTime='NTP not synced';"
-        "if(data.current_time&&data.current_time!=='NTP not synced'){"
-        "const d=new Date(data.current_time.replace(' UTC','Z').replace(' ','T'));"
-        "const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;"
-        "localTime=d.toLocaleString()+' ('+tz+')';}"
-        "let ageStr='Never';"
-        "if(data.last_update_ms){"
-        "const s=Math.floor((data.current_ms-data.last_update_ms)/1000);"
-        "if(s<60)ageStr=s+'s ago';"
-        "else if(s<3600)ageStr=Math.floor(s/60)+'m '+(s%60)+'s ago';"
-        "else ageStr=Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m ago';}"
-        "ti.innerHTML='Time: <strong>'+localTime+'</strong> &nbsp;|&nbsp; Last update: <strong>'+ageStr+'</strong>';"
-        "ti.removeAttribute('hidden');"
-        "}).catch(e=>{"
-        "const err=document.getElementById('status-error');"
-        "err.textContent='Error loading status: '+e;"
-        "err.removeAttribute('hidden');"
-        "document.getElementById('status-content').textContent='';"
-        "});"
-        "</script>";
-
-    char page_title[] = "Pool Controller Status";
-    char *header = get_page_header(page_title);
-    char *nav = get_page_nav('s');
-    char *footer = get_page_footer();
-
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, status_view_page, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-
-    free(footer);
-    free(nav);
-    free(header);
-    return ESP_OK;
+    return send_static_page(req, "Status JSON", PAGE_STATUS, STATUS_VIEW_PAGE);
 }
 
 // ======================================================
@@ -1288,8 +1415,10 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
     int display_port = config.port > 0 ? config.port : MQTT_DEFAULT_PORT;
 
     const char *html_start =
-        "<h1>MQTT Configuration</h1>"
-        "<form id='mqttForm'>";
+        "<div class='page-head'><h1>MQTT</h1></div>"
+        "<p class='lead'>Publish pool state to an MQTT broker, with Home Assistant discovery. "
+        "Saving restarts the device.</p>"
+        "<form id='mqttForm' class='card narrow'>";
 
     char *broker_esc   = html_escape(config.broker);
     char *username_esc = html_escape(config.username);
@@ -1299,10 +1428,10 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         ? "Leave empty to keep current password" : "Leave empty if not required";
     static const char html_fields_fmt[] =
         "<div data-field>"
-            "<label><input type='checkbox' id='enabled' role='switch' name='enabled'%s> Enable MQTT</label>"
+            "<label class='switch-row'><input type='checkbox' id='enabled' role='switch' name='enabled'%s> Enable MQTT</label>"
         "</div>"
         "<div data-field>"
-            "<label for='broker'>Broker Host/IP</label>"
+            "<label for='broker'>Broker host or IP</label>"
             "<input type='text' id='broker' name='broker' value='%s' placeholder='mqtt.example.com'>"
         "</div>"
         "<div data-field>"
@@ -1330,12 +1459,13 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
     free(broker_esc);
 
     const char *html_end =
-        "<button type='submit'>Save Configuration</button>"
+        "<button type='submit'>Save</button>"
         "<div id='status' role='alert' hidden class='mt-4'></div>"
         "</form>"
         "<script>"
         "document.getElementById('mqttForm').addEventListener('submit',function(e){"
         "e.preventDefault();"
+        "if(!confirmRestart('Save the MQTT settings?'))return;"
         "const data={enabled:document.getElementById('enabled').checked,"
         "broker:document.getElementById('broker').value,"
         "port:parseInt(document.getElementById('port').value)||1883,"
@@ -1344,34 +1474,18 @@ static esp_err_t mqtt_config_get_handler(httpd_req_t *req)
         "fetch('/mqtt_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})"
         ".then(r=>r.json()).then(d=>{"
         "const s=document.getElementById('status');"
-        "s.textContent=d.message;"
-        "s.setAttribute('data-variant',d.success?'success':'danger');"
-        "s.removeAttribute('hidden');"
-        "if(d.success)setTimeout(()=>window.location.reload(),2000);"
+        "if(d.success)restartReload(s,'Saved.');else showAlert(s,d.message,'danger');"
         "}).catch(()=>{"
-        "const s=document.getElementById('status');"
-        "s.textContent='Failed to save configuration';"
-        "s.setAttribute('data-variant','danger');"
-        "s.removeAttribute('hidden');});"
+        "showAlert(document.getElementById('status'),'Failed to save configuration','danger');});"
         "});"
         "</script>";
 
-    char page_title[] = "MQTT Configuration";
-    char *header = get_page_header(page_title);
-    char *nav = get_page_nav('m');
-    char *footer = get_page_footer();
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
-    if (html_fields) httpd_resp_send_chunk(req, html_fields, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, html_end, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
+    send_page_start(req, "MQTT", PAGE_MQTT);
+    send_str(req, html_start);
+    send_str(req, html_fields);
+    send_str(req, html_end);
+    send_page_end(req);
     free(html_fields);
-    free(footer);
-    free(nav);
-    free(header);
 
     return ESP_OK;
 }
@@ -1429,16 +1543,12 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
     // Save configuration
     esp_err_t err = mqtt_save_config(&config);
     if (err != ESP_OK) {
-        const char *resp = "{\"success\":false,\"message\":\"Failed to save config\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Failed to save config\"}");
         return ESP_OK;
     }
 
     // Send success response
-    const char *resp = "{\"success\":true,\"message\":\"MQTT config saved! Device will restart...\"}";
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"Saved\"}");
 
     // Restart device to apply new MQTT config
     vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
@@ -1451,300 +1561,195 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
 // OTA Update Handlers
 // ======================================================
 
-// Send one settings checkbox with its description, a status box (<id>Status)
+// Send one settings switch with its description, a status box (<id>Status)
 // and the bindToggle() call that POSTs <url>?enabled=0|1 on change. Sent as
 // fixed chunks around the " checked" attribute, so there is no buffer to size
 // and nothing to truncate. The arguments are inserted unescaped, so pass only
-// fixed strings. Empty parts are skipped: a zero-length chunk would end the
-// response.
+// fixed strings. desc_html is a <p> shown under the switch.
 static void send_settings_toggle(httpd_req_t *req, const char *id, const char *url,
                                  const char *label, bool checked, const char *desc_html)
 {
     const char *parts[] = {
-        "<div class='mt-2'><label><input type='checkbox' id='", id, "'",
-        checked ? " checked" : "", "> ", label, "</label></div>",
+        "<label class='switch-row'><input type='checkbox' role='switch' id='", id, "'",
+        checked ? " checked" : "", "> ", label, "</label>",
         desc_html,
         "<div id='", id, "Status' role='alert' hidden class='mt-2'></div>"
         "<script>bindToggle('", id, "','", url, "');</script>",
     };
     for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
-        if (parts[i][0] != '\0') {
-            httpd_resp_send_chunk(req, parts[i], HTTPD_RESP_USE_STRLEN);
-        }
+        send_str(req, parts[i]);
     }
 }
 
+static const char FIRMWARE_PAGE_GITHUB[] =
+    "</dl></section>"
+
+    // ---- Update from GitHub -------------------------------------------
+    "<section class='card'><h2><i class='i i-download' aria-hidden='true'></i>Update from GitHub</h2>"
+    "<div id='ghStatus' role='alert'>Checking for the latest release&hellip;</div>"
+    "<progress id='ghProgress' value='0' max='100' hidden class='mt-2'></progress>"
+    "<div class='toolbar mt-4'>"
+    "<select id='ghVersion' hidden aria-label='Version to install' style='flex:1;min-width:10rem;margin:0'></select>"
+    "<button type='button' id='ghInstall' hidden>Install</button>"
+    "<button type='button' id='ghCheck' class='outline'>Check now</button>"
+    "</div>"
+    "<script>"
+    "(function(){"
+    "const s=document.getElementById('ghStatus');"
+    "const p=document.getElementById('ghProgress');"
+    "const vs=document.getElementById('ghVersion');"
+    "const bC=document.getElementById('ghCheck');"
+    "const bI=document.getElementById('ghInstall');"
+    "let polling=false;let last='';let rebooting=false;"
+    // Populate the version dropdown (newest first) only when the list
+    // changes, so an in-progress user selection isn't reset by polling.
+    "function fill(list){"
+    "const sig=(list||[]).join(',');"
+    "if(vs.dataset.sig===sig)return;"
+    "vs.dataset.sig=sig;vs.innerHTML='';"
+    "(list||[]).forEach(function(v,i){"
+    "const o=document.createElement('option');"
+    "o.value=v;o.textContent=v+(i===0?' (latest)':'');vs.appendChild(o);});}"
+    "function render(d){"
+    "if(d.state==='downloading'){"
+    "p.hidden=false;p.value=d.progress||0;"
+    "showAlert(s,'Downloading update '+(d.progress||0)+'%… do not power off.');"
+    "vs.hidden=bC.hidden=bI.hidden=true;return;}"
+    "if(d.state==='success'){p.hidden=false;p.value=100;"
+    "vs.hidden=bC.hidden=bI.hidden=true;"
+    "if(!rebooting){rebooting=true;restartReload(s,'Update installed.');}return;}"
+    "p.hidden=true;"
+    // Hidden while a check runs, so a second click can't start a second poll loop.
+    "bC.hidden=d.state==='checking';"
+    "const have=!!(d.versions&&d.versions.length);"
+    "if(have)fill(d.versions);"
+    "vs.hidden=bI.hidden=!have;"
+    "if(d.state==='checking'){showAlert(s,'Checking for the latest release…');}"
+    "else if(d.state==='error'&&d.error){showAlert(s,'Error: '+d.error,'danger');}"
+    "else if(d.update_available){"
+    "showAlert(s,'Update available: '+d.latest+' (installed '+d.installed+'). ','warning');"
+    "if(d.release_url){const a=document.createElement('a');a.href=d.release_url;a.target='_blank';"
+    "a.textContent='Release notes';s.appendChild(a);}}"
+    "else if(d.checked){showAlert(s,'Up to date ('+d.installed+'). You can reinstall or roll back below.','success');}"
+    "else{showAlert(s,'Latest release not yet checked.');}}"
+    // q='?refresh=1' asks the device to start a check; the reply then reads
+    // 'checking' and polling carries on until the result arrives.
+    "function poll(q){fetch('/update/check'+(q||'')).then(r=>r.json()).then(function(d){"
+    "last=d.state;render(d);"
+    "if(d.state==='downloading'||d.state==='checking'){polling=true;setTimeout(function(){poll();},2000);}"
+    "else{polling=false;}"
+    // A failed poll right after a download means the device rebooted
+    // before we saw the 'success' state — treat it as success.
+    "}).catch(function(){polling=false;"
+    "if(last==='downloading')render({state:'success'});"
+    "else if(q){showAlert(s,'Check failed.','danger');}});}"
+    "bC.addEventListener('click',function(){"
+    "if(polling)return;polling=true;"
+    "showAlert(s,'Checking for the latest release…');"
+    "poll('?refresh=1');});"
+    "bI.addEventListener('click',function(){"
+    "const v=vs.value;if(!v)return;"
+    "if(!confirmRestart('Download and install firmware '+v+' from GitHub?'))return;"
+    "fetch('/update/github?version='+encodeURIComponent(v),{method:'POST'}).then(r=>r.json()).then(function(d){"
+    "if(d.success){if(!polling)poll();}"
+    "else{showAlert(s,'Error: '+(d.message||'could not start'),'danger');}});});"
+    "poll();"
+    "})();"
+    "</script>"
+    "<hr>";
+
+static const char FIRMWARE_AUTO_CHECK_DESC[] =
+    "<p>Checks GitHub every 12 hours. You can still check by hand when this is off.</p>";
+
+static const char FIRMWARE_PAGE_TAIL[] =
+    "</section>"
+
+    // ---- Manual upload -------------------------------------------------
+    "<section class='card'><h2><i class='i i-upload' aria-hidden='true'></i>Upload a file</h2>"
+    "<form id='updateForm'>"
+    "<label class='dropzone' id='dropzone'>"
+    "<input type='file' id='firmware' name='firmware' accept='.bin' required>"
+    "<i class='i i-upload' aria-hidden='true'></i><span id='dropText'>Drop a firmware .bin here or choose a file</span>"
+    "</label>"
+    "<div class='toolbar mt-4'><button type='submit'>Upload and update</button></div>"
+    "<div id='status' role='alert' hidden></div>"
+    "<progress id='progressBar' value='0' max='100' hidden class='mt-4'></progress>"
+    "<p id='progressText' hidden class='text-center mt-2 small muted'></p>"
+    "</form>"
+    "</section>"
+    "<p class='small muted'><i class='i i-alert' aria-hidden='true'></i> "
+    "Installing an update restarts the device. Keep it powered until this page reloads.</p>"
+    "</div>"
+    "<script>"
+    "(function(){"
+    "const input=document.getElementById('firmware');"
+    "const dz=document.getElementById('dropzone');"
+    "input.addEventListener('change',function(){"
+    "document.getElementById('dropText').textContent=input.files[0]?input.files[0].name:"
+    "'Drop a firmware .bin here or choose a file';});"
+    "['dragenter','dragover'].forEach(t=>dz.addEventListener(t,()=>dz.classList.add('over')));"
+    "['dragleave','drop'].forEach(t=>dz.addEventListener(t,()=>dz.classList.remove('over')));"
+    "})();"
+    "document.getElementById('updateForm').addEventListener('submit',function(e){"
+    "e.preventDefault();"
+    "const file=document.getElementById('firmware').files[0];"
+    "if(!file){alert('Please select a file');return;}"
+    "if(!confirmRestart('Install '+file.name+'?'))return;"
+    "const status=document.getElementById('status');"
+    "const progressBar=document.getElementById('progressBar');"
+    "const progressText=document.getElementById('progressText');"
+    "showAlert(status,'Uploading firmware ('+Math.round(file.size/1024)+'KB)...');"
+    "progressBar.value=0;"
+    "progressBar.hidden=false;"
+    "progressText.hidden=false;"
+    "const xhr=new XMLHttpRequest();"
+    "xhr.upload.addEventListener('progress',function(e){"
+    "if(e.lengthComputable){"
+    "const percent=Math.round((e.loaded/e.total)*100);"
+    "progressBar.value=percent;"
+    "progressText.textContent=percent+'% ('+Math.round(e.loaded/1024)+'KB / '+Math.round(e.total/1024)+'KB)';"
+    "}});"
+    "xhr.addEventListener('load',function(){"
+    "if(xhr.status===200){"
+    "const resp=JSON.parse(xhr.responseText);"
+    "if(resp.success){"
+    "progressBar.hidden=true;progressText.hidden=true;"
+    "restartReload(status,'Update installed.');"
+    "}else{"
+    "showAlert(status,'Error: '+resp.message,'danger');"
+    "}}else{"
+    "showAlert(status,'Upload failed (HTTP '+xhr.status+')','danger');"
+    "}});"
+    "xhr.addEventListener('error',function(){"
+    "showAlert(status,'Network error during upload','danger');});"
+    "xhr.addEventListener('timeout',function(){"
+    "showAlert(status,'Upload timeout - try again','danger');});"
+    "xhr.open('POST','/update',true);"
+    "xhr.timeout=120000;"
+    "xhr.setRequestHeader('Content-Type','application/octet-stream');"
+    "xhr.send(file);"
+    "});"
+    "</script>";
+
 static esp_err_t update_get_handler(httpd_req_t *req)
 {
-    // Get current firmware info
     const esp_app_desc_t *app_desc = esp_app_get_description();
     const esp_partition_t *running = esp_ota_get_running_partition();
     const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
 
-    char partition_info[256];
-    snprintf(partition_info, sizeof(partition_info),
-             "Current: %s (%s)<br>Update will write to: %s",
-             running->label, app_desc->version,
-             update_partition ? update_partition->label : "unknown");
-
-    const char *html_start =
-        "<h1>Firmware Update</h1>"
-        "<div role='alert'>"
-        "<strong>Current Version:</strong> ";
-
-    const char *html_mid =
-        "</div>"
-        "<div role='alert' data-variant='warning' class='mt-4'>"
-        "<strong>Warning:</strong> Do not power off the device during update!"
-        "</div>"
-
-        // ---- Update from GitHub -------------------------------------------
-        "<h2 class='mt-4'>Update from GitHub</h2>"
-        "<div id='ghStatus' role='alert'>Checking for the latest release&hellip;</div>"
-        "<progress id='ghProgress' value='0' max='100' hidden class='mt-2'></progress>"
-        "<div id='ghVersionWrap' hidden class='mt-2' data-field>"
-        "<label for='ghVersion'>Version to install</label>"
-        "<select id='ghVersion'></select>"
-        "</div>"
-        "<div class='mt-2'>"
-        "<button type='button' id='ghCheck'>Check for updates</button> "
-        "<button type='button' id='ghInstall' hidden data-variant='success'>Install selected version</button>"
-        "</div>"
-        "<script>"
-        // Shared by the GitHub, manual-upload, reboot and entity-reset flows:
-        // count down while the device reboots, then reload the page.
-        "function rebootReload(el,msg){"
-        "msg=msg||'Update successful!';"
-        "el.setAttribute('data-variant','success');"
-        "let countdown=15;"
-        "el.textContent=msg+' Rebooting... reload in '+countdown+' seconds';"
-        "const timer=setInterval(function(){"
-        "countdown--;"
-        "if(countdown>0){"
-        "el.textContent=msg+' Rebooting... reload in '+countdown+' seconds';"
-        "}else{"
-        "clearInterval(timer);"
-        "el.textContent=msg+' Rebooting... reloading now...';"
-        "window.location.reload();"
-        "}},1000);}"
-        // Shared by the settings checkboxes: POST <url>?enabled=0|1 on change,
-        // then show the setting the device reports, or revert on failure.
-        // The status box is the element with id <id>Status.
-        "function bindToggle(id,url){"
-        "const c=document.getElementById(id);"
-        "const s=document.getElementById(id+'Status');"
-        "c.addEventListener('change',function(){"
-        "const want=c.checked;c.disabled=true;s.setAttribute('hidden','');"
-        "fetch(url+'?enabled='+(want?1:0),{method:'POST'}).then(r=>r.json()).then(function(d){"
-        "if(!d.success)throw new Error();c.checked=d.enabled;"
-        "}).catch(function(){c.checked=!want;s.removeAttribute('hidden');"
-        "s.setAttribute('data-variant','danger');s.textContent='Could not save the setting.';"
-        "}).finally(function(){c.disabled=false;});});}"
-        "(function(){"
-        "const s=document.getElementById('ghStatus');"
-        "const p=document.getElementById('ghProgress');"
-        "const vw=document.getElementById('ghVersionWrap');"
-        "const vs=document.getElementById('ghVersion');"
-        "const bC=document.getElementById('ghCheck');"
-        "const bI=document.getElementById('ghInstall');"
-        "let polling=false;let last='';let rebooting=false;"
-        // Populate the version dropdown (newest first) only when the list
-        // changes, so an in-progress user selection isn't reset by polling.
-        "function fill(list){"
-        "const sig=(list||[]).join(',');"
-        "if(vs.dataset.sig===sig)return;"
-        "vs.dataset.sig=sig;vs.innerHTML='';"
-        "(list||[]).forEach(function(v,i){"
-        "const o=document.createElement('option');"
-        "o.value=v;o.textContent=v+(i===0?' (latest)':'');vs.appendChild(o);});}"
-        "function render(d){"
-        "if(d.state==='downloading'){"
-        "p.removeAttribute('hidden');p.value=d.progress||0;"
-        "s.removeAttribute('data-variant');"
-        "s.textContent='Downloading update '+(d.progress||0)+'%… do not power off.';"
-        "vw.setAttribute('hidden','');bC.setAttribute('hidden','');bI.setAttribute('hidden','');return;}"
-        "if(d.state==='success'){p.removeAttribute('hidden');p.value=100;"
-        "vw.setAttribute('hidden','');bC.setAttribute('hidden','');bI.setAttribute('hidden','');"
-        "if(!rebooting){rebooting=true;rebootReload(s);}return;}"
-        "p.setAttribute('hidden','');"
-        // Hidden while a check runs, so a second click can't start a second poll loop.
-        "if(d.state==='checking')bC.setAttribute('hidden','');else bC.removeAttribute('hidden');"
-        "const have=d.versions&&d.versions.length;"
-        "if(have){fill(d.versions);vw.removeAttribute('hidden');bI.removeAttribute('hidden');}"
-        "else{vw.setAttribute('hidden','');bI.setAttribute('hidden','');}"
-        "if(d.state==='checking'){s.removeAttribute('data-variant');"
-        "s.textContent='Checking for the latest release…';}"
-        "else if(d.state==='error'&&d.error){s.setAttribute('data-variant','danger');"
-        "s.textContent='Error: '+d.error;}"
-        "else if(d.update_available){s.setAttribute('data-variant','warning');"
-        "let msg='Update available: '+d.latest+' (installed '+d.installed+').';"
-        "if(d.release_url){s.innerHTML='';s.appendChild(document.createTextNode(msg+' '));"
-        "const a=document.createElement('a');a.href=d.release_url;a.target='_blank';"
-        "a.textContent='Release notes';s.appendChild(a);}else{s.textContent=msg;}}"
-        "else if(d.checked){s.setAttribute('data-variant','success');"
-        "s.textContent='Up to date ('+d.installed+'). You can reinstall or roll back below.';}"
-        "else{s.removeAttribute('data-variant');"
-        "s.textContent='Latest release not yet checked.';}}"
-        // q='?refresh=1' asks the device to start a check; the reply then reads
-        // 'checking' and polling carries on until the result arrives.
-        "function poll(q){fetch('/update/check'+(q||'')).then(r=>r.json()).then(function(d){"
-        "last=d.state;render(d);"
-        "if(d.state==='downloading'||d.state==='checking'){polling=true;setTimeout(function(){poll();},2000);}"
-        "else{polling=false;}"
-        // A failed poll right after a download means the device rebooted
-        // before we saw the 'success' state — treat it as success.
-        "}).catch(function(){polling=false;"
-        "if(last==='downloading')render({state:'success'});"
-        "else if(q){s.setAttribute('data-variant','danger');s.textContent='Check failed.';}});}"
-        "bC.addEventListener('click',function(){"
-        "if(polling)return;polling=true;"
-        "s.removeAttribute('data-variant');s.textContent='Checking for the latest release…';"
-        "poll('?refresh=1');});"
-        "bI.addEventListener('click',function(){"
-        "const v=vs.value;if(!v)return;"
-        "if(!confirm('Download and install firmware '+v+' from GitHub?'))return;"
-        "fetch('/update/github?version='+encodeURIComponent(v),{method:'POST'}).then(r=>r.json()).then(function(d){"
-        "if(d.success){if(!polling)poll();}"
-        "else{s.setAttribute('data-variant','danger');s.textContent='Error: '+(d.message||'could not start');}});});"
-        "poll();"
-        "})();"
-        "</script>";
-
-    const char *auto_check_desc =
-        "<p class='mt-2'>Checks GitHub every 12 hours. You can still check by hand "
-        "when this is off.</p>";
-
-    const char *usage_heading = "<h2 class='mt-4'>Anonymous usage reporting</h2>";
-    const char *usage_desc =
-        "<p class='mt-2'>Help shape the project by showing how many devices run each "
-        "release. Twice a day this device shares a random install ID and its "
-        "firmware version, never anything about your pool, network or hardware. "
-        "<a href='" USAGE_REPORT_README_URL "' target='_blank'>What is shared</a></p>";
-
-    const char *html_tail =
-        // ---- Manual upload -------------------------------------------------
-        "<h2 class='mt-4'>Manual upload</h2>"
-        "<form id='updateForm' class='mt-2'>"
-        "<div data-field>"
-            "<label for='firmware'>Firmware File (.bin)</label>"
-            "<input type='file' id='firmware' name='firmware' accept='.bin' required>"
-        "</div>"
-        "<button type='submit'>Upload and Update</button>"
-        "<div id='status' role='alert' hidden class='mt-4'></div>"
-        "<progress id='progressBar' value='0' max='100' hidden class='mt-4'></progress>"
-        "<p id='progressText' hidden class='text-center mt-2'></p>"
-        "</form>"
-        "<script>"
-        "document.getElementById('updateForm').addEventListener('submit',function(e){"
-        "e.preventDefault();"
-        "const file=document.getElementById('firmware').files[0];"
-        "if(!file){alert('Please select a file');return;}"
-        "const status=document.getElementById('status');"
-        "const progressBar=document.getElementById('progressBar');"
-        "const progressText=document.getElementById('progressText');"
-        "status.textContent='Uploading firmware ('+Math.round(file.size/1024)+'KB)...';"
-        "status.removeAttribute('data-variant');"
-        "status.removeAttribute('hidden');"
-        "progressBar.value=0;"
-        "progressBar.removeAttribute('hidden');"
-        "progressText.removeAttribute('hidden');"
-        "const xhr=new XMLHttpRequest();"
-        "xhr.upload.addEventListener('progress',function(e){"
-        "if(e.lengthComputable){"
-        "const percent=Math.round((e.loaded/e.total)*100);"
-        "progressBar.value=percent;"
-        "progressText.textContent=percent+'% ('+Math.round(e.loaded/1024)+'KB / '+Math.round(e.total/1024)+'KB)';"
-        "}});"
-        "xhr.addEventListener('load',function(){"
-        "if(xhr.status===200){"
-        "const resp=JSON.parse(xhr.responseText);"
-        "if(resp.success){"
-        "progressBar.setAttribute('hidden','');progressText.setAttribute('hidden','');"
-        "rebootReload(status);"
-        "}else{"
-        "status.textContent='Error: '+resp.message;"
-        "status.setAttribute('data-variant','danger');"
-        "}}else{"
-        "status.textContent='Upload failed (HTTP '+xhr.status+')';"
-        "status.setAttribute('data-variant','danger');"
-        "}});"
-        "xhr.addEventListener('error',function(){"
-        "status.textContent='Network error during upload';"
-        "status.setAttribute('data-variant','danger');});"
-        "xhr.addEventListener('timeout',function(){"
-        "status.textContent='Upload timeout - try again';"
-        "status.setAttribute('data-variant','danger');});"
-        "xhr.open('POST','/update',true);"
-        "xhr.timeout=120000;"
-        "xhr.setRequestHeader('Content-Type','application/octet-stream');"
-        "xhr.send(file);"
-        "});"
-        "</script>"
-
-        // ---- Reboot --------------------------------------------------------
-        "<h2 class='mt-4'>Reboot</h2>"
-        "<p>Restart the device without changing the firmware.</p>"
-        "<button type='button' id='rebootBtn' data-variant='danger'>Reboot device</button>"
-        "<div id='rebootStatus' role='alert' hidden class='mt-4'></div>"
-        "<script>"
-        "document.getElementById('rebootBtn').addEventListener('click',function(){"
-        "if(!confirm('Reboot the device now?'))return;"
-        "const s=document.getElementById('rebootStatus');"
-        "s.removeAttribute('hidden');"
-        // A network error means the device restarted before the response
-        // arrived, so treat it the same as success.
-        "fetch('/reboot',{method:'POST'}).then(r=>r.json()).then(function(d){"
-        "rebootReload(s,'Reboot requested.');"
-        "}).catch(function(){rebootReload(s,'Reboot requested.');});"
-        "});"
-        "</script>"
-
-        // ---- Home Assistant entities ---------------------------------------
-        "<h2 class='mt-4'>Home Assistant entities</h2>"
-        "<p>Delete this device's entities in Home Assistant and re-create them, "
-        "so they pick up the current entity ID naming. Any dashboards, "
-        "automations or history that reference the old entity IDs will need "
-        "updating. The device restarts to republish them.</p>"
-        "<button type='button' id='haResetBtn' data-variant='danger'>Reset entities</button>"
-        "<div id='haResetStatus' role='alert' hidden class='mt-4'></div>"
-        "<script>"
-        "document.getElementById('haResetBtn').addEventListener('click',function(){"
-        "if(!confirm('Delete and re-create the Home Assistant entities? Their entity IDs will change.'))return;"
-        "const s=document.getElementById('haResetStatus');"
-        "s.removeAttribute('hidden');"
-        "s.textContent='Clearing entities...';"
-        // The device restarts once the entities are cleared, so a failed
-        // request means the same thing here as it does for a reboot.
-        "fetch('/ha-reset',{method:'POST'}).then(r=>r.json()).then(function(d){"
-        "if(d.success){rebootReload(s,'Entities cleared.');}"
-        "else{s.textContent='Error: '+d.message;s.setAttribute('data-variant','danger');}"
-        "}).catch(function(){rebootReload(s,'Entities cleared.');});"
-        "});"
-        "</script>";
-
-    char page_title[] = "Firmware Update";
-    char *header = get_page_header(page_title);
-    char *nav = get_page_nav('u');
-    char *footer = get_page_footer();
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-    httpd_resp_send_chunk(req, header, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, nav, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, html_start, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, partition_info, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, html_mid, HTTPD_RESP_USE_STRLEN);
+    send_page_start(req, "Firmware", PAGE_FIRMWARE);
+    send_str(req, "<div class='page-head'><h1>Firmware</h1></div>"
+                  "<div class='stack' style='max-width:44rem'>"
+                  "<section class='card'><h2>Installed</h2><dl class='kv'>");
+    send_kv(req, "Version", app_desc->version);
+    send_kv(req, "Running from", running->label);
+    send_kv(req, "Next update to", update_partition ? update_partition->label : "unknown");
+    send_str(req, FIRMWARE_PAGE_GITHUB);
     send_settings_toggle(req, "autoCheck", "/update/auto_check",
-                         "Automatically check for new releases",
-                         firmware_update_get_auto_check(), auto_check_desc);
-    httpd_resp_send_chunk(req, usage_heading, HTTPD_RESP_USE_STRLEN);
-    send_settings_toggle(req, "usageReport", "/usage_report",
-                         "Participate in anonymous usage reporting",
-                         usage_report_get_enabled(), usage_desc);
-    httpd_resp_send_chunk(req, html_tail, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, footer, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-    free(footer);
-    free(nav);
-    free(header);
+                         "Check for new releases automatically",
+                         firmware_update_get_auto_check(), FIRMWARE_AUTO_CHECK_DESC);
+    send_str(req, FIRMWARE_PAGE_TAIL);
+    send_page_end(req);
     return ESP_OK;
 }
 
@@ -1771,9 +1776,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     update_partition = esp_ota_get_next_update_partition(NULL);
     if (update_partition == NULL) {
         ESP_LOGE(TAG, "No OTA partition found");
-        const char *resp = "{\"success\":false,\"message\":\"No OTA partition configured\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"No OTA partition configured\"}");
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "Writing to partition: %s at offset 0x%lx", update_partition->label, update_partition->address);
@@ -1782,9 +1785,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     esp_err_t err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &ota_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
-        const char *resp = "{\"success\":false,\"message\":\"OTA begin failed\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"OTA begin failed\"}");
         return ESP_FAIL;
     }
 
@@ -1793,9 +1794,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     char *buf = malloc(buf_size);
     if (buf == NULL) {
         esp_ota_abort(ota_handle);
-        const char *resp = "{\"success\":false,\"message\":\"Memory allocation failed\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Memory allocation failed\"}");
         return ESP_FAIL;
     }
 
@@ -1804,9 +1803,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
         ESP_LOGE(TAG, "Invalid firmware size: %d (must be 1–%d bytes)", remaining, OTA_MAX_FIRMWARE_SIZE);
         free(buf);
         esp_ota_abort(ota_handle);
-        const char *resp = "{\"success\":false,\"message\":\"Invalid firmware size\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Invalid firmware size\"}");
         return ESP_FAIL;
     }
 
@@ -1829,9 +1826,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
                      recv_len, received, req->content_len);
             free(buf);
             esp_ota_abort(ota_handle);
-            const char *resp = "{\"success\":false,\"message\":\"Receive failed\"}";
-            httpd_resp_set_type(req, "application/json; charset=UTF-8");
-            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+            send_json(req, "{\"success\":false,\"message\":\"Receive failed\"}");
             return ESP_FAIL;
         }
 
@@ -1840,9 +1835,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
             ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
             free(buf);
             esp_ota_abort(ota_handle);
-            const char *resp = "{\"success\":false,\"message\":\"OTA write failed\"}";
-            httpd_resp_set_type(req, "application/json; charset=UTF-8");
-            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+            send_json(req, "{\"success\":false,\"message\":\"OTA write failed\"}");
             return ESP_FAIL;
         }
         received += recv_len;
@@ -1862,14 +1855,10 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     if (err != ESP_OK) {
         if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
             ESP_LOGE(TAG, "Image validation failed, image is corrupted");
-            const char *resp = "{\"success\":false,\"message\":\"Image validation failed\"}";
-            httpd_resp_set_type(req, "application/json; charset=UTF-8");
-            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+            send_json(req, "{\"success\":false,\"message\":\"Image validation failed\"}");
         } else {
             ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
-            const char *resp = "{\"success\":false,\"message\":\"OTA end failed\"}";
-            httpd_resp_set_type(req, "application/json; charset=UTF-8");
-            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+            send_json(req, "{\"success\":false,\"message\":\"OTA end failed\"}");
         }
         return ESP_FAIL;
     }
@@ -1878,17 +1867,13 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     err = esp_ota_set_boot_partition(update_partition);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
-        const char *resp = "{\"success\":false,\"message\":\"Failed to set boot partition\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Failed to set boot partition\"}");
         return ESP_FAIL;
     }
 
     ESP_LOGI(TAG, "OTA update successful!");
 
-    const char *resp = "{\"success\":true,\"message\":\"Update successful! Rebooting...\"}";
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"Update installed\"}");
 
     // Restart after a delay
     vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_DELAY_MS));
@@ -1951,13 +1936,8 @@ static esp_err_t update_check_handler(httpd_req_t *req)
     cJSON_AddItemToObject(root, "versions", versions);
 
     char *json = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    if (json) {
-        httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
-        cJSON_free(json);
-    } else {
-        httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
-    }
+    send_json(req, json ? json : "{}");
+    cJSON_free(json);
     cJSON_Delete(root);
     return ESP_OK;
 }
@@ -1974,17 +1954,12 @@ static esp_err_t update_github_post_handler(httpd_req_t *req)
     }
 
     esp_err_t err = firmware_update_start_install(version[0] ? version : NULL);
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     if (err == ESP_OK) {
-        httpd_resp_send(req, "{\"success\":true,\"message\":\"Update started\"}", HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":true,\"message\":\"Update started\"}");
     } else if (err == ESP_ERR_NOT_FOUND) {
-        httpd_resp_send(req,
-            "{\"success\":false,\"message\":\"Unknown release version\"}",
-            HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Unknown release version\"}");
     } else {
-        httpd_resp_send(req,
-            "{\"success\":false,\"message\":\"No release available or an update is already running\"}",
-            HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"No release available or an update is already running\"}");
     }
     return ESP_OK;
 }
@@ -1996,21 +1971,17 @@ static esp_err_t toggle_post(httpd_req_t *req, void (*set)(bool), bool (*get)(vo
 {
     char query[32];
     char val[4];
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
         httpd_query_key_value(query, "enabled", val, sizeof(val)) != ESP_OK ||
         (strcmp(val, "0") != 0 && strcmp(val, "1") != 0)) {
         httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_send(req, "{\"success\":false,\"message\":\"enabled must be 0 or 1\"}",
-                        HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"enabled must be 0 or 1\"}");
         return ESP_OK;
     }
 
     set(val[0] == '1');
-    httpd_resp_send(req, get()
-                             ? "{\"success\":true,\"enabled\":true}"
-                             : "{\"success\":true,\"enabled\":false}",
-                    HTTPD_RESP_USE_STRLEN);
+    send_json(req, get() ? "{\"success\":true,\"enabled\":true}"
+                         : "{\"success\":true,\"enabled\":false}");
     return ESP_OK;
 }
 
@@ -2042,9 +2013,7 @@ static esp_err_t reboot_post_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "Reboot requested via web UI");
 
-    const char *resp = "{\"success\":true,\"message\":\"Rebooting...\"}";
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"Restarting\"}");
 
     vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
     esp_restart();
@@ -2059,17 +2028,12 @@ static esp_err_t ha_reset_post_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "Home Assistant entity reset requested via web UI");
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     if (!mqtt_discovery_reset_start()) {
-        httpd_resp_send(req,
-                        "{\"success\":false,\"message\":\"MQTT is not connected\"}",
-                        HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"MQTT is not connected\"}");
         return ESP_OK;
     }
 
-    httpd_resp_send(req,
-                    "{\"success\":true,\"message\":\"Resetting entities...\"}",
-                    HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"Resetting entities...\"}");
     return ESP_OK;
 }
 
@@ -2086,9 +2050,7 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
     char content[512];
     int ret = httpd_req_recv(req, content, sizeof(content) - 1);
     if (ret <= 0) {
-        const char *resp = "{\"success\":false,\"message\":\"Invalid request\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Invalid request\"}");
         return ESP_FAIL;
     }
     content[ret] = '\0';
@@ -2113,9 +2075,7 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
                 p += 2;
             } else {
                 // Invalid hex
-                const char *resp = "{\"success\":false,\"message\":\"Invalid hex string\"}";
-                httpd_resp_set_type(req, "application/json; charset=UTF-8");
-                httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+                send_json(req, "{\"success\":false,\"message\":\"Invalid hex string\"}");
                 return ESP_OK;
             }
         } else {
@@ -2124,9 +2084,7 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
     }
 
     if (msg_len == 0) {
-        const char *resp = "{\"success\":false,\"message\":\"No bytes parsed\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"No bytes parsed\"}");
         return ESP_OK;
     }
 
@@ -2149,8 +2107,7 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
              msg_len,
              hex_str);
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json_resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, json_resp);
 
     return ESP_OK;
 }
@@ -2263,8 +2220,7 @@ static esp_err_t unknown_msgs_json_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    send_json(req, json);
     free(json);
     return ESP_OK;
 }
@@ -2281,125 +2237,81 @@ static esp_err_t unknown_msgs_clear_handler(httpd_req_t *req)
 
     unknown_buffer_clear();
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"ok\":true}");
     return ESP_OK;
 }
 
+static const char UNKNOWN_MSGS_PAGE[] =
+    "<div class='page-head'><h1>Unknown messages</h1>"
+    "<div class='actions'>"
+    "<a href='/unknown_msgs' id='dl-json' class='button outline' download><i class='i i-download' aria-hidden='true'></i>Download</a>"
+    "<span class='sep' aria-hidden='true'></span>"
+    "<button id='clear-btn' class='outline' data-variant='danger'><i class='i i-trash' aria-hidden='true'></i>Clear</button>"
+    "</div></div>"
+    "<p class='lead'><span id='unk-count'></span>Unrecognized and error frames captured from the bus, "
+    "newest first (up to " STR(UNKNOWN_BUFFER_CAPACITY) " kept). Select a row to see the full frame.</p>"
+    "<div id='unk-error' role='alert' data-variant='danger' hidden></div>"
+    "<p id='unk-empty' hidden class='muted'>No unknown messages recorded yet.</p>"
+    "<div id='unk-table' class='table-wrap' hidden>"
+    "<table><colgroup><col style='width:26%'><col style='width:8%'><col><col style='width:8%'><col style='width:22%'></colgroup>"
+    "<thead><tr><th>From &rarr; to</th><th>CMD</th><th>Payload</th><th class='num'>Hits</th><th>Last seen</th></tr></thead>"
+    "<tbody id='unk-tbody'></tbody></table>"
+    "</div>"
+    "<script>"
+    "bindJsonDownload('dl-json','pool-controller-unknown-msgs');"
+    "function fmtTime(ts){return ts>0?fmtDateTime(new Date(ts*1000)):'Unknown';}"
+    "function mkEl(tag,txt,cls){"
+    "const el=document.createElement(tag);"
+    "if(txt!==undefined)el.textContent=txt;"
+    "if(cls)el.className=cls;"
+    "return el;}"
+    "function load(){"
+    "fetch('/unknown_msgs').then(r=>r.json()).then(data=>{"
+    "const count=data.count||0;"
+    "document.getElementById('unk-count').textContent="
+    "count+' unique frame'+(count!==1?'s':'')+'. ';"
+    "const empty=document.getElementById('unk-empty');"
+    "const tbl=document.getElementById('unk-table');"
+    "const tbody=document.getElementById('unk-tbody');"
+    "tbody.innerHTML='';"
+    "empty.hidden=count!==0;tbl.hidden=count===0;"
+    "const entries=[...(data.entries||[])];"
+    "entries.sort((a,b)=>b.last_seen-a.last_seen);"
+    "entries.forEach(e=>{"
+    "const tr=mkEl('tr',undefined,'row-toggle'+(e.is_error?' err':''));"
+    // From -> to: source name (+ reason tag) over both addresses
+    "const who=mkEl('td');"
+    "who.appendChild(document.createTextNode((e.src_name||e.src)+' \\u2192 '+(e.dst_name||e.dst)));"
+    "if(e.reason!=='unhandled')who.appendChild(mkEl('span',e.reason,'tag'+(e.is_error?' err':'')));"
+    "who.appendChild(mkEl('div',e.src+' \\u2192 '+e.dst,'mono muted'));"
+    "tr.appendChild(who);"
+    "tr.appendChild(mkEl('td',e.cmd,'mono'));"
+    "tr.appendChild(mkEl('td',e.payload||'(empty)','mono'));"
+    "tr.appendChild(mkEl('td',String(e.hits),'num'));"
+    "tr.appendChild(mkEl('td',fmtTime(e.last_seen),'small muted'));"
+    // Detail row: the full raw frame and first-seen time, shown on click
+    "const det=mkEl('tr',undefined,'detail');det.hidden=true;"
+    "const dtd=mkEl('td');dtd.colSpan=5;"
+    "dtd.appendChild(document.createTextNode('Raw frame: '));"
+    "dtd.appendChild(mkEl('code',e.raw||'(empty)'));"
+    "if(e.raw_len>" STR(UNKNOWN_BUFFER_MAX_RAW_BYTES) ")"
+    "dtd.appendChild(document.createTextNode(' (first " STR(UNKNOWN_BUFFER_MAX_RAW_BYTES) " bytes of '+e.raw_len+')'));"
+    "dtd.appendChild(mkEl('div','First seen '+fmtTime(e.first_seen),'muted mt-2'));"
+    "det.appendChild(dtd);"
+    "tr.addEventListener('click',()=>{det.hidden=!det.hidden;});"
+    "tbody.appendChild(tr);tbody.appendChild(det);});"
+    "}).catch(err=>{"
+    "showAlert(document.getElementById('unk-error'),'Error loading data: '+err,'danger');});}"
+    "load();"
+    "document.getElementById('clear-btn').addEventListener('click',function(){"
+    "if(!confirm('Clear all unknown message records?'))return;"
+    "fetch('/unknown_msgs/clear',{method:'POST'}).then(()=>load()).catch(err=>{"
+    "showAlert(document.getElementById('unk-error'),'Clear failed: '+err,'danger');});});"
+    "</script>";
+
 static esp_err_t unknown_msgs_view_handler(httpd_req_t *req)
 {
-    const char *page_content =
-        "<h1>Unknown Bus Messages</h1>"
-        "<p class='text-lighter'>Unrecognized and error frames captured from the bus "
-        "(max " STR(UNKNOWN_BUFFER_CAPACITY) " stored). Sorted by most recently seen.</p>"
-        "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem'>"
-        "<span id='unk-count' class='text-lighter'></span>"
-        "<div style='display:flex;gap:0.5rem'>"
-        "<a href='/unknown_msgs' class='outline button'>Raw JSON</a>"
-        "<button id='clear-btn' class='outline' data-variant='danger'>Clear Buffer</button>"
-        "</div>"
-        "</div>"
-        "<div id='unk-error' role='alert' data-variant='danger' hidden></div>"
-        "<p id='unk-empty' hidden class='text-lighter'>No unknown messages recorded yet.</p>"
-        "<div id='unk-table' hidden style='overflow-x:auto'>"
-        "<table><thead><tr>"
-        "<th>Source</th><th>Destination</th><th style='width:5em'>CMD</th><th>Payload</th><th>Raw Frame</th>"
-        "<th style='width:4em'>Hits</th><th>First Seen</th><th>Last Seen</th>"
-        "</tr></thead><tbody id='unk-tbody'></tbody></table>"
-        "</div>"
-        "<script>"
-        "function fmtTime(ts){"
-        "if(!ts||ts<=0)return'Unknown';"
-        "const d=new Date(ts*1000);"
-        "const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;"
-        "return d.toLocaleString('en-GB',{"
-        "day:'2-digit',month:'2-digit',year:'numeric',"
-        "hour:'2-digit',minute:'2-digit',second:'2-digit',"
-        "hour12:false,timeZone:tz,timeZoneName:'short'});}"
-        "function mkEl(tag,txt){"
-        "const el=document.createElement(tag);"
-        "if(txt!==undefined)el.textContent=txt;"
-        "return el;}"
-        "function addCode(td,txt){"
-        "const c=document.createElement('code');c.textContent=txt;td.appendChild(c);}"
-        "function addrTd(addr,name,label,isErr){"
-        "const td=mkEl('td');"
-        "if(label){const b=mkEl('small',label);const bg=isErr?'#e55':'#e0a800';b.style.cssText='background:'+bg+';color:#fff;border-radius:3px;padding:0 4px;margin-right:4px;font-size:.75em';td.appendChild(b);}"
-        "addCode(td,addr);"
-        "if(name){td.appendChild(document.createElement('br'));td.appendChild(mkEl('small',name));}"
-        "return td;}"
-        "function load(){"
-        "fetch('/unknown_msgs').then(r=>r.json()).then(data=>{"
-        "const count=data.count||0;"
-        "document.getElementById('unk-count').textContent="
-        "count+' unique raw frame'+(count!==1?'s':'');"
-        "const empty=document.getElementById('unk-empty');"
-        "const tbl=document.getElementById('unk-table');"
-        "const tbody=document.getElementById('unk-tbody');"
-        "tbody.innerHTML='';"
-        "if(count===0){"
-        "empty.removeAttribute('hidden');tbl.setAttribute('hidden','');}"
-        "else{"
-        "empty.setAttribute('hidden','');"
-        "const entries=[...(data.entries||[])];"
-        "entries.sort((a,b)=>b.last_seen-a.last_seen);"
-        "entries.forEach(e=>{"
-        "const tr=document.createElement('tr');"
-        "if(e.is_error)tr.style.background='var(--danger-faint,#fff0f0)';"
-        "tr.appendChild(addrTd(e.src,e.src_name,e.reason!=='unhandled'?e.reason:null,e.is_error));"
-        "tr.appendChild(addrTd(e.dst,e.dst_name));"
-        "const cmdTd=mkEl('td');addCode(cmdTd,e.cmd);tr.appendChild(cmdTd);"
-        "const payTd=mkEl('td');"
-        "const pc=document.createElement('code');"
-        "pc.textContent=e.payload||'(empty)';"
-        "pc.style.padding='0';"
-        "payTd.appendChild(pc);tr.appendChild(payTd);"
-        "const rawTd=mkEl('td');"
-        "const rc=document.createElement('code');"
-        "rc.textContent=e.raw||'(empty)';"
-        "rc.style.wordBreak='break-all';"
-        "rc.style.padding='0';"
-        "rawTd.appendChild(rc);"
-        "if(e.raw_len>" STR(UNKNOWN_BUFFER_MAX_RAW_BYTES) "){"
-        "const trunc=document.createElement('small');"
-        "trunc.textContent=' (first " STR(UNKNOWN_BUFFER_MAX_RAW_BYTES) " bytes of '+e.raw_len+')';"
-        "trunc.style.color='var(--muted-foreground,#555)';"
-        "rawTd.appendChild(trunc);}"
-        "tr.appendChild(rawTd);"
-        "tr.appendChild(mkEl('td',String(e.hits)));"
-        "tr.appendChild(mkEl('td',fmtTime(e.first_seen)));"
-        "tr.appendChild(mkEl('td',fmtTime(e.last_seen)));"
-        "tbody.appendChild(tr);});"
-        "tbl.removeAttribute('hidden');}}"
-        ").catch(err=>{"
-        "const errEl=document.getElementById('unk-error');"
-        "errEl.textContent='Error loading data: '+err;"
-        "errEl.removeAttribute('hidden');});}"
-        "load();"
-        "document.getElementById('clear-btn').addEventListener('click',function(){"
-        "if(!confirm('Clear all unknown message records?'))return;"
-        "fetch('/unknown_msgs/clear',{method:'POST'}).then(()=>load()).catch(err=>{"
-        "const errEl=document.getElementById('unk-error');"
-        "errEl.textContent='Clear failed: '+err;"
-        "errEl.removeAttribute('hidden');});});"
-        "</script>";
-
-    char page_title[] = "Unknown Bus Messages";
-    char *header = get_page_header(page_title);
-    char *nav    = get_page_nav('x');
-    char *footer = get_page_footer();
-
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-    httpd_resp_send_chunk(req, header,       HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, nav,          HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, page_content, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, footer,       HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-
-    free(footer);
-    free(nav);
-    free(header);
-    return ESP_OK;
+    return send_static_page(req, "Unknown messages", PAGE_UNKNOWN, UNKNOWN_MSGS_PAGE);
 }
 
 // ======================================================
@@ -2412,32 +2324,30 @@ static esp_err_t unknown_msgs_view_handler(httpd_req_t *req)
 static esp_err_t log_view_handler(httpd_req_t *req)
 {
     const char *page_content =
-        "<h1>Debug Log</h1>"
-        "<p class='text-lighter'>Live firmware log, including an <code>RX MSG</code> line for every bus frame. "
+        "<div class='page-head'><h1>Debug log</h1>"
+        "<div class='actions'>"
+        "<button id='pause-btn' class='outline'><i id='pause-icon' class='i i-pause' aria-hidden='true'></i><span>Pause</span></button>"
+        "<button id='dl-btn' class='outline'><i class='i i-download' aria-hidden='true'></i>Download</button>"
+        "<span class='sep' aria-hidden='true'></span>"
+        "<button id='clear-btn' class='outline' data-variant='danger'><i class='i i-trash' aria-hidden='true'></i>Clear</button>"
+        "</div></div>"
+        "<p class='lead'>Live firmware log, including an <code>RX MSG</code> line for every bus frame. "
         "The capture is kept in this page only, and is lost on reload. Download it to attach to a bug report. "
-        "Hex frames entered below are sent to the bus as-is.</p>"
-        "<div style='display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.5rem'>"
-        "<button id='pause-btn' class='outline'>Pause</button>"
-        "<button id='clear-btn' class='outline' data-variant='danger'>Clear</button>"
-        "<button id='dl-btn'>Download</button>"
-        "<input id='filter' type='search' placeholder='Filter view (e.g. RX MSG)' style='flex:1;min-width:12em;margin:0'>"
+        "Hex frames entered below the log are sent to the bus as-is.</p>"
+        "<div class='toolbar'>"
+        "<input id='filter' type='search' placeholder='Filter, e.g. RX MSG'>"
+        "<small class='muted'><span id='log-dot' class='dot' style='display:inline-block;margin-right:0.4rem'></span>"
+        "<span id='log-status'>Connecting\u2026</span></small>"
         "</div>"
-        "<form id='tx-form' style='display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.5rem'>"
-        "<input id='tx-hex' type='text' autocomplete='off' spellcheck='false' "
-        "placeholder='Send to bus, e.g. 02 00 50 FF FF 03' style='flex:1;min-width:12em;margin:0;font-family:var(--font-mono)'>"
+        // Per-level line colours (app.css .lE/.lW/...) key on the ESP-IDF
+        // "X (time) TAG: ..." prefix; markers are gaps the page inserted or
+        // the device reported.
+        "<pre id='log' class='log'></pre>"
+        "<form id='tx-form' class='toolbar mt-2'>"
+        "<input id='tx-hex' type='text' class='mono' autocomplete='off' spellcheck='false' "
+        "placeholder='Send hex to bus, e.g. 02 00 50 FF FF 03'>"
         "<button id='tx-btn' type='submit' class='outline' disabled>Send</button>"
         "</form>"
-        "<p style='margin:0 0 0.5rem'><small id='log-status' class='text-lighter'>Connecting…</small></p>"
-        "<pre id='log' style='height:65vh;overflow:auto;margin:0;font-size:0.8em;white-space:pre-wrap;word-break:break-all'></pre>"
-        // Per-level line colours, keyed on the ESP-IDF "X (time) TAG: ..." prefix.
-        // Info keeps the default text colour; markers are gaps the page inserted
-        // or the device reported.
-        "<style>"
-        "#log .lE{color:var(--danger)}"
-        "#log .lW{color:var(--warning)}"
-        "#log .lD,#log .lV{color:var(--muted-foreground)}"
-        "#log .lM{color:var(--muted-foreground);font-style:italic}"
-        "</style>"
         "<script>"
         "const CAP=" STR(WEB_LOG_BROWSER_MAX_LINES) ",SHOW=" STR(WEB_LOG_DISPLAY_MAX_LINES) ";"
         "const lines=[];let bytes=0,trimmed=0,partial='',paused=false,filter='',ws=null,everOpen=false,state='Connecting…';"
@@ -2482,10 +2392,12 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "status();}"
         "function connect(){"
         "ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/log');"
-        "ws.onopen=()=>{if(everOpen)add(['--- reconnected ---']);everOpen=true;state='Live';txBtn.disabled=false;status();};"
+        "ws.onopen=()=>{if(everOpen)add(['--- reconnected ---']);everOpen=true;state='Live';txBtn.disabled=false;"
+        "document.getElementById('log-dot').className='dot ok';status();};"
         "ws.onmessage=e=>{const parts=(partial+e.data).split('\\n');partial=parts.pop();"
         "add(parts.map(l=>l.replace(/\\r$/,'')));};"
-        "ws.onclose=()=>{state='Disconnected, retrying…';txBtn.disabled=true;status();ws=null;setTimeout(connect,2000);};"
+        "ws.onclose=()=>{state='Disconnected, retrying…';txBtn.disabled=true;"
+        "document.getElementById('log-dot').className='dot bad';status();ws=null;setTimeout(connect,2000);};"
         "ws.onerror=()=>{try{ws.close();}catch(_){}};}"
         "setInterval(()=>{if(ws&&ws.readyState===1)ws.send('k');}," STR(WEB_LOG_KEEPALIVE_MS) ");"
         // The device logs the send (and any parse/collision error); the frame's
@@ -2498,8 +2410,11 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "if(ok)txHex.removeAttribute('aria-invalid');else txHex.setAttribute('aria-invalid','true');"
         "if(ok&&ws&&ws.readyState===1)ws.send('" WEB_LOG_TX_PREFIX "'+v);});"
         "document.getElementById('pause-btn').addEventListener('click',function(){"
-        "paused=!paused;this.textContent=paused?'Resume':'Pause';if(!paused)render();status();});"
+        "paused=!paused;this.querySelector('span').textContent=paused?'Resume':'Pause';"
+        "document.getElementById('pause-icon').className='i i-'+(paused?'play':'pause');"
+        "if(!paused)render();status();});"
         "document.getElementById('clear-btn').addEventListener('click',function(){"
+        "if(lines.length&&!confirm('Discard the '+lines.length+' captured lines?'))return;"
         "lines.length=0;bytes=0;trimmed=0;gaps=0;reconnects=0;captureStart=new Date();render();status();});"
         "document.getElementById('filter').addEventListener('input',function(){"
         "filter=this.value.toLowerCase();render();});"
@@ -2509,12 +2424,11 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         // before the first RX MSG but treats lines after one as its output.
         // SSID, IP addresses and serial numbers are left out on purpose, as
         // the file is meant to be attached to public bug reports.
-        "const p2=n=>String(n).padStart(2,'0');"
-        "function fmtLocal(d){return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '"
-        "+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds());}"
+        "function fmtLocal(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '"
+        "+pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());}"
         // A UTC offset rather than the IANA zone name, which names a city.
         "function fmtOff(d){const o=-d.getTimezoneOffset(),a=Math.abs(o);"
-        "return'UTC'+(o<0?'-':'+')+p2(Math.floor(a/60))+':'+p2(a%60);}"
+        "return'UTC'+(o<0?'-':'+')+pad2(Math.floor(a/60))+':'+pad2(a%60);}"
         "function fmtDur(ms){const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);"
         "return(d?d+'d ':'')+(d||h?h+'h ':'')+m+'m';}"
         "function known(v,f){return v===null||v===undefined?'unknown':f(v);}"
@@ -2527,7 +2441,7 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "const f=st.firmware||{},m=st.memory||{};"
         "h.push('Firmware:  '+f.version+' (IDF '+f.idf_version+'), built '+f.compile_time);"
         "h.push('Uptime:    '+fmtDur(st.current_ms||0)+'   Free heap: '+m.free_heap+' (min '+m.min_free_heap+')'"
-        "+'   WiFi RSSI: '+known(st.wifi_rssi,v=>v+' dBm'+(v<" STR(WEB_LOG_RSSI_WEAK_DBM) "?' (weak)':'')));"
+        "+'   WiFi RSSI: '+known(st.wifi_rssi,v=>v+' dBm'+(v<" STR(WIFI_RSSI_WEAK_DBM) "?' (weak)':'')));"
         "h.push('System:    heaters '+known(st.heaters_configured,String)+', solar '+known(st.has_solar,yn)"
         "+', separate pool/spa modes '+known(st.separate_pool_spa_modes,yn));"
         "const devs=st.devices||[];h.push('','Devices:');"
@@ -2536,10 +2450,8 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "for(const d of devs){const c=d.message_counts||{};"
         "h.push('  '+d.address+'  '+d.name.padEnd(w)+'  fw '+String(d.firmware_version||'?').padEnd(6)"
         "+'decoded '+String(c.decoded).padStart(7)+'  unknown '+String(c.unknown).padStart(6));}"
-        "const mc=st.message_counts||{},r=st.resyncs||{};"
-        "const rb=Object.keys(r).filter(k=>k!=='total'&&r[k]).map(k=>k.replace(/_/g,' ')+' '+r[k]);"
-        "h.push('','Message counts: decoded '+mc.decoded+', unknown '+mc.unknown+', resyncs '+(r.total||0)"
-        "+(rb.length?' ('+rb.join(', ')+')':''));}"
+        "h.push('','Message counts: '+(st.message_counts?messageSummary(st.message_counts):'unknown')"
+        "+', resyncs '+resyncSummary(st.resyncs||{}));}"
         // Unknown-message signatures, most hits first: already deduplicated,
         // so a capture arrives with its own summary of protocol gaps. Broken
         // frames are left out: this is for valid frames the decoder doesn't
@@ -2547,9 +2459,8 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "h.push('');"
         "if(!unk.data){h.push('Unknown signatures: unavailable ('+unk.err+')');}else{"
         "const es=(unk.data.entries||[]).filter(e=>!e.is_error).sort((a,b)=>b.hits-a.hits);"
-        "const tot=es.reduce((s,e)=>s+e.hits,0),mc=st&&st.message_counts;"
-        "const share=mc&&(mc.decoded+mc.unknown)?', '+(100*mc.unknown/(mc.decoded+mc.unknown)).toFixed(2)+'% of all frames unknown':'';"
-        "h.push('Unknown signatures (valid frames, most hits first): '+es.length+' held, '+tot+' hits'+share);"
+        "const tot=es.reduce((s,e)=>s+e.hits,0);"
+        "h.push('Unknown signatures (valid frames, most hits first): '+es.length+' held, '+tot+' hits');"
         "if(es.length){"
         "const sw=Math.max(...es.map(e=>e.src_name.length)),dw=Math.max(...es.map(e=>e.dst_name.length));"
         "for(const e of es)h.push('  '+String(e.hits).padStart(7)+'  '+e.cmd+'  '+e.src_name.padEnd(sw)+' -> '+e.dst_name.padEnd(dw)"
@@ -2564,8 +2475,7 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "catch(e){return{err:e.message||String(e)};}}"
         "document.getElementById('dl-btn').addEventListener('click',async function(){"
         "const d=new Date();const[s,unk]=await Promise.all([getJson('/status'),getJson('/unknown_msgs')]);"
-        "const name='pool-controller-log-'+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+'-'"
-        "+p2(d.getHours())+p2(d.getMinutes())+p2(d.getSeconds())+'.txt';"
+        "const name=stampedName('pool-controller-log','txt',d);"
         "const text=header(s.data||null,s.err,unk,d)+lines.join('\\n')+(lines.length?'\\n':'')+partial;"
         "const url=URL.createObjectURL(new Blob([text],{type:'text/plain'}));"
         "const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();"
@@ -2573,22 +2483,7 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "connect();status();"
         "</script>";
 
-    char page_title[] = "Debug Log";
-    char *header = get_page_header(page_title);
-    char *nav    = get_page_nav('l');
-    char *footer = get_page_footer();
-
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-    httpd_resp_send_chunk(req, header,       HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, nav,          HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, page_content, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, footer,       HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-
-    free(footer);
-    free(nav);
-    free(header);
-    return ESP_OK;
+    return send_static_page(req, "Debug log", PAGE_LOG, page_content);
 }
 
 // ======================================================
@@ -2629,6 +2524,12 @@ static const httpd_uri_t status_view_uri = {
     .uri = "/status_view",
     .method = HTTP_GET,
     .handler = status_view_get_handler
+};
+
+static const httpd_uri_t device_uri = {
+    .uri = "/device",
+    .method = HTTP_GET,
+    .handler = device_get_handler
 };
 
 static const httpd_uri_t mqtt_config_get_uri = {
@@ -2750,9 +2651,11 @@ extern const char _binary_favicon_svg_start[];
 // Embedded as binary (EMBED_FILES) — no null terminator added.
 extern const char _binary_favicon_png_start[];
 extern const char _binary_favicon_png_end[];  // used to compute exact byte length
-// main/static/oat.min.css + oat.min.js  (https://oat.ink, MIT license)
+// main/static/oat.min.css  (https://oat.ink, MIT license)
 extern const char _binary_oat_min_css_start[];
-extern const char _binary_oat_min_js_start[];
+// main/static/app.css + app.js  (this project's theme and shared page helpers)
+extern const char _binary_app_css_start[];
+extern const char _binary_app_js_start[];
 
 // --- File table ---
 
@@ -2778,12 +2681,21 @@ static const static_file_t STATIC_FILES[] = {
         .content_type  = "text/css",
         .cache_control = "max-age=86400",
     },
+    // Pages link these with ?v=<build hash> (see send_page_start), so a
+    // firmware update never leaves a browser on the previous build's copy.
     {
-        .uri           = "/static/oat.min.js",
-        .content       = _binary_oat_min_js_start,
+        .uri           = "/static/app.css",
+        .content       = _binary_app_css_start,
+        .content_end   = NULL,
+        .content_type  = "text/css",
+        .cache_control = "max-age=604800",
+    },
+    {
+        .uri           = "/static/app.js",
+        .content       = _binary_app_js_start,
         .content_end   = NULL,
         .content_type  = "application/javascript",
-        .cache_control = "max-age=86400",
+        .cache_control = "max-age=604800",
     },
 };
 #define STATIC_FILES_COUNT (sizeof(STATIC_FILES) / sizeof(STATIC_FILES[0]))
@@ -2792,8 +2704,11 @@ static const static_file_t STATIC_FILES[] = {
 
 static esp_err_t static_file_handler(httpd_req_t *req)
 {
+    // Match the path only: req->uri includes any ?v= cache-busting query
+    size_t path_len = strcspn(req->uri, "?");
     for (int i = 0; i < STATIC_FILES_COUNT; i++) {
-        if (strcmp(req->uri, STATIC_FILES[i].uri) == 0) {
+        if (strlen(STATIC_FILES[i].uri) == path_len &&
+            strncmp(req->uri, STATIC_FILES[i].uri, path_len) == 0) {
             httpd_resp_set_type(req, STATIC_FILES[i].content_type);
             if (STATIC_FILES[i].cache_control) {
                 httpd_resp_set_hdr(req, "Cache-Control", STATIC_FILES[i].cache_control);
@@ -2878,6 +2793,7 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &provision_uri);
     httpd_register_uri_handler(server, &status_uri);
     httpd_register_uri_handler(server, &status_view_uri);
+    httpd_register_uri_handler(server, &device_uri);
     httpd_register_uri_handler(server, &mqtt_config_get_uri);
     httpd_register_uri_handler(server, &mqtt_config_post_uri);
     httpd_register_uri_handler(server, &update_get_uri);
