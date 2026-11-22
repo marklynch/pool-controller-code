@@ -153,9 +153,7 @@ static void send_page_start(httpd_req_t *req, const char *title, web_page_t page
         "<link rel='stylesheet' href='/static/oat.min.css'>"
         "<link rel='stylesheet' href='/static/app.css?v=");
     send_str(req, ver);
-    send_str(req,
-        "'><script src='/static/oat.min.js' defer></script>"
-        "<script src='/static/app.js?v=");
+    send_str(req, "'><script src='/static/app.js?v=");
     send_str(req, ver);
     send_str(req, "'></script><title>");
     send_str(req, title);
@@ -2607,9 +2605,8 @@ extern const char _binary_favicon_svg_start[];
 // Embedded as binary (EMBED_FILES) — no null terminator added.
 extern const char _binary_favicon_png_start[];
 extern const char _binary_favicon_png_end[];  // used to compute exact byte length
-// main/static/oat.min.css + oat.min.js  (https://oat.ink, MIT license)
+// main/static/oat.min.css  (https://oat.ink, MIT license)
 extern const char _binary_oat_min_css_start[];
-extern const char _binary_oat_min_js_start[];
 // main/static/app.css + app.js  (this project's theme and shared page helpers)
 extern const char _binary_app_css_start[];
 extern const char _binary_app_js_start[];
@@ -2636,13 +2633,6 @@ static const static_file_t STATIC_FILES[] = {
         .content       = _binary_oat_min_css_start,
         .content_end   = NULL,
         .content_type  = "text/css",
-        .cache_control = "max-age=86400",
-    },
-    {
-        .uri           = "/static/oat.min.js",
-        .content       = _binary_oat_min_js_start,
-        .content_end   = NULL,
-        .content_type  = "application/javascript",
         .cache_control = "max-age=86400",
     },
     // Pages link these with ?v=<build hash> (see send_page_start), so a

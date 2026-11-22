@@ -95,3 +95,11 @@ function resyncSummary(rs) {
     .map(k => rs[k] + ' ' + k.replace(/_/g, '-'));
   return (rs.total || 0) + (parts.length ? ' (' + parts.join(', ') + ')' : '');
 }
+
+// Opens and closes the sidebar on narrow screens. This was the only part of
+// oat.min.js the pages used; Oat's CSS still lays out the sidebar from the
+// data-sidebar-open attribute.
+document.addEventListener('click', function (e) {
+  const t = e.target.closest('[data-sidebar-toggle]');
+  if (t) t.closest('[data-sidebar-layout]')?.toggleAttribute('data-sidebar-open');
+});

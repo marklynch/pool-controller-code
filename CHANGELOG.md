@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the web UI header logo sometimes failing to load on first visit (#164)
 - Fixed timer and favourite changes made at the Touchscreen never reaching Home Assistant or the web UI on installs without an Internet Gateway, until the bridge restarted (#155). The Touchscreen doesn't announce these edits on the bus, so with no gateway present the bridge now re-reads those registers every 20 minutes
 ### Removed
+- Removed the Oat JavaScript library from the web UI, which only the narrow-screen menu button used; that now lives in the project's own script, saving 5.6 KB of flash and a request on first page load (#164)
 ### Deprecated
 ### Security
 
