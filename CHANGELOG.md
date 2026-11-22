@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
+- Removed the divider before the Clear button on the Unknown messages and Debug log pages, so it sits in line with the other header buttons
 - Updated the web UI Device page to lay its cards out in two wider columns, dropping to one on narrow screens
 ### Fixed
 ### Removed
