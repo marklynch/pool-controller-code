@@ -6,8 +6,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-
 ## [Unreleased]
+### Added
+### Changed
+### Fixed
+### Removed
+### Deprecated
+### Security
+
+
+## [2.0.0-rc1] - 2026-11-22
 ### Added
 - Added a web UI dashboard as the home page, with cards for temperature, water chemistry, equipment, lighting, timers and the devices seen on the bus, plus WiFi, MQTT, uptime and firmware status chips. It refreshes every 15 seconds while the tab is visible (#164)
 - Added a Device page to the web UI with the system details, bus and memory counts, usage reporting, reboot and the Home Assistant entity reset, which move there from the Firmware page (#164)
@@ -25,8 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Removed the Oat JavaScript library from the web UI, which only the narrow-screen menu button used; that now lives in the project's own script, saving 5.6 KB of flash and a request on first page load (#164)
 - Removed the `/api/test_decode` HTTP endpoint, which ran a POSTed hex frame through the live decoder and so could change the real pool state and publish it to MQTT. To try a frame, send it to the bus from the Debug Log page or the TCP port (#167)
-### Deprecated
-### Security
+
 
 ## [1.22.1] - 2026-11-20
 ### Changed
