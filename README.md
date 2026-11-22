@@ -204,7 +204,6 @@ The device serves a small web UI and JSON API at `http://poolcontrol-AABBCC.loca
 | `/unknown_msgs_view` | Bus messages the decoder has no handler for, with a button to clear the buffer |
 | `/unknown_msgs` | The same buffer as JSON |
 | `/log_view` | Live debug log with a Download button — see [Debug Log page](#debug-log-page) |
-| `/api/test_decode` | POST a hex frame to run it through the decoder — see [Testing message decoding](#testing-message-decoding) |
 | `/reboot`, `/ha-reset` | POST endpoints behind the Reboot and Reset entities buttons on the update page |
 | `/update/auto_check?enabled=0\|1` | POST endpoint behind the update page's **Automatically check for new releases** checkbox |
 | `/usage_report?enabled=0\|1` | POST endpoint behind the update page's usage reporting checkbox — see [Usage Reporting](#usage-reporting) |
@@ -283,41 +282,6 @@ To send a raw command to the bus, type the bytes as a hex string and press Enter
 1. **PuTTY (recommended)** — [download it](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html), set **Connection type** to **Raw**, enter `poolcontrol-A1B2C3.local` as the host and `7373` as the port, then click **Open**.
 2. **Telnet** — if the client is enabled (Control Panel → Programs → Turn Windows features on/off → Telnet Client): `telnet poolcontrol-A1B2C3.local 7373`
 3. **WSL** — use `nc` exactly as on Mac/Linux.
-
-### Testing message decoding
-
-You can test individual messages against the decoder using the HTTP API endpoint:
-
-```bash
-curl -X POST http://poolcontrol-A1B2C3.local/api/test_decode \
-  -d "02 00 50 FF FF 80 00 38 0F 17 D0 01 02 1A 03"
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "decoded": true,
-  "length": 15,
-  "hex": "02 00 50 FF FF 80 00 38 0F 17 D0 01 02 1A 03",
-  "message": "Check ESP logs for decode details"
-}
-```
-
-- `decoded: true` - Pattern matched and message was decoded
-- `decoded: false` - Unknown message type
-
-**To see full decode details**, monitor the ESP logs:
-```bash
-idf.py monitor
-```
-
-You'll see output like:
-```
-I (12345) MSG_DECODER: [Controller -> Broadcast] Lighting zone 1 state - On
-```
-
-This allows you to quickly test message patterns and verify decoder behavior without needing to send messages to the actual bus.
 
 ### Message counters
 

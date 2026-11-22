@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the web UI WiFi page saying "Connected!" before the device had joined the new network; it now opens the device by its `.local` name once it has restarted, since its address may change. Saving MQTT settings no longer reloads the page after 2 seconds, usually before the device was back (#164)
 ### Removed
 - Removed the Oat JavaScript library from the web UI, which only the narrow-screen menu button used; that now lives in the project's own script, saving 5.6 KB of flash and a request on first page load (#164)
+- Removed the `/api/test_decode` HTTP endpoint, which ran a POSTed hex frame through the live decoder and so could change the real pool state and publish it to MQTT. To try a frame, send it to the bus from the Debug Log page or the TCP port (#167)
 ### Deprecated
 ### Security
 
