@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 ### Changed
 ### Fixed
+- Fixed timer and favourite changes made at the Touchscreen never reaching Home Assistant or the web UI on installs without an Internet Gateway, until the bridge restarted (#155). The Touchscreen doesn't announce these edits on the bus, so with no gateway present the bridge now re-reads those registers every 20 minutes
 ### Removed
 ### Deprecated
 ### Security
