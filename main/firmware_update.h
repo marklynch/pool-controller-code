@@ -10,10 +10,10 @@
 // ======================================================
 // GitHub-backed firmware update
 //
-// Periodically checks the project's GitHub "latest release" and compares its
-// version tag against the running firmware. When a newer release is available
-// it can be installed over-the-air by pulling the release's update binary
-// directly from GitHub (esp_https_ota), triggered either from the web UI or
+// Periodically checks the project's recent GitHub releases and compares the
+// newest stable one against the running firmware. When a newer release is
+// available it can be installed over-the-air by pulling the release's update
+// binary directly from GitHub (esp_https_ota), triggered either from the web UI or
 // the Home Assistant "update" entity.
 // ======================================================
 
@@ -31,8 +31,12 @@ typedef enum {
 typedef struct {
     fw_update_state_t state;
     char installed_version[FW_UPDATE_VERSION_LEN]; // Running firmware version (esp_app_desc)
-    char latest_version[FW_UPDATE_VERSION_LEN];    // Latest GitHub release tag, "" if unknown
-    // Most-recent release tags, newest first (versions[0] == latest_version).
+    // Release offered as the update: the newest stable release, or for an
+    // installed release candidate, the newest release not older than it.
+    // "" if unknown or none qualifies (see firmware_version_select_latest).
+    char latest_version[FW_UPDATE_VERSION_LEN];
+    // Most-recent release tags in feed order, newest first, release
+    // candidates included (installable by explicit choice).
     char versions[FW_UPDATE_MAX_VERSIONS][FW_UPDATE_VERSION_LEN];
     int  version_count;         // Number of valid entries in versions[]
     char release_url[160];      // URL of the latest release page, "" if unknown
@@ -85,10 +89,5 @@ uint32_t firmware_update_bootloader_version(void);
 
 // True if the bootloader in flash supports rolling back a failed update.
 bool firmware_update_bootloader_has_rollback(void);
-
-// Parse a version string into {major, minor, patch}. Tolerates a leading 'v'
-// and any trailing "-<n>-g<hash>[-dirty]" suffix from `git describe`; missing
-// or unparseable parts are 0 (e.g. an untagged build's bare hash is 0.0.0).
-void firmware_update_parse_version(const char *s, int out[3]);
 
 #endif // FIRMWARE_UPDATE_H

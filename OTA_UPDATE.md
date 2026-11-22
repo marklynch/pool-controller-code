@@ -17,7 +17,7 @@ There are three ways to update:
 ### How it works
 
 - On boot (after a short delay) and every `FW_UPDATE_CHECK_INTERVAL_S` (default 12 h), the firmware fetches the releases Atom feed `https://github.com/<owner>/<repo>/releases.atom` and reads the tags of the most recent releases (newest first) — the latest plus up to `FW_UPDATE_MAX_VERSIONS - 1` prior versions (default: latest + 4). This uses no GitHub API token and no rate-limited JSON call. The feed is parsed as it streams, so a repo with large release notes doesn't need a big buffer.
-- The newest tag is compared against the running build's version (`major.minor.patch`, ignoring any `git describe` suffix). If it is newer, an update is flagged as available.
+- The newest **stable** release among those tags is compared against the running build's version (`major.minor.patch`, ignoring any `git describe` suffix). If it is newer, an update is flagged as available. Release candidates (`-rc<N>` tags, e.g. `v2.0.0-rc1`) sort before their release (`v1.22.1 < v2.0.0-rc1 < v2.0.0-rc2 < v2.0.0`) and are never offered automatically, unless the running build is itself a release candidate: then the newest release not older than it, rc or stable, is offered. If the tracked tags hold no stable release, a stable build is offered nothing.
 - Installing pulls the chosen release's asset `pool-controller-update-<tag>.bin` (the artifact the build workflow uploads) directly over HTTPS via `esp_https_ota`, writing to the inactive OTA partition, then reboots. The requested version must be one of the recently discovered releases, so the download URL can't be pointed at an arbitrary target.
 
 The GitHub owner/repo, asset name prefix, number of versions tracked, check interval, and timeouts are configured in `main/config.h` (`FW_UPDATE_*`).
@@ -26,7 +26,7 @@ The GitHub owner/repo, asset name prefix, number of versions tracked, check inte
 
 1. Open `http://<device-ip>/update`.
 2. The **Update from GitHub** section shows whether you are up to date or a newer release is available (with a link to the release notes).
-3. Choose a version from the dropdown — the latest plus the previous few releases, so you can update or **roll back** to a specific version — then click **Install selected version**. Click **Check for updates** to re-query GitHub immediately. Progress is shown; the device reboots when finished.
+3. Choose a version from the dropdown — the recent releases, with the offered one marked *(latest)* and release candidates marked *(pre-release)*, so you can update, try a release candidate, or **roll back** to a specific version — then click **Install selected version**. Click **Check for updates** to re-query GitHub immediately. Progress is shown; the device reboots when finished.
 4. Untick **Automatically check for new releases** to stop the 12-hourly check. **Check for updates** (and Home Assistant's check button) still work while it's off. The setting is remembered across reboots and updates.
 
 > Rolling back requires that the older release still has a `pool-controller-update-<tag>.bin` asset attached; releases published before this asset naming was in place cannot be installed this way.
@@ -172,6 +172,7 @@ The GitHub install endpoints (`POST /update/github`, `POST /update`) and the MQT
 
 - `partitions.csv` - Partition table definition
 - `main/firmware_update.c/.h` - GitHub release check + pull-based OTA
+- `main/firmware_version.c/.h` - Version tag parsing, ordering (release candidates included) and choosing the release to offer
 - `main/web_handlers.c` - Manual upload handler + `/update/check` and `/update/github` endpoints
 - `main/mqtt_discovery.c` - Home Assistant `update` entity discovery
 - `main/mqtt_poolclient.c` - Subscribes to and routes the MQTT install command

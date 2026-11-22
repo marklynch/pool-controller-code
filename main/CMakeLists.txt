@@ -26,6 +26,7 @@ idf_component_register(
         "dns_server.c"
         "heap_monitor.c"
         "firmware_update.c"
+        "firmware_version.c"
         "usage_report.c"
         "nvs_settings.c"
     INCLUDE_DIRS

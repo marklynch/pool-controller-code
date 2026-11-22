@@ -39,6 +39,7 @@ Requires ESP-IDF v5.5+ with environment sourced (`. $IDF_PATH/export.sh`).
 - **mqtt_discovery.c/.h**: Home Assistant MQTT discovery integration
 - **mqtt_commands.c/.h**: MQTT command subscription and handling
 - **firmware_update.c/.h**: GitHub release checker + pull-based OTA. Periodically reads the repo's recent release tags from the streamed `releases.atom` feed (latest + prior versions), compares the newest against the running build, and can install any tracked release's update binary over HTTPS (`esp_https_ota`). Exposes status + the version list to the web UI and the Home Assistant `update` entity. All checks run in its check task; the web and HA buttons only wake it (`firmware_update_request_check`). The periodic check can be turned off (NVS `fw_update/auto_check`), but the task keeps its schedule for the usage ping
+- **firmware_version.c/.h**: Version tag parsing and ordering (`v1.22.1 < v2.0.0-rc1 < v2.0.0`, `git describe` suffixes ignored) and the choice of release to offer: the newest stable one, or for an installed release candidate the newest release not older than it. Pure C, host-tested
 - **usage_report.c/.h**: Anonymous usage ping (`POST {"id","v"}` to `USAGE_REPORT_URL`), sent from the `firmware_update` check task on its fixed schedule only (shortly after boot, then every 12 h, whether or not automatic release checks are on) — never on a requested "check now". The install ID is 8 random bytes in NVS (`usage/id`), never derived from the MAC or serial. On by default; the enabled flag (`usage/enabled`) is set from the update page. Opting out sets `usage/del_pending`, and the check task (woken via `firmware_update_wake`) sends `DELETE USAGE_REPORT_URL/<id>` until the server confirms; the ID is kept. Pings are fire-and-forget: no retries, failures logged at debug level. The Cloudflare Worker + D1 backend (serving `api.poolcontrol.io`) lives in `api/`
 - **nvs_settings.c/.h**: Single-u8 NVS settings helpers (`nvs_settings_get_u8`, `nvs_settings_set_u8`), for modules that persist a flag in their own namespace
 - **web_handlers.c/.h**: HTTP server endpoints (status, provisioning, MQTT config) and the web UI pages. Every page goes through `send_page_start`/`send_page_end` (shell plus the grouped sidebar from `NAV_ITEMS`); chunks go out via `send_str`, which skips empty strings since a zero-length chunk ends the response, and JSON replies via `send_json`. Styling builds on Oat (`static/oat.min.css`) with the project theme, light/dark tokens and icon masks in `static/app.css`; helpers shared by pages live in `static/app.js` (alerts, restart confirmation and countdown (`confirmRestart`, `restartReload`, used by every action that restarts the device), settings switches, date and download-name formatting, message and resync summaries); put anything a second page needs there rather than in a page's inline script. Both are linked with `?v=<ELF hash>` so a new build is never served a cached older copy
@@ -94,6 +95,7 @@ main.c
   ├─> register_requester (auto-poll missing registers when GW absent)
   │     └─> bus (send CMD 0x39 requests)
   ├─> version_broadcast (announce our CMD 0x0A firmware version)
+  │     ├─> firmware_version (parse the running version)
   │     └─> bus (send CMD 0x0A)
   ├─> mqtt_poolclient (MQTT connection)
   │     ├─> mqtt_discovery (Home Assistant integration)
@@ -102,10 +104,12 @@ main.c
   │     └─> firmware_update (publish update state, handle install command)
   ├─> usage_report (load/create the anonymous install ID)
   ├─> firmware_update (GitHub release check + pull OTA)
+  │     ├─> firmware_version (order tags, pick the release to offer)
   │     ├─> mqtt_poolclient (publish HA update entity state)
   │     └─> usage_report (anonymous ping after each release check)
   ├─> web_handlers (HTTP API)
   │     ├─> firmware_update (check/install from GitHub)
+  │     ├─> firmware_version (flag pre-release tags in the version list)
   │     ├─> usage_report (enable/disable from the update page)
   │     └─> web_log (/ws/log WebSocket endpoint)
   │           └─> bus (send hex frames typed into the Debug Log page)

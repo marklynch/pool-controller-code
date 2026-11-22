@@ -15,6 +15,7 @@
 #include "esp_https_ota.h"
 #include "esp_crt_bundle.h"
 #include "nvs_settings.h"
+#include "firmware_version.h"
 
 #include "cJSON.h"
 
@@ -92,30 +93,6 @@ void firmware_update_get_status(fw_update_status_t *out)
 }
 
 // ======================================================
-// Version comparison (major.minor.patch, tolerant of a leading 'v' and any
-// trailing "-<n>-g<hash>[-dirty]" suffix produced by `git describe`)
-// ======================================================
-
-void firmware_update_parse_version(const char *s, int out[3])
-{
-    out[0] = out[1] = out[2] = 0;
-    if (!s) return;
-    if (*s == 'v' || *s == 'V') s++;
-    int idx = 0;
-    while (*s && idx < 3) {
-        if (!isdigit((unsigned char)*s)) break;
-        int v = 0;
-        while (isdigit((unsigned char)*s)) {
-            v = v * 10 + (*s - '0');
-            s++;
-        }
-        out[idx++] = v;
-        if (*s == '.') s++;
-        else break;
-    }
-}
-
-// ======================================================
 // Bootloader version
 // ======================================================
 
@@ -137,18 +114,6 @@ uint32_t firmware_update_bootloader_version(void)
 bool firmware_update_bootloader_has_rollback(void)
 {
     return firmware_update_bootloader_version() >= BOOTLOADER_ROLLBACK_MIN_VERSION;
-}
-
-// Returns <0 if a<b, 0 if equal, >0 if a>b (by major.minor.patch).
-static int semver_cmp(const char *a, const char *b)
-{
-    int va[3], vb[3];
-    firmware_update_parse_version(a, va);
-    firmware_update_parse_version(b, vb);
-    for (int i = 0; i < 3; i++) {
-        if (va[i] != vb[i]) return va[i] < vb[i] ? -1 : 1;
-    }
-    return 0;
 }
 
 // ======================================================
@@ -174,10 +139,11 @@ void firmware_update_publish_mqtt_state(void)
     cJSON_AddStringToObject(root, "installed_version", st.installed_version);
     // HA compares installed/latest itself and treats an uncomparable pair
     // (e.g. a git-describe dev build like v1.7.0-11-g<hash>-dirty vs v1.7.0)
-    // as "update available". Our semver_cmp already made that call, so only
-    // publish the real tag when an update is actually available; otherwise
-    // mirror installed so HA shows "up to date" (also covers the not-yet-
-    // checked case, where latest is still empty).
+    // as "update available". firmware_version_cmp already made that call, so
+    // only publish the real tag when an update is actually available;
+    // otherwise mirror installed so HA shows "up to date" (also covers the
+    // not-yet-checked case and a feed with no release to offer, where latest
+    // is empty).
     cJSON_AddStringToObject(root, "latest_version",
                             (st.update_available && st.latest_version[0])
                                 ? st.latest_version : st.installed_version);
@@ -394,24 +360,36 @@ static void run_check(void)
     }
 
     if (xSemaphoreTake(s_status_lock, portMAX_DELAY) == pdTRUE) {
+        // All recent tags, release candidates included, stay installable by
+        // explicit choice; only the offered latest skips rcs (see
+        // firmware_version_select_latest).
+        const char *tag_ptrs[FW_UPDATE_MAX_VERSIONS];
         s_status.version_count = count;
         for (int i = 0; i < count; i++) {
             strncpy(s_status.versions[i], tags[i], FW_UPDATE_VERSION_LEN - 1);
             s_status.versions[i][FW_UPDATE_VERSION_LEN - 1] = '\0';
+            tag_ptrs[i] = s_status.versions[i];
         }
-        // versions[0] is the newest release.
-        strncpy(s_status.latest_version, tags[0], sizeof(s_status.latest_version) - 1);
-        s_status.latest_version[sizeof(s_status.latest_version) - 1] = '\0';
-        snprintf(s_status.release_url, sizeof(s_status.release_url),
-                 "https://github.com/%s/%s/releases/tag/%s",
-                 FW_UPDATE_GITHUB_OWNER, FW_UPDATE_GITHUB_REPO, s_status.latest_version);
-        s_status.update_available =
-            (semver_cmp(s_status.installed_version, s_status.latest_version) < 0);
+        int latest = firmware_version_select_latest(s_status.installed_version,
+                                                    tag_ptrs, count);
+        if (latest >= 0) {
+            strncpy(s_status.latest_version, tags[latest], sizeof(s_status.latest_version) - 1);
+            s_status.latest_version[sizeof(s_status.latest_version) - 1] = '\0';
+            snprintf(s_status.release_url, sizeof(s_status.release_url),
+                     "https://github.com/%s/%s/releases/tag/%s",
+                     FW_UPDATE_GITHUB_OWNER, FW_UPDATE_GITHUB_REPO, s_status.latest_version);
+        } else {
+            s_status.latest_version[0] = '\0';
+            s_status.release_url[0] = '\0';
+        }
+        s_status.update_available = latest >= 0 &&
+            firmware_version_cmp(s_status.installed_version, s_status.latest_version) < 0;
         s_status.checked = true;
         s_status.last_error[0] = '\0';
         s_status.state = FW_UPDATE_STATE_IDLE;
         ESP_LOGI(TAG, "installed=%s latest=%s (%d releases) update_available=%d",
-                 s_status.installed_version, s_status.latest_version,
+                 s_status.installed_version,
+                 s_status.latest_version[0] ? s_status.latest_version : "(none offered)",
                  count, s_status.update_available);
         xSemaphoreGive(s_status_lock);
     }

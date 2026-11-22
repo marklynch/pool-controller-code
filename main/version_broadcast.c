@@ -1,6 +1,6 @@
 #include "version_broadcast.h"
 #include "bus.h"
-#include "firmware_update.h"
+#include "firmware_version.h"
 #include "pool_state.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -25,10 +25,10 @@ static void version_broadcast_task(void *arg)
     (void)arg;
 
     const esp_app_desc_t *app = esp_app_get_description();
-    int ver[3];
-    firmware_update_parse_version(app->version, ver);
-    uint8_t major = clamp_u8(ver[0]);
-    uint8_t minor = clamp_u8(ver[1]);
+    fw_version_t ver;
+    firmware_version_parse(app->version, &ver);
+    uint8_t major = clamp_u8(ver.major);
+    uint8_t minor = clamp_u8(ver.minor);
 
     // 02 AC 1D FF FF 80 00 0A 0E <hdr_ck> <major> <minor> <data_ck> 03
     uint8_t frame[14] = {

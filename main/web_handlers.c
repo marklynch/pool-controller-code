@@ -8,6 +8,7 @@
 #include "unknown_buffer.h"
 #include "device_serial.h"
 #include "firmware_update.h"
+#include "firmware_version.h"
 #include "usage_report.h"
 #include "web_log.h"
 #include "esp_wifi.h"
@@ -1603,13 +1604,18 @@ static const char FIRMWARE_PAGE_GITHUB[] =
     "let polling=false;let last='';let rebooting=false;"
     // Populate the version dropdown (newest first) only when the list
     // changes, so an in-progress user selection isn't reset by polling.
-    "function fill(list){"
-    "const sig=(list||[]).join(',');"
+    // "(latest)" marks the release offered as the update, which skips
+    // release candidates (unless one is installed), so it need not be the
+    // first entry.
+    "function fill(list,pre,latest){"
+    "const sig=(list||[]).join(',')+'|'+latest;"
     "if(vs.dataset.sig===sig)return;"
     "vs.dataset.sig=sig;vs.innerHTML='';"
     "(list||[]).forEach(function(v,i){"
     "const o=document.createElement('option');"
-    "o.value=v;o.textContent=v+(i===0?' (latest)':'');vs.appendChild(o);});}"
+    "const t=[];if(v===latest)t.push('latest');if(pre&&pre[i])t.push('pre-release');"
+    "o.value=v;o.textContent=v+(t.length?' ('+t.join(', ')+')':'');"
+    "if(v===latest)o.selected=true;vs.appendChild(o);});}"
     "function render(d){"
     "if(d.state==='downloading'){"
     "p.hidden=false;p.value=d.progress||0;"
@@ -1622,7 +1628,7 @@ static const char FIRMWARE_PAGE_GITHUB[] =
     // Hidden while a check runs, so a second click can't start a second poll loop.
     "bC.hidden=d.state==='checking';"
     "const have=!!(d.versions&&d.versions.length);"
-    "if(have)fill(d.versions);"
+    "if(have)fill(d.versions,d.prerelease,d.latest);"
     "vs.hidden=bI.hidden=!have;"
     "if(d.state==='checking'){showAlert(s,'Checking for the latest release…');}"
     "else if(d.state==='error'&&d.error){showAlert(s,'Error: '+d.error,'danger');}"
@@ -1927,13 +1933,18 @@ static esp_err_t update_check_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "progress", st.progress_pct);
     cJSON_AddStringToObject(root, "error", st.last_error);
 
-    // Recent releases, newest first (latest + up to 4 prior), so the UI can
-    // offer installing or rolling back to a specific version.
+    // Recent releases, newest first, so the UI can offer installing or
+    // rolling back to a specific version. prerelease[i] flags versions[i] as
+    // a release candidate, offered as "latest" only to an installed one.
     cJSON *versions = cJSON_CreateArray();
+    cJSON *prerelease = cJSON_CreateArray();
     for (int i = 0; i < st.version_count && i < FW_UPDATE_MAX_VERSIONS; i++) {
         cJSON_AddItemToArray(versions, cJSON_CreateString(st.versions[i]));
+        cJSON_AddItemToArray(prerelease,
+                             cJSON_CreateBool(firmware_version_is_prerelease(st.versions[i])));
     }
     cJSON_AddItemToObject(root, "versions", versions);
+    cJSON_AddItemToObject(root, "prerelease", prerelease);
 
     char *json = cJSON_PrintUnformatted(root);
     send_json(req, json ? json : "{}");
