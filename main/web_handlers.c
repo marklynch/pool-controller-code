@@ -483,7 +483,7 @@ static esp_err_t device_get_handler(httpd_req_t *req)
 
     send_page_start(req, "Device", PAGE_DEVICE);
     send_str(req, "<div class='page-head'><h1>Device</h1></div>"
-                  "<div class='cards'>"
+                  "<div class='cards wide'>"
                   "<section class='card'><h2><i class='i i-cpu' aria-hidden='true'></i>System</h2><dl class='kv'>");
 
     const char *mdns_host = wifi_get_mdns_hostname();
