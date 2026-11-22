@@ -2049,81 +2049,6 @@ static esp_err_t ha_reset_post_handler(httpd_req_t *req)
 }
 
 // ======================================================
-// Test Decode Handler
-// ======================================================
-
-// Forward declaration - defined in message_decoder.c
-extern bool decode_message(const uint8_t *data, int len, message_decoder_context_t *ctx);
-extern message_decoder_context_t s_decoder_context;
-
-static esp_err_t test_decode_post_handler(httpd_req_t *req)
-{
-    char content[512];
-    int ret = httpd_req_recv(req, content, sizeof(content) - 1);
-    if (ret <= 0) {
-        send_json(req, "{\"success\":false,\"message\":\"Invalid request\"}");
-        return ESP_FAIL;
-    }
-    content[ret] = '\0';
-
-    // Parse hex string into bytes
-    uint8_t msg_buf[256];
-    int msg_len = 0;
-    const char *p = content;
-
-    while (*p != '\0' && msg_len < (int)sizeof(msg_buf)) {
-        // Skip whitespace and newlines
-        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-        if (*p == '\0') break;
-
-        // Parse two hex digits
-        if (p[0] && p[1]) {
-            char hex_byte[3] = {p[0], p[1], 0};
-            char *endptr;
-            unsigned long val = strtoul(hex_byte, &endptr, 16);
-            if (endptr == hex_byte + 2) {
-                msg_buf[msg_len++] = (uint8_t)val;
-                p += 2;
-            } else {
-                // Invalid hex
-                send_json(req, "{\"success\":false,\"message\":\"Invalid hex string\"}");
-                return ESP_OK;
-            }
-        } else {
-            break;
-        }
-    }
-
-    if (msg_len == 0) {
-        send_json(req, "{\"success\":false,\"message\":\"No bytes parsed\"}");
-        return ESP_OK;
-    }
-
-    // Format message for response
-    char hex_str[3 * sizeof(msg_buf) + 1];
-    int pos = 0;
-    for (int i = 0; i < msg_len && pos < (int)sizeof(hex_str) - 4; i++) {
-        pos += snprintf(&hex_str[pos], sizeof(hex_str) - pos, "%02X ", msg_buf[i]);
-    }
-    hex_str[pos] = '\0';
-
-    // Run through decoder
-    bool decoded = decode_message(msg_buf, msg_len, &s_decoder_context);
-
-    // Build JSON response (hex_str can be up to 768 bytes, plus JSON structure)
-    char json_resp[1024];
-    snprintf(json_resp, sizeof(json_resp),
-             "{\"success\":true,\"decoded\":%s,\"length\":%d,\"hex\":\"%s\",\"message\":\"Check ESP logs for decode details\"}",
-             decoded ? "true" : "false",
-             msg_len,
-             hex_str);
-
-    send_json(req, json_resp);
-
-    return ESP_OK;
-}
-
-// ======================================================
 // Unknown Messages Handlers
 // ======================================================
 
@@ -2603,12 +2528,6 @@ static const httpd_uri_t ha_reset_post_uri = {
     .handler = ha_reset_post_handler
 };
 
-static const httpd_uri_t test_decode_uri = {
-    .uri = "/api/test_decode",
-    .method = HTTP_POST,
-    .handler = test_decode_post_handler
-};
-
 static const httpd_uri_t unknown_msgs_json_uri = {
     .uri = "/unknown_msgs",
     .method = HTTP_GET,
@@ -2815,7 +2734,6 @@ esp_err_t web_handlers_register(httpd_handle_t server)
     httpd_register_uri_handler(server, &usage_report_post_uri);
     httpd_register_uri_handler(server, &reboot_post_uri);
     httpd_register_uri_handler(server, &ha_reset_post_uri);
-    httpd_register_uri_handler(server, &test_decode_uri);
     httpd_register_uri_handler(server, &unknown_msgs_json_uri);
     httpd_register_uri_handler(server, &unknown_msgs_clear_uri);
     httpd_register_uri_handler(server, &unknown_msgs_view_uri);
