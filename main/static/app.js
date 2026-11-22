@@ -53,13 +53,24 @@ function bindToggle(id, url) {
   });
 }
 
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+// A date and time for display, in local time with the zone, e.g.
+// "22/11/2026, 13:00:54 GMT+11". Every page shows times this way.
+function fmtDateTime(d) {
+  return d.toLocaleString('en-GB', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false, timeZoneName: 'short'
+  });
+}
+
 // File name for a download: <prefix>-YYYYMMDD-HHMMSS.<ext>, in local time
 // at `d` (default now).
 function stampedName(prefix, ext, d) {
   d = d || new Date();
-  const p2 = n => String(n).padStart(2, '0');
-  return prefix + '-' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '-' +
-    p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds()) + '.' + ext;
+  return prefix + '-' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '-' +
+    pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()) + '.' + ext;
 }
 
 // Make the link `id` save its same-origin JSON target as a timestamped file
@@ -67,4 +78,20 @@ function stampedName(prefix, ext, d) {
 function bindJsonDownload(id, prefix) {
   const a = document.getElementById(id);
   a.addEventListener('click', function () { a.download = stampedName(prefix, 'json'); });
+}
+
+// /status message_counts as text, e.g.
+// "118,439 decoded, 4,136 unknown (96.6% decoded)".
+function messageSummary(mc) {
+  const tot = mc.decoded + mc.unknown;
+  return mc.decoded.toLocaleString() + ' decoded, ' + mc.unknown.toLocaleString() + ' unknown' +
+    (tot > 0 ? ' (' + (mc.decoded / tot * 100).toFixed(1) + '% decoded)' : '');
+}
+
+// /status resyncs as text: the total, then each non-zero reason, e.g.
+// "44 (6 no-start, 38 header-checksum)".
+function resyncSummary(rs) {
+  const parts = Object.keys(rs).filter(k => k !== 'total' && rs[k])
+    .map(k => rs[k] + ' ' + k.replace(/_/g, '-'));
+  return (rs.total || 0) + (parts.length ? ' (' + parts.join(', ') + ')' : '');
 }

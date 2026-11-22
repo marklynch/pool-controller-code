@@ -71,6 +71,13 @@ static char *html_escape(const char *input)
     return out;
 }
 
+// Sends a complete JSON response.
+static esp_err_t send_json(httpd_req_t *req, const char *json)
+{
+    httpd_resp_set_type(req, "application/json; charset=UTF-8");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
 // ======================================================
 // Common HTML Page Parts (shell, navigation, footer)
 // ======================================================
@@ -212,19 +219,37 @@ static void format_uptime(char *buf, size_t len)
     else            snprintf(buf, len, "%lum %lus", (unsigned long)m, (unsigned long)s);
 }
 
-// The connected AP's SSID, HTML-escaped (heap; caller frees), and its RSSI.
-// Returns NULL when the station isn't connected (or on alloc failure).
-static char *wifi_ap_escaped(int8_t *rssi)
+// Connection state shown by the dashboard chips and the Device page. Strings
+// are HTML-escaped copies on the heap; release with conn_status_free().
+typedef struct {
+    char *ssid_esc;         // NULL when the station isn't connected
+    int8_t rssi;
+    bool mqtt_enabled;
+    bool mqtt_connected;
+    char *broker_esc;
+} conn_status_t;
+
+static void conn_status_load(conn_status_t *st)
 {
+    *st = (conn_status_t){0};
     wifi_ap_record_t ap_info = {0};
-    if (esp_wifi_sta_get_ap_info(&ap_info) != ESP_OK) {
-        return NULL;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        char ssid[33];
+        memcpy(ssid, ap_info.ssid, sizeof(ssid) - 1);
+        ssid[sizeof(ssid) - 1] = '\0';
+        st->ssid_esc = html_escape(ssid);
+        st->rssi = ap_info.rssi;
     }
-    char ssid[33];
-    memcpy(ssid, ap_info.ssid, sizeof(ssid) - 1);
-    ssid[sizeof(ssid) - 1] = '\0';
-    *rssi = ap_info.rssi;
-    return html_escape(ssid);
+    mqtt_config_t mqtt_config = {0};
+    st->mqtt_enabled = mqtt_load_config(&mqtt_config) && mqtt_config.enabled;
+    st->mqtt_connected = mqtt_client_is_connected();
+    st->broker_esc = html_escape(mqtt_config.broker);
+}
+
+static void conn_status_free(conn_status_t *st)
+{
+    free(st->ssid_esc);
+    free(st->broker_esc);
 }
 
 static const char DASHBOARD_PAGE_HEAD[] =
@@ -325,11 +350,8 @@ static const char DASHBOARD_PAGE_BODY[] =
 
 static esp_err_t home_get_handler(httpd_req_t *req)
 {
-    int8_t rssi = 0;
-    char *ssid_esc = wifi_ap_escaped(&rssi);
-    bool mqtt_connected = mqtt_client_is_connected();
-    mqtt_config_t mqtt_config = {0};
-    bool mqtt_enabled = mqtt_load_config(&mqtt_config) && mqtt_config.enabled;
+    conn_status_t conn;
+    conn_status_load(&conn);
     char uptime[32];
     format_uptime(uptime, sizeof(uptime));
     char num[16];
@@ -338,19 +360,19 @@ static esp_err_t home_get_handler(httpd_req_t *req)
     send_str(req, DASHBOARD_PAGE_HEAD);
 
     // Connection chips, rendered here since /status doesn't carry them
-    if (ssid_esc) {
-        snprintf(num, sizeof(num), "%d", rssi);
+    if (conn.ssid_esc) {
+        snprintf(num, sizeof(num), "%d", conn.rssi);
         send_str(req, "<a class='chip' href='/wifi'><span class='dot ok'></span>WiFi ");
-        send_str(req, ssid_esc);
+        send_str(req, conn.ssid_esc);
         send_str(req, ", ");
         send_str(req, num);
         send_str(req, " dBm</a>");
     } else {
         send_str(req, "<a class='chip' href='/wifi'><span class='dot bad'></span>WiFi not connected</a>");
     }
-    if (!mqtt_enabled) {
+    if (!conn.mqtt_enabled) {
         send_str(req, "<a class='chip' href='/mqtt_config'><span class='dot'></span>MQTT off</a>");
-    } else if (mqtt_connected) {
+    } else if (conn.mqtt_connected) {
         send_str(req, "<a class='chip' href='/mqtt_config'><span class='dot ok'></span>MQTT connected</a>");
     } else {
         send_str(req, "<a class='chip' href='/mqtt_config'><span class='dot bad'></span>MQTT disconnected</a>");
@@ -361,7 +383,7 @@ static esp_err_t home_get_handler(httpd_req_t *req)
 
     send_str(req, DASHBOARD_PAGE_BODY);
     send_page_end(req);
-    free(ssid_esc);
+    conn_status_free(&conn);
     return ESP_OK;
 }
 
@@ -398,15 +420,8 @@ static const char DEVICE_PAGE_TAIL[] =
     "</section></div>"
     "<script>"
     "fetch('/status').then(r=>r.json()).then(d=>{"
-    "const mc=d.message_counts;"
-    "if(mc){const tot=mc.decoded+mc.unknown;"
-    "document.getElementById('msgs').textContent=mc.decoded.toLocaleString()+' decoded, '"
-    "+mc.unknown.toLocaleString()+' unknown'+(tot>0?' ('+(mc.decoded/tot*100).toFixed(1)+'% decoded)':'');}"
-    "const rs=d.resyncs;"
-    "if(rs){const names={no_start:'no-start',header_checksum:'header-checksum',bad_frame_type:'bad-frame-type',"
-    "bad_length:'bad-length',bad_end:'bad-end',data_checksum:'data-checksum',buffer_overflow:'overflow'};"
-    "const parts=Object.keys(names).filter(k=>rs[k]).map(k=>rs[k]+' '+names[k]);"
-    "document.getElementById('resyncs').textContent=(rs.total||0)+(parts.length?' ('+parts.join(', ')+')':'');}"
+    "if(d.message_counts)document.getElementById('msgs').textContent=messageSummary(d.message_counts);"
+    "if(d.resyncs)document.getElementById('resyncs').textContent=resyncSummary(d.resyncs);"
     "const m=d.memory;"
     "if(m)document.getElementById('mem').textContent=m.free_heap+' free (min '+m.min_free_heap+')';"
     "}).catch(()=>{['msgs','resyncs','mem'].forEach(id=>document.getElementById(id).textContent='Unavailable');});"
@@ -446,12 +461,8 @@ static esp_err_t device_get_handler(httpd_req_t *req)
     const esp_app_desc_t *app_desc = esp_app_get_description();
     char buf[160];
 
-    int8_t rssi = 0;
-    char *ssid_esc = wifi_ap_escaped(&rssi);
-    bool mqtt_connected = mqtt_client_is_connected();
-    mqtt_config_t mqtt_config = {0};
-    bool mqtt_enabled = mqtt_load_config(&mqtt_config) && mqtt_config.enabled;
-    char *broker_esc = html_escape(mqtt_config.broker);
+    conn_status_t conn;
+    conn_status_load(&conn);
 
     send_page_start(req, "Device", PAGE_DEVICE);
     send_str(req, "<div class='page-head'><h1>Device</h1></div>"
@@ -462,19 +473,19 @@ static esp_err_t device_get_handler(httpd_req_t *req)
     snprintf(buf, sizeof(buf), "<a href='http://%s.local/'>%s.local</a>", mdns_host, mdns_host);
     send_kv(req, "Hostname", buf);
     send_kv(req, "IP address", wifi_get_device_ip());
-    if (ssid_esc) {
+    if (conn.ssid_esc) {
         send_str(req, "<dt>WiFi</dt><dd>");
-        send_str(req, ssid_esc);
-        snprintf(buf, sizeof(buf), " (%d dBm)</dd>", rssi);
+        send_str(req, conn.ssid_esc);
+        snprintf(buf, sizeof(buf), " (%d dBm)</dd>", conn.rssi);
         send_str(req, buf);
     } else {
         send_kv(req, "WiFi", "Not connected");
     }
-    if (mqtt_enabled) {
+    if (conn.mqtt_enabled) {
         send_str(req, "<dt>MQTT</dt><dd>");
-        send_str(req, mqtt_connected ? "Connected" : "Disconnected");
+        send_str(req, conn.mqtt_connected ? "Connected" : "Disconnected");
         send_str(req, " (");
-        send_str(req, broker_esc);
+        send_str(req, conn.broker_esc);
         send_str(req, ")</dd>");
     } else {
         send_kv(req, "MQTT", "Disabled");
@@ -503,8 +514,7 @@ static esp_err_t device_get_handler(httpd_req_t *req)
     send_str(req, DEVICE_PAGE_TAIL);
     send_page_end(req);
 
-    free(broker_esc);
-    free(ssid_esc);
+    conn_status_free(&conn);
     return ESP_OK;
 }
 
@@ -601,8 +611,7 @@ static esp_err_t scan_send_results(httpd_req_t *req)
     esp_wifi_scan_get_ap_num(&ap_count);
 
     if (ap_count == 0) {
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_sendstr(req, "[]");
+        send_json(req, "[]");
         return ESP_OK;
     }
 
@@ -686,8 +695,7 @@ static esp_err_t scan_send_results(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json_resp, strlen(json_resp));
+    send_json(req, json_resp);
 
     cJSON_free(json_resp);
     free(ap_list);
@@ -735,8 +743,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     }
 
     httpd_resp_set_status(req, "202 Accepted");
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_sendstr(req, "{\"scanning\":true}");
+    send_json(req, "{\"scanning\":true}");
     return ESP_OK;
 }
 
@@ -776,9 +783,7 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
     }
 
     if (strlen(ssid) == 0) {
-        const char *resp = "{\"success\":false,\"message\":\"Invalid SSID\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Invalid SSID\"}");
         return ESP_OK;
     }
 
@@ -788,18 +793,14 @@ static esp_err_t provision_post_handler(httpd_req_t *req)
     esp_err_t err = wifi_credentials_save(ssid, password);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to save credentials to NVS: %s", esp_err_to_name(err));
-        const char *resp = "{\"success\":false,\"message\":\"Failed to save credentials\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Failed to save credentials\"}");
         return ESP_OK;
     }
 
     ESP_LOGI(TAG, "Credentials saved to NVS successfully");
 
     // Send success response
-    const char *resp = "{\"success\":true,\"message\":\"Connected! Device will restart...\"}";
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"Connected! Device will restart...\"}");
 
     // Restart device to apply new credentials
     vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
@@ -1313,8 +1314,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json_resp, strlen(json_resp));
+    send_json(req, json_resp);
 
     cJSON_free(json_resp);
     return ESP_OK;
@@ -1339,9 +1339,7 @@ static const char STATUS_VIEW_PAGE[] =
     "document.getElementById('status-content').textContent=JSON.stringify(data,null,2);"
     "let localTime='NTP not synced';"
     "if(data.current_time&&data.current_time!=='NTP not synced'){"
-    "const d=new Date(data.current_time.replace(' UTC','Z').replace(' ','T'));"
-    "const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;"
-    "localTime=d.toLocaleString()+' ('+tz+')';}"
+    "localTime=fmtDateTime(new Date(data.current_time.replace(' UTC','Z').replace(' ','T')));}"
     "const ti=document.getElementById('time-info');"
     "ti.textContent='Device time '+localTime+' \u00b7 last bus update '+data.time_since_last_update;"
     "ti.hidden=false;"
@@ -1502,16 +1500,12 @@ static esp_err_t mqtt_config_post_handler(httpd_req_t *req)
     // Save configuration
     esp_err_t err = mqtt_save_config(&config);
     if (err != ESP_OK) {
-        const char *resp = "{\"success\":false,\"message\":\"Failed to save config\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Failed to save config\"}");
         return ESP_OK;
     }
 
     // Send success response
-    const char *resp = "{\"success\":true,\"message\":\"MQTT config saved! Device will restart...\"}";
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"MQTT config saved! Device will restart...\"}");
 
     // Restart device to apply new MQTT config
     vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
@@ -1738,9 +1732,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     update_partition = esp_ota_get_next_update_partition(NULL);
     if (update_partition == NULL) {
         ESP_LOGE(TAG, "No OTA partition found");
-        const char *resp = "{\"success\":false,\"message\":\"No OTA partition configured\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"No OTA partition configured\"}");
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "Writing to partition: %s at offset 0x%lx", update_partition->label, update_partition->address);
@@ -1749,9 +1741,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     esp_err_t err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &ota_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
-        const char *resp = "{\"success\":false,\"message\":\"OTA begin failed\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"OTA begin failed\"}");
         return ESP_FAIL;
     }
 
@@ -1760,9 +1750,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     char *buf = malloc(buf_size);
     if (buf == NULL) {
         esp_ota_abort(ota_handle);
-        const char *resp = "{\"success\":false,\"message\":\"Memory allocation failed\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Memory allocation failed\"}");
         return ESP_FAIL;
     }
 
@@ -1771,9 +1759,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
         ESP_LOGE(TAG, "Invalid firmware size: %d (must be 1–%d bytes)", remaining, OTA_MAX_FIRMWARE_SIZE);
         free(buf);
         esp_ota_abort(ota_handle);
-        const char *resp = "{\"success\":false,\"message\":\"Invalid firmware size\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Invalid firmware size\"}");
         return ESP_FAIL;
     }
 
@@ -1796,9 +1782,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
                      recv_len, received, req->content_len);
             free(buf);
             esp_ota_abort(ota_handle);
-            const char *resp = "{\"success\":false,\"message\":\"Receive failed\"}";
-            httpd_resp_set_type(req, "application/json; charset=UTF-8");
-            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+            send_json(req, "{\"success\":false,\"message\":\"Receive failed\"}");
             return ESP_FAIL;
         }
 
@@ -1807,9 +1791,7 @@ static esp_err_t update_post_handler(httpd_req_t *req)
             ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
             free(buf);
             esp_ota_abort(ota_handle);
-            const char *resp = "{\"success\":false,\"message\":\"OTA write failed\"}";
-            httpd_resp_set_type(req, "application/json; charset=UTF-8");
-            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+            send_json(req, "{\"success\":false,\"message\":\"OTA write failed\"}");
             return ESP_FAIL;
         }
         received += recv_len;
@@ -1829,14 +1811,10 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     if (err != ESP_OK) {
         if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
             ESP_LOGE(TAG, "Image validation failed, image is corrupted");
-            const char *resp = "{\"success\":false,\"message\":\"Image validation failed\"}";
-            httpd_resp_set_type(req, "application/json; charset=UTF-8");
-            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+            send_json(req, "{\"success\":false,\"message\":\"Image validation failed\"}");
         } else {
             ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
-            const char *resp = "{\"success\":false,\"message\":\"OTA end failed\"}";
-            httpd_resp_set_type(req, "application/json; charset=UTF-8");
-            httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+            send_json(req, "{\"success\":false,\"message\":\"OTA end failed\"}");
         }
         return ESP_FAIL;
     }
@@ -1845,17 +1823,13 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     err = esp_ota_set_boot_partition(update_partition);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
-        const char *resp = "{\"success\":false,\"message\":\"Failed to set boot partition\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Failed to set boot partition\"}");
         return ESP_FAIL;
     }
 
     ESP_LOGI(TAG, "OTA update successful!");
 
-    const char *resp = "{\"success\":true,\"message\":\"Update successful! Rebooting...\"}";
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"Update successful! Rebooting...\"}");
 
     // Restart after a delay
     vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_DELAY_MS));
@@ -1918,13 +1892,8 @@ static esp_err_t update_check_handler(httpd_req_t *req)
     cJSON_AddItemToObject(root, "versions", versions);
 
     char *json = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    if (json) {
-        httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
-        cJSON_free(json);
-    } else {
-        httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
-    }
+    send_json(req, json ? json : "{}");
+    cJSON_free(json);
     cJSON_Delete(root);
     return ESP_OK;
 }
@@ -1941,17 +1910,12 @@ static esp_err_t update_github_post_handler(httpd_req_t *req)
     }
 
     esp_err_t err = firmware_update_start_install(version[0] ? version : NULL);
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     if (err == ESP_OK) {
-        httpd_resp_send(req, "{\"success\":true,\"message\":\"Update started\"}", HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":true,\"message\":\"Update started\"}");
     } else if (err == ESP_ERR_NOT_FOUND) {
-        httpd_resp_send(req,
-            "{\"success\":false,\"message\":\"Unknown release version\"}",
-            HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Unknown release version\"}");
     } else {
-        httpd_resp_send(req,
-            "{\"success\":false,\"message\":\"No release available or an update is already running\"}",
-            HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"No release available or an update is already running\"}");
     }
     return ESP_OK;
 }
@@ -1963,21 +1927,17 @@ static esp_err_t toggle_post(httpd_req_t *req, void (*set)(bool), bool (*get)(vo
 {
     char query[32];
     char val[4];
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
         httpd_query_key_value(query, "enabled", val, sizeof(val)) != ESP_OK ||
         (strcmp(val, "0") != 0 && strcmp(val, "1") != 0)) {
         httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_send(req, "{\"success\":false,\"message\":\"enabled must be 0 or 1\"}",
-                        HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"enabled must be 0 or 1\"}");
         return ESP_OK;
     }
 
     set(val[0] == '1');
-    httpd_resp_send(req, get()
-                             ? "{\"success\":true,\"enabled\":true}"
-                             : "{\"success\":true,\"enabled\":false}",
-                    HTTPD_RESP_USE_STRLEN);
+    send_json(req, get() ? "{\"success\":true,\"enabled\":true}"
+                         : "{\"success\":true,\"enabled\":false}");
     return ESP_OK;
 }
 
@@ -2009,9 +1969,7 @@ static esp_err_t reboot_post_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "Reboot requested via web UI");
 
-    const char *resp = "{\"success\":true,\"message\":\"Rebooting...\"}";
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"Rebooting...\"}");
 
     vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
     esp_restart();
@@ -2026,17 +1984,12 @@ static esp_err_t ha_reset_post_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "Home Assistant entity reset requested via web UI");
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
     if (!mqtt_discovery_reset_start()) {
-        httpd_resp_send(req,
-                        "{\"success\":false,\"message\":\"MQTT is not connected\"}",
-                        HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"MQTT is not connected\"}");
         return ESP_OK;
     }
 
-    httpd_resp_send(req,
-                    "{\"success\":true,\"message\":\"Resetting entities...\"}",
-                    HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"success\":true,\"message\":\"Resetting entities...\"}");
     return ESP_OK;
 }
 
@@ -2053,9 +2006,7 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
     char content[512];
     int ret = httpd_req_recv(req, content, sizeof(content) - 1);
     if (ret <= 0) {
-        const char *resp = "{\"success\":false,\"message\":\"Invalid request\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"Invalid request\"}");
         return ESP_FAIL;
     }
     content[ret] = '\0';
@@ -2080,9 +2031,7 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
                 p += 2;
             } else {
                 // Invalid hex
-                const char *resp = "{\"success\":false,\"message\":\"Invalid hex string\"}";
-                httpd_resp_set_type(req, "application/json; charset=UTF-8");
-                httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+                send_json(req, "{\"success\":false,\"message\":\"Invalid hex string\"}");
                 return ESP_OK;
             }
         } else {
@@ -2091,9 +2040,7 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
     }
 
     if (msg_len == 0) {
-        const char *resp = "{\"success\":false,\"message\":\"No bytes parsed\"}";
-        httpd_resp_set_type(req, "application/json; charset=UTF-8");
-        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        send_json(req, "{\"success\":false,\"message\":\"No bytes parsed\"}");
         return ESP_OK;
     }
 
@@ -2116,8 +2063,7 @@ static esp_err_t test_decode_post_handler(httpd_req_t *req)
              msg_len,
              hex_str);
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json_resp, HTTPD_RESP_USE_STRLEN);
+    send_json(req, json_resp);
 
     return ESP_OK;
 }
@@ -2230,8 +2176,7 @@ static esp_err_t unknown_msgs_json_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    send_json(req, json);
     free(json);
     return ESP_OK;
 }
@@ -2248,8 +2193,7 @@ static esp_err_t unknown_msgs_clear_handler(httpd_req_t *req)
 
     unknown_buffer_clear();
 
-    httpd_resp_set_type(req, "application/json; charset=UTF-8");
-    httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+    send_json(req, "{\"ok\":true}");
     return ESP_OK;
 }
 
@@ -2271,14 +2215,7 @@ static const char UNKNOWN_MSGS_PAGE[] =
     "</div>"
     "<script>"
     "bindJsonDownload('dl-json','pool-controller-unknown-msgs');"
-    "function fmtTime(ts){"
-    "if(!ts||ts<=0)return'Unknown';"
-    "const d=new Date(ts*1000);"
-    "const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;"
-    "return d.toLocaleString('en-GB',{"
-    "day:'2-digit',month:'2-digit',year:'numeric',"
-    "hour:'2-digit',minute:'2-digit',second:'2-digit',"
-    "hour12:false,timeZone:tz,timeZoneName:'short'});}"
+    "function fmtTime(ts){return ts>0?fmtDateTime(new Date(ts*1000)):'Unknown';}"
     "function mkEl(tag,txt,cls){"
     "const el=document.createElement(tag);"
     "if(txt!==undefined)el.textContent=txt;"
@@ -2443,12 +2380,11 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         // before the first RX MSG but treats lines after one as its output.
         // SSID, IP addresses and serial numbers are left out on purpose, as
         // the file is meant to be attached to public bug reports.
-        "const p2=n=>String(n).padStart(2,'0');"
-        "function fmtLocal(d){return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '"
-        "+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds());}"
+        "function fmtLocal(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '"
+        "+pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());}"
         // A UTC offset rather than the IANA zone name, which names a city.
         "function fmtOff(d){const o=-d.getTimezoneOffset(),a=Math.abs(o);"
-        "return'UTC'+(o<0?'-':'+')+p2(Math.floor(a/60))+':'+p2(a%60);}"
+        "return'UTC'+(o<0?'-':'+')+pad2(Math.floor(a/60))+':'+pad2(a%60);}"
         "function fmtDur(ms){const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);"
         "return(d?d+'d ':'')+(d||h?h+'h ':'')+m+'m';}"
         "function known(v,f){return v===null||v===undefined?'unknown':f(v);}"
@@ -2470,10 +2406,8 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "for(const d of devs){const c=d.message_counts||{};"
         "h.push('  '+d.address+'  '+d.name.padEnd(w)+'  fw '+String(d.firmware_version||'?').padEnd(6)"
         "+'decoded '+String(c.decoded).padStart(7)+'  unknown '+String(c.unknown).padStart(6));}"
-        "const mc=st.message_counts||{},r=st.resyncs||{};"
-        "const rb=Object.keys(r).filter(k=>k!=='total'&&r[k]).map(k=>k.replace(/_/g,' ')+' '+r[k]);"
-        "h.push('','Message counts: decoded '+mc.decoded+', unknown '+mc.unknown+', resyncs '+(r.total||0)"
-        "+(rb.length?' ('+rb.join(', ')+')':''));}"
+        "h.push('','Message counts: '+(st.message_counts?messageSummary(st.message_counts):'unknown')"
+        "+', resyncs '+resyncSummary(st.resyncs||{}));}"
         // Unknown-message signatures, most hits first: already deduplicated,
         // so a capture arrives with its own summary of protocol gaps. Broken
         // frames are left out: this is for valid frames the decoder doesn't
@@ -2481,9 +2415,8 @@ static esp_err_t log_view_handler(httpd_req_t *req)
         "h.push('');"
         "if(!unk.data){h.push('Unknown signatures: unavailable ('+unk.err+')');}else{"
         "const es=(unk.data.entries||[]).filter(e=>!e.is_error).sort((a,b)=>b.hits-a.hits);"
-        "const tot=es.reduce((s,e)=>s+e.hits,0),mc=st&&st.message_counts;"
-        "const share=mc&&(mc.decoded+mc.unknown)?', '+(100*mc.unknown/(mc.decoded+mc.unknown)).toFixed(2)+'% of all frames unknown':'';"
-        "h.push('Unknown signatures (valid frames, most hits first): '+es.length+' held, '+tot+' hits'+share);"
+        "const tot=es.reduce((s,e)=>s+e.hits,0);"
+        "h.push('Unknown signatures (valid frames, most hits first): '+es.length+' held, '+tot+' hits');"
         "if(es.length){"
         "const sw=Math.max(...es.map(e=>e.src_name.length)),dw=Math.max(...es.map(e=>e.dst_name.length));"
         "for(const e of es)h.push('  '+String(e.hits).padStart(7)+'  '+e.cmd+'  '+e.src_name.padEnd(sw)+' -> '+e.dst_name.padEnd(dw)"
