@@ -421,7 +421,11 @@ static const char DEVICE_PAGE_HEALTH[] =
     "<dt>Messages</dt><dd id='msgs'>&hellip;</dd>"
     "<dt>Resyncs</dt><dd id='resyncs'>&hellip;</dd>"
     "<dt>Memory</dt><dd id='mem'>&hellip;</dd>"
-    "</dl></section>"
+    "</dl>"
+    "<div id='devMsgs' class='table-wrap fit mt-4' hidden><table>"
+    "<thead><tr><th>Device</th><th class='num'>Decoded</th><th class='num'>Unknown</th></tr></thead>"
+    "<tbody id='devMsgsBody'></tbody></table></div>"
+    "</section>"
     "<section class='card'><h2><i class='i i-chart' aria-hidden='true'></i>Anonymous usage reporting</h2>";
 
 static const char DEVICE_PAGE_TAIL[] =
@@ -441,6 +445,14 @@ static const char DEVICE_PAGE_TAIL[] =
     "if(d.resyncs)document.getElementById('resyncs').textContent=resyncSummary(d.resyncs);"
     "const m=d.memory;"
     "if(m)document.getElementById('mem').textContent=m.free_heap+' free (min '+m.min_free_heap+')';"
+    "const devs=d.devices||[];"
+    "if(devs.length){const tb=document.getElementById('devMsgsBody');"
+    "for(const v of devs){const c=v.message_counts||{},tr=tb.insertRow();"
+    "const n=tr.insertCell();n.textContent=v.name+' ';"
+    "const a=document.createElement('span');a.className='muted mono';a.textContent=v.address;n.appendChild(a);"
+    "for(const k of['decoded','unknown']){const td=tr.insertCell();td.className='num';"
+    "td.textContent=(c[k]||0).toLocaleString();}}"
+    "document.getElementById('devMsgs').hidden=false;}"
     "}).catch(()=>{['msgs','resyncs','mem'].forEach(id=>document.getElementById(id).textContent='Unavailable');});"
     "(function(){"
     "const s=document.getElementById('dangerStatus');"
