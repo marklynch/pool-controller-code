@@ -7,7 +7,9 @@
 
 // Start the register requester task.
 // If no Internet Gateway is detected after a startup delay, this task will
-// send CMD 0x39 register read requests for any missing pool state data.
+// send CMD 0x39 register read requests for any missing pool state data, and
+// periodically re-read the timers and favourites, which the Touchscreen never
+// re-sends, even after an edit made at the Touchscreen.
 void register_requester_start(pool_state_t *pool_state, SemaphoreHandle_t state_mutex);
 
 // Wake the requester task immediately to check for missing data.

@@ -36,6 +36,10 @@ static SemaphoreHandle_t s_mutex = NULL;
 // asked, but it can still go unanswered, e.g. a Genus heater selected with
 // none on the bus.
 #define HEATER_SETPOINT_MAX_ATTEMPTS 5
+// Without a Gateway, the Touchscreen never re-sends timers or favourites in its
+// register cycle, and sends nothing when they are edited at the Touchscreen, so
+// they are re-read on this interval to pick up such edits.
+#define CONFIG_REFRESH_INTERVAL_MS   (20 * 60 * 1000)
 
 // A unit of work posted to the task. `rescan` requests a fresh check for
 // missing data; otherwise the entry names a register to read back.
@@ -118,6 +122,9 @@ static void register_requester_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(STARTUP_DELAY_MS) - elapsed);
     }
 
+    // The first sweep reads whatever is missing; refreshes start one interval later.
+    TickType_t last_config_refresh = xTaskGetTickCount();
+
     while (1) {
         // Snapshot the relevant state under the mutex
         bool gateway_present = false;
@@ -191,15 +198,25 @@ static void register_requester_task(void *arg)
         if (gateway_present) {
             ESP_LOGI(TAG, "Internet Gateway present, no other requests needed");
         } else {
-            // Request missing timers
-            int missing_timers = 0;
-            for (int i = 0; i < MAX_TIMERS; i++) {
-                if (!timers_valid[i]) missing_timers++;
+            // Once the refresh interval has passed, re-read timers and
+            // favourites even when already valid (see
+            // CONFIG_REFRESH_INTERVAL_MS).
+            TickType_t now = xTaskGetTickCount();
+            bool refresh_due = (now - last_config_refresh) >= pdMS_TO_TICKS(CONFIG_REFRESH_INTERVAL_MS);
+            if (refresh_due) {
+                last_config_refresh = now;
+                ESP_LOGI(TAG, "Refreshing timers and favourites");
             }
-            if (missing_timers > 0) {
-                ESP_LOGI(TAG, "Requesting %d missing timer(s)", missing_timers);
+
+            // Request missing timers, or all of them on a refresh
+            int timers_to_read = 0;
+            for (int i = 0; i < MAX_TIMERS; i++) {
+                if (refresh_due || !timers_valid[i]) timers_to_read++;
+            }
+            if (timers_to_read > 0) {
+                ESP_LOGI(TAG, "Requesting %d timer(s)", timers_to_read);
                 for (int i = 0; i < MAX_TIMERS; i++) {
-                    if (!timers_valid[i]) {
+                    if (refresh_due || !timers_valid[i]) {
                         char desc[16];
                         snprintf(desc, sizeof(desc), "timer %d", i + 1);
                         send_request(REG_ID_TIMER_0 + i, 0x04, desc);
@@ -225,7 +242,8 @@ static void register_requester_task(void *arg)
                 }
             }
 
-            // Request missing valve labels for configured valves
+            // Request missing valve labels for configured valves. No refresh
+            // needed: the Touchscreen broadcasts a label edited at it.
             for (int i = 0; i < MAX_VALVE_SLOTS; i++) {
                 if (!valve_configured[i]) continue;
                 if (!valve_label_valid[i]) {
@@ -236,14 +254,15 @@ static void register_requester_task(void *arg)
                 }
             }
 
-            // Request missing favourite enable flags and labels (all 8 slots)
+            // Request missing favourite enable flags and labels (all 8 slots),
+            // or all of them on a refresh
             for (int i = 0; i < MAX_FAVOURITES; i++) {
-                if (!fav_enabled_valid[i]) {
+                if (refresh_due || !fav_enabled_valid[i]) {
                     char desc[32];
                     snprintf(desc, sizeof(desc), "favourite %d enable", i);
                     send_request(REG_ID_FAVOURITE_ENABLE_0 + i, 0x03, desc);
                 }
-                if (!fav_name_valid[i]) {
+                if (refresh_due || !fav_name_valid[i]) {
                     char desc[32];
                     snprintf(desc, sizeof(desc), "favourite %d label", i);
                     send_request(REG_ID_FAVOURITE_LABEL_0 + i, 0x03, desc);
