@@ -8,15 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- Added a per-device table to the web UI Device page's Bus and memory card, showing each device's name, address, and decoded and unknown message counts
 ### Changed
-- Removed the divider before the Clear button on the Unknown messages and Debug log pages, so it sits in line with the other header buttons
-- Updated the web UI Device page to lay its cards out in two wider columns, dropping to one on narrow screens
 ### Fixed
 ### Removed
 ### Deprecated
 ### Security
 
+
+## [2.0.0] - 2026-11-25
+### Added
+- Added a per-device table to the web UI Device page's Bus and memory card, showing each device's name, address, and decoded and unknown message counts
+### Changed
+- Removed the divider before the Clear button on the Unknown messages and Debug log pages, so it sits in line with the other header buttons
+- Updated the web UI Device page to lay its cards out in two wider columns, dropping to one on narrow screens
 
 ## [2.0.0-rc1] - 2026-11-22
 ### Added
