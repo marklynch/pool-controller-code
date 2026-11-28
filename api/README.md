@@ -169,8 +169,9 @@ LEFT JOIN devices d
  AND d.last_seen  >= w.week_start
 GROUP BY w.week_start ORDER BY w.week_start;
 
--- Active installs per week by release. Same caveats as above; a device that
--- upgrades during a week counts under both releases that week.
+-- Active installs per week by release, one row per week and release with
+-- zeros filled in, ready to chart. Same caveats as above; a device that
+-- upgrades during a week counts once, under the latest release it ran.
 WITH RECURSIVE weeks(week_start) AS (
   SELECT unixepoch((SELECT MIN(first_seen) FROM device_versions),
                    'unixepoch', 'start of day', '-6 days', 'weekday 1')
@@ -180,15 +181,26 @@ WITH RECURSIVE weeks(week_start) AS (
 r AS (
   SELECT id, clean_version, MIN(first_seen) AS first_seen, MAX(last_seen) AS last_seen
   FROM device_versions WHERE clean_version IS NOT NULL
-  GROUP BY id, clean_version)
-SELECT date(w.week_start, 'unixepoch') AS week, r.clean_version,
-       COUNT(*) AS active_devices
+  GROUP BY id, clean_version),
+active AS (
+  SELECT w.week_start, r.id, r.clean_version,
+         ROW_NUMBER() OVER (PARTITION BY w.week_start, r.id
+                            ORDER BY r.first_seen DESC) AS rn
+  FROM weeks w
+  JOIN r
+    ON r.first_seen < w.week_start + 7*86400
+   AND r.last_seen  >= w.week_start),
+v AS (SELECT DISTINCT clean_version FROM r)
+SELECT date(w.week_start, 'unixepoch') AS week, v.clean_version AS version,
+       COUNT(a.id) AS devices
 FROM weeks w
-JOIN r
-  ON r.first_seen < w.week_start + 7*86400
- AND r.last_seen  >= w.week_start
-GROUP BY w.week_start, r.clean_version
-ORDER BY w.week_start, active_devices DESC;
+CROSS JOIN v
+LEFT JOIN active a
+  ON a.week_start = w.week_start
+ AND a.clean_version = v.clean_version
+ AND a.rn = 1
+GROUP BY w.week_start, v.clean_version
+ORDER BY w.week_start, v.clean_version;
 
 -- Debugging: active installs not running a release build (dev builds, or
 -- versions that didn't parse), by full version string
